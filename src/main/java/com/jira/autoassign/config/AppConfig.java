@@ -7,18 +7,13 @@ import org.springframework.web.client.RestTemplate;
 
 /**
  * Central Spring configuration class.
- *
- * @EnableScheduling  activates the @Scheduled annotation in AssignScheduler.
- * RestTemplate bean  is used by JiraClient to make HTTP calls to the Jira REST API.
+ * EnableScheduling activates the @Scheduled annotation in AssignScheduler.
+ * RestTemplate bean is used by JiraClient to make HTTP calls to the Jira REST API.
  */
 @Configuration
 @EnableScheduling
 public class AppConfig {
 
-    /**
-     * RestTemplate is Spring's HTTP client.
-     * Declaring it as a @Bean lets Spring inject it wherever needed (e.g. JiraClient).
-     */
     @Bean
     public RestTemplate restTemplate() {
         return new RestTemplate();

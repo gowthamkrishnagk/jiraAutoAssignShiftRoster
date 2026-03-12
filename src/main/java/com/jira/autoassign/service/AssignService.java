@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jira.autoassign.client.JiraClient;
 import com.jira.autoassign.config.JiraProperties;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -13,17 +13,20 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class AssignService {
+
+    private static final Logger log = LoggerFactory.getLogger(AssignService.class);
+    private static final String STATE_FILE = "round_robin_state.json";
 
     private final JiraClient jiraClient;
     private final JiraProperties props;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // File used to persist the round-robin position across restarts
-    private static final String STATE_FILE = "round_robin_state.json";
+    public AssignService(JiraClient jiraClient, JiraProperties props) {
+        this.jiraClient = jiraClient;
+        this.props = props;
+    }
 
     // ---------- State persistence ----------
 
@@ -46,7 +49,6 @@ public class AssignService {
         }
     }
 
-    // Simple wrapper for JSON serialization of the index
     record IndexState(int index) {}
 
     // ---------- Main logic ----------
@@ -90,7 +92,6 @@ public class AssignService {
             log.info("[{}] ({}) {} -> {}", issueKey, issueType, summary, assigneeEmail);
 
             if (dryRun) {
-                // Dry run: log what would happen, but do not call the API
                 log.info("  [DRY RUN] Skipping actual assignment.");
                 assigned++;
             } else {
