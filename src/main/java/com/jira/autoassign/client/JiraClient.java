@@ -49,33 +49,42 @@ public class JiraClient {
     }
 
     public List<JsonNode> getTickets() {
-        List<String> conditions = new ArrayList<>();
-        conditions.add("project = " + props.getProjectKey());
+        String jql;
 
-        if (props.isOnlyUnassigned()) {
-            conditions.add("assignee is EMPTY");
+        if (props.getCustomJql() != null && !props.getCustomJql().isBlank()) {
+            // Use custom JQL directly — ignores all other filter properties
+            jql = props.getCustomJql();
+            log.info("Using custom JQL: {}", jql);
+        } else {
+            // Build JQL from individual filter properties
+            List<String> conditions = new ArrayList<>();
+            conditions.add("project = " + props.getProjectKey());
+
+            if (props.isOnlyUnassigned()) {
+                conditions.add("assignee is EMPTY");
+            }
+
+            if (props.getTargetStatuses() != null && !props.getTargetStatuses().isEmpty()) {
+                String statusList = String.join(", ",
+                        props.getTargetStatuses().stream().map(s -> "\"" + s + "\"").toList());
+                conditions.add("status in (" + statusList + ")");
+            }
+
+            if (props.getTargetIssueTypes() != null && !props.getTargetIssueTypes().isEmpty()) {
+                String typeList = String.join(", ",
+                        props.getTargetIssueTypes().stream().map(t -> "\"" + t + "\"").toList());
+                conditions.add("issuetype in (" + typeList + ")");
+            }
+
+            if (props.getTargetLabels() != null && !props.getTargetLabels().isEmpty()) {
+                String labelList = String.join(", ",
+                        props.getTargetLabels().stream().map(l -> "\"" + l + "\"").toList());
+                conditions.add("labels in (" + labelList + ")");
+            }
+
+            jql = String.join(" AND ", conditions) + " ORDER BY created ASC";
+            log.info("Using built JQL: {}", jql);
         }
-
-        if (props.getTargetStatuses() != null && !props.getTargetStatuses().isEmpty()) {
-            String statusList = String.join(", ",
-                    props.getTargetStatuses().stream().map(s -> "\"" + s + "\"").toList());
-            conditions.add("status in (" + statusList + ")");
-        }
-
-        if (props.getTargetIssueTypes() != null && !props.getTargetIssueTypes().isEmpty()) {
-            String typeList = String.join(", ",
-                    props.getTargetIssueTypes().stream().map(t -> "\"" + t + "\"").toList());
-            conditions.add("issuetype in (" + typeList + ")");
-        }
-
-        if (props.getTargetLabels() != null && !props.getTargetLabels().isEmpty()) {
-            String labelList = String.join(", ",
-                    props.getTargetLabels().stream().map(l -> "\"" + l + "\"").toList());
-            conditions.add("labels in (" + labelList + ")");
-        }
-
-        String jql = String.join(" AND ", conditions) + " ORDER BY created ASC";
-        log.info("JQL: {}", jql);
 
         String url = UriComponentsBuilder
                 .fromHttpUrl(props.getUrl() + "/rest/api/3/search")

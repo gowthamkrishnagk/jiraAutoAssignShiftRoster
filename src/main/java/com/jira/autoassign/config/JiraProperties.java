@@ -46,4 +46,13 @@ public class JiraProperties {
 
     /** When true, logs assignments but does NOT call the Jira assign API */
     private boolean dryRun = false;
+
+    /**
+     * Custom JQL query to filter tickets.
+     * When set, this takes priority over all other filters
+     * (target-statuses, target-issue-types, target-labels, only-unassigned).
+     *
+     * Example: project = PROJ AND sprint in openSprints() AND priority = High AND assignee is EMPTY
+     */
+    private String customJql;
 }
