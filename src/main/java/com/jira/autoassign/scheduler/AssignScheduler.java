@@ -1,6 +1,6 @@
 package com.jira.autoassign.scheduler;
 
-import com.jira.autoassign.service.AssignService;
+import com.jira.autoassign.service.ShiftAssignService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -11,25 +11,24 @@ public class AssignScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(AssignScheduler.class);
 
-    private final AssignService assignService;
+    private final ShiftAssignService shiftAssignService;
 
-    public AssignScheduler(AssignService assignService) {
-        this.assignService = assignService;
+    public AssignScheduler(ShiftAssignService shiftAssignService) {
+        this.shiftAssignService = shiftAssignService;
     }
 
     /**
-     * Triggered automatically based on the cron expression in application.properties.
-     * Default: every 30 minutes -> 0 *\/30 * * * *
-     *
-     * To change frequency, update jira.schedule.cron in application.properties.
-     * Examples:
-     *   Every 10 min  : 0 *\/10 * * * *
-     *   Every hour    : 0 0 * * * *
-     *   Daily 9 AM    : 0 0 9 * * *
+     * Runs on the configured cron (default: every minute).
+     * - Assigns unassigned tickets to whoever is currently on shift.
+     * - Unassigns tickets from people whose shift just ended.
      */
     @Scheduled(cron = "${jira.schedule.cron}")
     public void scheduledRun() {
-        log.info("Scheduler triggered — starting assignment run.");
-        assignService.runAssignment();
+        log.info("Scheduler triggered.");
+        try {
+            shiftAssignService.runShiftAssignment();
+        } catch (Exception e) {
+            log.error("Scheduler run failed: {}", e.getMessage(), e);
+        }
     }
 }

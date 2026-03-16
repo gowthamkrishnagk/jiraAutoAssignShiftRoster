@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jira Shift Roster Manager</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f4f5f7;
+      color: #172b4d;
+    }
+
+    header {
+      background: #0052cc;
+      color: #fff;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 2px 4px rgba(0,0,0,.25);
+    }
+    header h1 { font-size: 1.05rem; font-weight: 600; }
+
+    main {
+      max-width: 860px;
+      margin: 24px auto;
+      padding: 0 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 20px 22px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.1);
+    }
+    .card-title {
+      font-size: .8rem;
+      font-weight: 700;
+      color: #0052cc;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      margin-bottom: 14px;
+    }
+
+    /* instructions panel */
+    .instructions {
+      background: #f8f9ff;
+      border: 1px solid #dce4ff;
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin-bottom: 18px;
+    }
+    .instructions-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: .82rem;
+      font-weight: 700;
+      color: #0052cc;
+      margin-bottom: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .instructions-title svg { flex-shrink: 0; }
+    .chevron { transition: transform .2s; }
+    .chevron.open { transform: rotate(180deg); }
+    .instr-body { display: flex; flex-direction: column; gap: 14px; }
+
+    .step {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .step-num {
+      width: 22px; height: 22px;
+      background: #0052cc;
+      color: #fff;
+      border-radius: 50%;
+      font-size: .72rem;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .step-body { flex: 1; }
+    .step-label { font-size: .82rem; font-weight: 600; color: #172b4d; margin-bottom: 4px; }
+    .step-desc  { font-size: .78rem; color: #5e6c84; line-height: 1.5; }
+
+    /* Excel preview table inside instructions */
+    .excel-wrap { overflow-x: auto; margin-top: 8px; }
+    .excel-table {
+      border-collapse: collapse;
+      font-size: .78rem;
+      font-family: 'Consolas', 'Courier New', monospace;
+      min-width: 560px;
+      width: 100%;
+    }
+    .excel-table thead tr { background: #0052cc; color: #fff; }
+    .excel-table th {
+      padding: 7px 12px;
+      text-align: left;
+      font-weight: 600;
+      white-space: nowrap;
+      border: 1px solid #0041a8;
+    }
+    .excel-table td {
+      padding: 6px 12px;
+      white-space: nowrap;
+      border: 1px solid #dfe1e6;
+      color: #172b4d;
+    }
+    .excel-table tbody tr:nth-child(odd)  { background: #fff; }
+    .excel-table tbody tr:nth-child(even) { background: #f4f5f7; }
+    .excel-table tbody tr:hover td { background: #deebff; }
+
+    .col-tag {
+      display: inline-block;
+      background: #e6f0ff;
+      color: #0052cc;
+      border: 1px solid #b3d1ff;
+      border-radius: 3px;
+      padding: 1px 6px;
+      font-size: .7rem;
+      font-weight: 600;
+      margin-right: 3px;
+    }
+
+    .rules { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+    .rule  {
+      display: flex; align-items: flex-start; gap: 7px;
+      font-size: .78rem; color: #5e6c84; line-height: 1.45;
+    }
+    .rule-dot {
+      width: 6px; height: 6px;
+      background: #0052cc; border-radius: 50%;
+      flex-shrink: 0; margin-top: 5px;
+    }
+
+    /* drop zone */
+    .drop-zone {
+      border: 2px dashed #0052cc;
+      border-radius: 6px;
+      padding: 28px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: background .15s;
+      user-select: none;
+    }
+    .drop-zone:hover, .drop-zone.over { background: #deebff; }
+    .drop-zone p   { color: #5e6c84; margin-top: 6px; font-size: .85rem; }
+    #file-name     { margin-top: 4px; font-size: .8rem; color: #0052cc; font-weight: 600; }
+
+    .row { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+
+    .btn {
+      background: #0052cc;
+      color: #fff;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: .85rem;
+      font-weight: 600;
+      transition: background .15s;
+    }
+    .btn:hover:not(:disabled) { background: #0065ff; }
+    .btn:disabled { background: #97a0af; cursor: not-allowed; }
+
+    .alert { margin-top: 10px; padding: 10px 14px; border-radius: 4px; font-size: .85rem; }
+    .ok  { background: #e3fcef; color: #006644; border: 1px solid #57d9a3; }
+    .err { background: #ffebe6; color: #bf2600; border: 1px solid #ff8f73; }
+    .warn-list { margin-top: 6px; padding-left: 16px; }
+    .warn-list li { font-size: .78rem; color: #ff8b00; margin-top: 2px; }
+    .hidden { display: none !important; }
+
+    /* status */
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 20px;
+      font-size: .78rem; font-weight: 700;
+    }
+    .badge-on  { background: #e3fcef; color: #006644; }
+    .badge-off { background: #f4f5f7; color: #5e6c84; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .dot-on  { background: #00875a; animation: pulse 2s infinite; }
+    .dot-off { background: #97a0af; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    .a-cards { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; }
+    .a-card  {
+      background: #f4f5f7; border-radius: 5px;
+      padding: 9px 12px;
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;
+    }
+    .a-email { font-weight: 600; font-size: .88rem; }
+    .a-time  { font-size: .78rem; color: #5e6c84; }
+    .ts      { font-size: .72rem; color: #97a0af; margin-left: auto; }
+
+    /* schedule table */
+    .tbl-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    th {
+      background: #f4f5f7; padding: 8px 10px; text-align: left;
+      font-size: .75rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .4px; color: #5e6c84; border-bottom: 2px solid #dfe1e6;
+    }
+    td { padding: 8px 10px; border-bottom: 1px solid #f4f5f7; }
+    tr:hover td  { background: #f8f9fa; }
+    tr.r-today td  { background: #fffae6; }
+    tr.r-active td { background: #e3fcef; font-weight: 600; }
+
+    .legend { display: flex; gap: 14px; margin-top: 8px; flex-wrap: wrap; }
+    .li { display: flex; align-items: center; gap: 4px; font-size: .75rem; color: #5e6c84; }
+    .sw { width: 11px; height: 11px; border-radius: 2px; }
+    .sw-active { background: #e3fcef; border: 1px solid #57d9a3; }
+    .sw-today  { background: #fffae6; border: 1px solid #ffe380; }
+
+    /* preview panel */
+    #preview-panel { margin-top: 16px; border-top: 1px solid #dfe1e6; padding-top: 16px; }
+    #preview-table thead tr { background: #0052cc; color: #fff; }
+    #preview-table th { color: #fff; border: 1px solid #0041a8; font-size: .75rem; padding: 7px 10px; }
+    #preview-table td { font-size: .82rem; }
+    #preview-table .tag-ok  { color: #006644; font-weight: 600; }
+    #preview-table .days-badge {
+      display: inline-block; background: #e6f0ff; color: #0052cc;
+      border-radius: 10px; padding: 1px 8px; font-size: .75rem; font-weight: 600;
+    }
+    .preview-summary-box {
+      display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px;
+    }
+    .stat {
+      background: #f4f5f7; border-radius: 6px; padding: 8px 16px; text-align: center;
+    }
+    .stat-val { font-size: 1.3rem; font-weight: 700; color: #0052cc; }
+    .stat-lbl { font-size: .72rem; color: #5e6c84; margin-top: 2px; }
+
+    .no-data { color: #5e6c84; font-size: .85rem; padding: 4px 0; }
+    .spin {
+      border: 3px solid #dfe1e6; border-top-color: #0052cc;
+      border-radius: 50%; width: 22px; height: 22px;
+      animation: spin .7s linear infinite; margin: 16px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M21.41 11.58l-9-9A2 2 0 0011 2H4a2 2 0 00-2 2v7c0 .53.21 1.04.59 1.42l9 9a2 2 0 002.82 0l7-7a2 2 0 000-2.84zM7 9a2 2 0 110-4 2 2 0 010 4z"/>
+  </svg>
+  <h1>Jira Shift Roster Manager</h1>
+</header>
+
+<main>
+
+  <!-- Upload -->
+  <div class="card">
+    <div class="card-title">Upload Monthly Shift Roster</div>
+
+    <!-- Instructions panel (collapsible) -->
+    <div class="instructions">
+      <div class="instructions-title" onclick="toggleInstr(this)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="#0052cc">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+        </svg>
+        How to prepare the Excel file
+        <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="#0052cc" style="margin-left:auto">
+          <path d="M7 10l5 5 5-5z"/>
+        </svg>
+      </div>
+
+      <div class="instr-body">
+
+        <!-- Step 1 -->
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <div class="step-label">Create an Excel file (.xlsx or .xls) with these exact column headers in Row 1:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+              <span class="col-tag">Email</span>
+              <span class="col-tag">Shift Start</span>
+              <span class="col-tag">Shift End</span>
+              <span class="col-tag">From Date</span>
+              <span class="col-tag">To Date</span>
+            </div>
+            <div class="step-desc" style="margin-top:6px;">Column order does not matter. Headers are case-insensitive.</div>
+          </div>
+        </div>
+
+        <!-- Step 2 — sample table -->
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <div class="step-label">Add one row per person per shift block (date range):</div>
+            <div class="excel-wrap">
+              <table class="excel-table">
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Shift Start</th>
+                    <th>Shift End</th>
+                    <th>From Date</th>
+                    <th>To Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>alice@company.com</td>
+                    <td>07:00</td><td>16:00</td>
+                    <td>01/03/2026</td><td>31/03/2026</td>
+                  </tr>
+                  <tr>
+                    <td>bob@company.com</td>
+                    <td>15:30</td><td>00:30</td>
+                    <td>01/03/2026</td><td>15/03/2026</td>
+                  </tr>
+                  <tr>
+                    <td>bob@company.com</td>
+                    <td>07:00</td><td>16:00</td>
+                    <td>16/03/2026</td><td>31/03/2026</td>
+                  </tr>
+                  <tr>
+                    <td>charlie@company.com</td>
+                    <td>22:30</td><td>07:30</td>
+                    <td>01/03/2026</td><td>31/03/2026</td>
+                  </tr>
+                  <tr>
+                    <td>alice@company.com</td>
+                    <td>15:30</td><td>00:30</td>
+                    <td>01/03/2026</td><td>31/03/2026</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3 — rules -->
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <div class="step-label">Important rules:</div>
+            <div class="rules">
+              <div class="rule"><span class="rule-dot"></span>
+                <span>Each row is automatically expanded into one database entry <strong>per day</strong> within the date range — no need to list every date manually.</span>
+              </div>
+              <div class="rule"><span class="rule-dot"></span>
+                <span><strong>Multiple people on the same date</strong> — add multiple rows with the same or overlapping date ranges.</span>
+              </div>
+              <div class="rule"><span class="rule-dot"></span>
+                <span><strong>Person changes shift mid-month</strong> — add two rows for the same email with different date ranges and timings (see Bob above).</span>
+              </div>
+              <div class="rule"><span class="rule-dot"></span>
+                <span><strong>Overnight shifts</strong> are supported — e.g. Shift Start <code>22:30</code>, Shift End <code>07:30</code> (next day).</span>
+              </div>
+              <div class="rule"><span class="rule-dot"></span>
+                <span><strong>Date formats accepted:</strong> dd/MM/yyyy &nbsp;·&nbsp; MM/dd/yyyy &nbsp;·&nbsp; yyyy-MM-dd &nbsp;·&nbsp; or native Excel date cells.</span>
+              </div>
+              <div class="rule"><span class="rule-dot"></span>
+                <span><strong>Time formats accepted:</strong> HH:mm &nbsp;·&nbsp; H:mm &nbsp;·&nbsp; HH:mm:ss &nbsp;·&nbsp; or native Excel time cells.</span>
+              </div>
+              <div class="rule"><span class="rule-dot"></span>
+                <span>Uploading a new file for the <strong>same month replaces</strong> all existing entries for that month automatically.</span>
+              </div>
+              <div class="rule"><span class="rule-dot"></span>
+                <span>The uploaded file is <strong>never saved to disk</strong> — it is read in memory and discarded immediately after processing.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /instr-body -->
+    </div><!-- /instructions -->
+
+    <div class="drop-zone" id="drop-zone">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="#0052cc">
+        <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+      </svg>
+      <p>Click to browse or drag &amp; drop your Excel file here</p>
+      <div id="file-name"></div>
+    </div>
+    <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none">
+
+    <div class="row">
+      <button class="btn" id="preview-btn" disabled onclick="doPreview()">Preview</button>
+      <div class="spin hidden" id="preview-spin"></div>
+    </div>
+    <div id="upload-alert" class="hidden"></div>
+
+    <!-- Preview result panel (hidden until preview is done) -->
+    <div id="preview-panel" class="hidden">
+      <div id="preview-summary" style="font-size:.85rem;color:#172b4d;margin:14px 0 10px;"></div>
+      <div class="tbl-wrap">
+        <table id="preview-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Email</th>
+              <th>Shift Start</th>
+              <th>Shift End</th>
+              <th>From Date</th>
+              <th>To Date</th>
+              <th>Days</th>
+            </tr>
+          </thead>
+          <tbody id="preview-tbody"></tbody>
+        </table>
+      </div>
+      <div id="preview-warnings" class="hidden"></div>
+      <div class="row" style="margin-top:14px;">
+        <button class="btn" id="save-btn" onclick="doSave()">Confirm &amp; Save to Database</button>
+        <button class="btn" id="cancel-btn"
+          style="background:#fff;color:#de350b;border:1px solid #de350b;"
+          onclick="cancelPreview()">Cancel</button>
+        <div class="spin hidden" id="save-spin"></div>
+      </div>
+      <div id="save-alert" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- Current Shift -->
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+      <div class="card-title" style="margin-bottom:0">Current Shift</div>
+      <span id="status-ts" class="ts"></span>
+    </div>
+    <div id="status-content"><div class="spin"></div></div>
+  </div>
+
+  <!-- Monthly Schedule -->
+  <div class="card">
+    <div class="card-title" id="schedule-title">This Month's Schedule</div>
+    <div id="schedule-content"><div class="spin"></div></div>
+  </div>
+
+</main>
+
+<script>
+// ---- file pick / drag-drop ----
+const dropZone   = document.getElementById('drop-zone');
+const fileInput  = document.getElementById('file-input');
+const fileNameEl = document.getElementById('file-name');
+const previewBtn = document.getElementById('preview-btn');
+let pickedFile   = null;
+
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if (f && (f.name.endsWith('.xlsx') || f.name.endsWith('.xls'))) setFile(f);
+});
+
+function setFile(f) {
+  if (!f) return;
+  pickedFile = f;
+  fileNameEl.textContent = 'Selected: ' + f.name;
+  previewBtn.disabled = false;
+  document.getElementById('upload-alert').className = 'hidden';
+  document.getElementById('preview-panel').className = 'hidden';
+}
+
+// ---- step 1: preview ----
+async function doPreview() {
+  if (!pickedFile) return;
+  const spin    = document.getElementById('preview-spin');
+  const alertEl = document.getElementById('upload-alert');
+  previewBtn.disabled = true;
+  spin.classList.remove('hidden');
+  alertEl.className = 'hidden';
+  document.getElementById('preview-panel').className = 'hidden';
+
+  const form = new FormData();
+  form.append('file', pickedFile);
+  try {
+    const res  = await fetch('/api/preview', { method: 'POST', body: form });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      renderPreview(data);
+    } else if (data.error === 'header_mismatch') {
+      renderHeaderError(data);
+    } else {
+      alertEl.className = 'alert err';
+      alertEl.textContent = data.error || 'Could not read file.';
+    }
+  } catch (e) {
+    alertEl.className = 'alert err';
+    alertEl.textContent = 'Network error: ' + e.message;
+  }
+  spin.classList.add('hidden');
+  previewBtn.disabled = false;
+}
+
+function renderHeaderError(data) {
+  const alertEl = document.getElementById('upload-alert');
+  alertEl.className = 'alert err';
+  alertEl.innerHTML =
+    '<strong>Header mismatch — upload blocked.</strong><br>' +
+    '<span style="font-size:.82rem">' + esc(data.missing) + '</span><br><br>' +
+    '<table style="font-size:.78rem;border-collapse:collapse;width:100%">' +
+      '<tr>' +
+        '<td style="padding:4px 8px 4px 0;color:#5e6c84;white-space:nowrap">Found in file:</td>' +
+        '<td style="padding:4px 0"><code style="background:#fff3f0;padding:2px 6px;border-radius:3px">' + esc(data.foundHeaders) + '</code></td>' +
+      '</tr>' +
+      '<tr>' +
+        '<td style="padding:4px 8px 4px 0;color:#5e6c84;white-space:nowrap">Required:</td>' +
+        '<td style="padding:4px 0"><code style="background:#e3fcef;padding:2px 6px;border-radius:3px">' + esc(data.required) + '</code></td>' +
+      '</tr>' +
+    '</table>';
+}
+
+function renderPreview(data) {
+  // summary stats
+  document.getElementById('preview-summary').innerHTML = `
+    <div class="preview-summary-box">
+      <div class="stat"><div class="stat-val">${data.rowCount}</div><div class="stat-lbl">Excel rows read</div></div>
+      <div class="stat"><div class="stat-val">${data.totalEntries}</div><div class="stat-lbl">DB entries to create</div></div>
+    </div>
+    <p style="font-size:.8rem;color:#5e6c84;">Review the data below. If everything looks correct, click <strong>Confirm &amp; Save</strong>.</p>`;
+
+  // table rows
+  const tbody = document.getElementById('preview-tbody');
+  tbody.innerHTML = '';
+  data.rows.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="color:#97a0af">${i + 1}</td>
+      <td class="tag-ok">${esc(r.email)}</td>
+      <td>${r.shiftStart}</td>
+      <td>${r.shiftEnd}</td>
+      <td>${r.fromDate}</td>
+      <td>${r.toDate}</td>
+      <td><span class="days-badge">${r.daysCount}d</span></td>`;
+    tbody.appendChild(tr);
+  });
+
+  // warnings
+  const warnEl = document.getElementById('preview-warnings');
+  if (data.warnings && data.warnings.length) {
+    warnEl.className = 'alert err';
+    warnEl.innerHTML = '<strong>Warnings:</strong><ul class="warn-list">' +
+      data.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul>';
+  } else {
+    warnEl.className = 'hidden';
+  }
+
+  document.getElementById('save-alert').className = 'hidden';
+  document.getElementById('preview-panel').classList.remove('hidden');
+  document.getElementById('preview-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cancelPreview() {
+  document.getElementById('preview-panel').className = 'hidden';
+  pickedFile = null;
+  fileNameEl.textContent = '';
+  fileInput.value = '';
+  previewBtn.disabled = true;
+}
+
+// ---- step 2: confirm & save ----
+async function doSave() {
+  if (!pickedFile) return;
+  const spin    = document.getElementById('save-spin');
+  const alertEl = document.getElementById('save-alert');
+  const saveBtn = document.getElementById('save-btn');
+  saveBtn.disabled = true;
+  spin.classList.remove('hidden');
+  alertEl.className = 'hidden';
+
+  const form = new FormData();
+  form.append('file', pickedFile);
+  try {
+    const res  = await fetch('/api/upload', { method: 'POST', body: form });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      alertEl.className = 'alert ok';
+      let html = esc(data.message);
+      if (data.warnings && data.warnings.length) {
+        html += '<ul class="warn-list">' +
+          data.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul>';
+      }
+      alertEl.innerHTML = html;
+      loadStatus();
+      loadSchedule();
+      // reset file selection
+      pickedFile = null;
+      fileNameEl.textContent = '';
+      fileInput.value = '';
+      previewBtn.disabled = true;
+    } else {
+      alertEl.className = 'alert err';
+      alertEl.textContent = data.error || 'Save failed.';
+    }
+  } catch (e) {
+    alertEl.className = 'alert err';
+    alertEl.textContent = 'Network error: ' + e.message;
+  }
+  spin.classList.add('hidden');
+  saveBtn.disabled = false;
+}
+
+// ---- status ----
+async function loadStatus() {
+  const el = document.getElementById('status-content');
+  try {
+    const data = await (await fetch('/api/status')).json();
+    document.getElementById('status-ts').textContent =
+      'as of ' + new Date(data.currentTime).toLocaleTimeString();
+
+    const on = data.activeCount > 0;
+    let html = `<span class="badge ${on ? 'badge-on' : 'badge-off'}">
+      <span class="dot ${on ? 'dot-on' : 'dot-off'}"></span>
+      ${on ? 'Shift Active' : 'No Active Shift'}
+    </span>`;
+
+    if (on) {
+      html += '<div class="a-cards">';
+      data.activeAssignees.forEach(a => {
+        html += `<div class="a-card">
+          <span class="a-email">${esc(a.email)}</span>
+          <span class="a-time">${a.shiftDate} &nbsp; ${a.shiftStart} – ${a.shiftEnd}</span>
+        </div>`;
+      });
+      html += '</div>';
+    } else {
+      html += '<p class="no-data" style="margin-top:8px;">No one is on shift right now.</p>';
+    }
+    el.innerHTML = html;
+  } catch {
+    el.innerHTML = '<p class="no-data">Could not load status.</p>';
+  }
+}
+
+// ---- schedule ----
+async function loadSchedule() {
+  const el    = document.getElementById('schedule-content');
+  const title = document.getElementById('schedule-title');
+  try {
+    const rows = await (await fetch('/api/schedule')).json();
+    const now  = new Date();
+    title.textContent = now.toLocaleString('default', { month: 'long', year: 'numeric' }) + ' Schedule';
+
+    if (!rows.length) {
+      el.innerHTML = '<p class="no-data">No schedule for this month. Upload a roster above.</p>';
+      return;
+    }
+
+    const todayStr = now.toISOString().slice(0, 10);
+    const nowTime  = now.toTimeString().slice(0, 5);
+
+    let html = '<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Email</th><th>Start</th><th>End</th></tr></thead><tbody>';
+    rows.forEach(r => {
+      const isToday  = r.date === todayStr;
+      const isActive = isToday && r.start <= nowTime && r.end >= nowTime;
+      html += `<tr class="${isActive ? 'r-active' : isToday ? 'r-today' : ''}">
+        <td>${r.date}</td><td>${esc(r.email)}</td><td>${r.start}</td><td>${r.end}</td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+    html += `<div class="legend">
+      <div class="li"><span class="sw sw-active"></span>Currently active</div>
+      <div class="li"><span class="sw sw-today"></span>Today's shift</div>
+    </div>`;
+    el.innerHTML = html;
+  } catch {
+    el.innerHTML = '<p class="no-data">Could not load schedule.</p>';
+  }
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleInstr(titleEl) {
+  const body    = titleEl.nextElementSibling;
+  const chevron = titleEl.querySelector('.chevron');
+  const open    = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'flex';
+  chevron.classList.toggle('open', !open);
+}
+
+loadStatus();
+loadSchedule();
+setInterval(loadStatus, 60000);
+</script>
+</body>
+</html>
