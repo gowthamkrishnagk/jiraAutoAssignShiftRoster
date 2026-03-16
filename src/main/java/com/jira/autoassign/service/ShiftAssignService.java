@@ -2,7 +2,9 @@ package com.jira.autoassign.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jira.autoassign.client.JiraClient;
+import com.jira.autoassign.entity.AssignmentLog;
 import com.jira.autoassign.entity.ShiftRoster;
+import com.jira.autoassign.repository.AssignmentLogRepository;
 import com.jira.autoassign.repository.ShiftRosterRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,13 +30,16 @@ public class ShiftAssignService {
 
     private final JiraClient jiraClient;
     private final ShiftRosterRepository repository;
+    private final AssignmentLogRepository logRepository;
 
     // In-memory round-robin index — resets on restart, which is fine.
     private int rrIndex = 0;
 
-    public ShiftAssignService(JiraClient jiraClient, ShiftRosterRepository repository) {
+    public ShiftAssignService(JiraClient jiraClient, ShiftRosterRepository repository,
+                              AssignmentLogRepository logRepository) {
         this.jiraClient = jiraClient;
         this.repository = repository;
+        this.logRepository = logRepository;
     }
 
     // -----------------------------------------------------------------------
@@ -70,9 +75,11 @@ public class ShiftAssignService {
                     if (!held.isEmpty()) {
                         log.info("  Unassigning {} ticket(s) from {}", held.size(), email);
                         for (JsonNode ticket : held) {
-                            String key = ticket.get("key").asText();
+                            String key     = ticket.get("key").asText();
+                            String summary = ticket.get("fields").path("summary").asText("");
                             if (jiraClient.unassignTicket(key)) {
                                 log.info("    Unassigned: {}", key);
+                                logRepository.save(AssignmentLog.ofUnassign(key, summary, email));
                             }
                             jiraClient.pauseBetweenAssignments();
                         }
@@ -114,14 +121,16 @@ public class ShiftAssignService {
 
         int assigned = 0, failed = 0;
         for (JsonNode ticket : unassigned) {
-            String issueKey = ticket.get("key").asText();
-            int idx = rrIndex % accountIds.size();
+            String issueKey  = ticket.get("key").asText();
+            String summary   = ticket.get("fields").path("summary").asText("");
+            int idx          = rrIndex % accountIds.size();
             String accountId = accountIds.get(idx);
             String email     = resolvedEmails.get(idx);
 
             log.info("  [{}] -> {}", issueKey, email);
             if (jiraClient.assignTicket(issueKey, accountId)) {
                 assigned++;
+                logRepository.save(AssignmentLog.ofAssign(issueKey, summary, email));
             } else {
                 failed++;
             }

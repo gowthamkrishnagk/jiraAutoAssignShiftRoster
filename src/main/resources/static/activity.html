@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assignment Activity — Jira Shift Roster</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f4f5f7;
+      color: #172b4d;
+    }
+
+    header {
+      background: #0052cc;
+      color: #fff;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 2px 4px rgba(0,0,0,.25);
+    }
+    header h1 { font-size: 1.05rem; font-weight: 600; flex: 1; }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255,255,255,.15);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,.35);
+      border-radius: 4px;
+      padding: 5px 12px;
+      font-size: .8rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background .15s;
+    }
+    .back-btn:hover { background: rgba(255,255,255,.25); }
+
+    main {
+      max-width: 900px;
+      margin: 24px auto;
+      padding: 0 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 20px 22px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.1);
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: .8rem;
+      font-weight: 700;
+      color: #0052cc;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+    }
+
+    .refresh-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #0052cc;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 5px 12px;
+      font-size: .78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .refresh-btn:hover { background: #0043a8; }
+    .refresh-btn:disabled { background: #a5b4fc; cursor: not-allowed; }
+
+    .stats-row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .stat-box {
+      flex: 1;
+      min-width: 130px;
+      background: #f4f5f7;
+      border-radius: 6px;
+      padding: 14px 18px;
+      text-align: center;
+    }
+    .stat-num { font-size: 1.6rem; font-weight: 700; color: #0052cc; }
+    .stat-label { font-size: .72rem; color: #5e6c84; margin-top: 2px; }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .82rem;
+    }
+    thead th {
+      background: #f4f5f7;
+      color: #5e6c84;
+      font-weight: 700;
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      padding: 9px 12px;
+      text-align: left;
+      border-bottom: 2px solid #dfe1e6;
+    }
+    tbody tr { border-bottom: 1px solid #f0f1f3; transition: background .1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #f8f9ff; }
+    tbody td { padding: 9px 12px; vertical-align: middle; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .3px;
+    }
+    .badge-assign   { background: #e3fcef; color: #006644; }
+    .badge-unassign { background: #fff0b3; color: #7a5c00; }
+
+    .issue-key {
+      font-family: 'Courier New', monospace;
+      font-size: .8rem;
+      font-weight: 700;
+      color: #0052cc;
+    }
+    .issue-summary {
+      color: #5e6c84;
+      font-size: .78rem;
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px 0;
+      color: #5e6c84;
+      font-size: .85rem;
+    }
+    .empty-state svg { display: block; margin: 0 auto 12px; opacity: .35; }
+
+    .ts {
+      font-size: .75rem;
+      color: #8993a4;
+      white-space: nowrap;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid #fff;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M21.41 11.58l-9-9A2 2 0 0011 2H4a2 2 0 00-2 2v7c0 .53.21 1.04.59 1.42l9 9a2 2 0 002.82 0l7-7a2 2 0 000-2.84zM7 9a2 2 0 110-4 2 2 0 010 4z"/>
+  </svg>
+  <h1>Assignment Activity</h1>
+  <a class="back-btn" href="/">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+    </svg>
+    Back to Roster
+  </a>
+</header>
+
+<main>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Recent Jira Ticket Assignments</div>
+      <button class="refresh-btn" id="refreshBtn" onclick="load()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+        </svg>
+        Refresh
+      </button>
+    </div>
+
+    <div class="stats-row" id="statsRow" style="display:none">
+      <div class="stat-box">
+        <div class="stat-num" id="statTotal">—</div>
+        <div class="stat-label">Total Events</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-num" id="statAssign">—</div>
+        <div class="stat-label">Assigned</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-num" id="statUnassign">—</div>
+        <div class="stat-label">Unassigned</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-num" id="statPeople">—</div>
+        <div class="stat-label">People Involved</div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Ticket</th>
+            <th>Summary</th>
+            <th>Action</th>
+            <th>Assigned To</th>
+            <th>When</th>
+          </tr>
+        </thead>
+        <tbody id="logBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  async function load() {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Loading…';
+
+    try {
+      const resp = await fetch('/api/activity');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      render(data);
+    } catch (e) {
+      document.getElementById('logBody').innerHTML =
+        '<tr><td colspan="5" style="padding:20px;color:#de350b;text-align:center">Failed to load: ' + e.message + '</td></tr>';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+      </svg> Refresh`;
+    }
+  }
+
+  function render(data) {
+    const tbody = document.getElementById('logBody');
+
+    if (!data.length) {
+      tbody.innerHTML = '';
+      document.getElementById('statsRow').style.display = 'none';
+      tbody.innerHTML = `<tr><td colspan="5">
+        <div class="empty-state">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 6h-2.18c.07-.44.18-.88.18-1.36C18 2.06 15.94 0 13.36 0c-1.46 0-2.72.64-3.59 1.66L9 3 8.23 1.66C7.36.64 6.1 0 4.64 0 2.06 0 0 2.06 0 4.64c0 .48.11.92.18 1.36H0v2h20V6zM4.64 4.5c-.75 0-1.36-.61-1.36-1.36 0-.75.61-1.36 1.36-1.36.46 0 .87.23 1.12.58L7.1 4.5H4.64zm8.72 0H10.9l1.34-2.28c.25-.35.66-.58 1.12-.58.75 0 1.36.61 1.36 1.36 0 .75-.61 1.36-1.36 1.36zM1 8v12c0 1.1.9 2 2 2h6V8H1zm10 14h6c1.1 0 2-.9 2-2V8h-8v14z"/>
+          </svg>
+          No assignment activity yet.<br>The scheduler runs every minute and will log assignments here.
+        </div>
+      </td></tr>`;
+      return;
+    }
+
+    // Stats
+    const assigns   = data.filter(r => r.action === 'ASSIGN').length;
+    const unassigns = data.filter(r => r.action === 'UNASSIGN').length;
+    const people    = new Set(data.map(r => r.assignedToEmail)).size;
+    document.getElementById('statTotal').textContent    = data.length;
+    document.getElementById('statAssign').textContent   = assigns;
+    document.getElementById('statUnassign').textContent = unassigns;
+    document.getElementById('statPeople').textContent   = people;
+    document.getElementById('statsRow').style.display   = 'flex';
+
+    tbody.innerHTML = data.map(row => `
+      <tr>
+        <td><span class="issue-key">${esc(row.issueKey)}</span></td>
+        <td><span class="issue-summary" title="${esc(row.issueSummary)}">${esc(row.issueSummary) || '<span style="color:#c1c7d0">—</span>'}</span></td>
+        <td><span class="badge ${row.action === 'ASSIGN' ? 'badge-assign' : 'badge-unassign'}">${esc(row.action)}</span></td>
+        <td style="font-size:.8rem">${esc(row.assignedToEmail)}</td>
+        <td class="ts">${formatTs(row.assignedAt)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function esc(s) {
+    if (!s) return '';
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function formatTs(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })
+        + ' ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+    } catch { return iso; }
+  }
+
+  load();
+  // Auto-refresh every 60 seconds
+  setInterval(load, 60000);
+</script>
+</body>
+</html>

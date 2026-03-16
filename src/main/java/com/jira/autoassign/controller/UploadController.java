@@ -1,6 +1,8 @@
 package com.jira.autoassign.controller;
 
+import com.jira.autoassign.entity.AssignmentLog;
 import com.jira.autoassign.entity.ShiftRoster;
+import com.jira.autoassign.repository.AssignmentLogRepository;
 import com.jira.autoassign.service.ExcelService;
 import com.jira.autoassign.service.ShiftAssignService;
 import org.springframework.http.ResponseEntity;
@@ -17,10 +19,13 @@ public class UploadController {
 
     private final ExcelService excelService;
     private final ShiftAssignService shiftAssignService;
+    private final AssignmentLogRepository logRepository;
 
-    public UploadController(ExcelService excelService, ShiftAssignService shiftAssignService) {
+    public UploadController(ExcelService excelService, ShiftAssignService shiftAssignService,
+                            AssignmentLogRepository logRepository) {
         this.excelService       = excelService;
         this.shiftAssignService = shiftAssignService;
+        this.logRepository      = logRepository;
     }
 
     /** Preview parsed rows — nothing saved to DB. */
@@ -82,6 +87,21 @@ public class UploadController {
             return m;
         }).collect(Collectors.toList()));
         return ResponseEntity.ok(resp);
+    }
+
+    @GetMapping("/activity")
+    public ResponseEntity<List<Map<String, String>>> activity() {
+        return ResponseEntity.ok(
+            logRepository.findTop100ByOrderByAssignedAtDesc().stream().map(l -> {
+                Map<String, String> m = new LinkedHashMap<>();
+                m.put("issueKey",        l.getIssueKey());
+                m.put("issueSummary",    l.getIssueSummary() == null ? "" : l.getIssueSummary());
+                m.put("assignedToEmail", l.getAssignedToEmail());
+                m.put("action",          l.getAction());
+                m.put("assignedAt",      l.getAssignedAt().toString());
+                return m;
+            }).collect(Collectors.toList())
+        );
     }
 
     @GetMapping("/schedule")

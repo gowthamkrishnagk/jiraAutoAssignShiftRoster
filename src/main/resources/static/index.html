@@ -22,7 +22,24 @@
       gap: 10px;
       box-shadow: 0 2px 4px rgba(0,0,0,.25);
     }
-    header h1 { font-size: 1.05rem; font-weight: 600; }
+    header h1 { font-size: 1.05rem; font-weight: 600; flex: 1; }
+
+    .activity-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255,255,255,.15);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,.35);
+      border-radius: 4px;
+      padding: 5px 12px;
+      font-size: .8rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background .15s;
+    }
+    .activity-btn:hover { background: rgba(255,255,255,.25); }
 
     main {
       max-width: 860px;
@@ -256,6 +273,12 @@
     <path d="M21.41 11.58l-9-9A2 2 0 0011 2H4a2 2 0 00-2 2v7c0 .53.21 1.04.59 1.42l9 9a2 2 0 002.82 0l7-7a2 2 0 000-2.84zM7 9a2 2 0 110-4 2 2 0 010 4z"/>
   </svg>
   <h1>Jira Shift Roster Manager</h1>
+  <a class="activity-btn" href="/activity.html">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M13 2.05V4.07c3.39.49 6 3.39 6 6.93 0 3.21-1.81 6-4.72 7.28L13 17v2.95c4.01-.5 7-3.85 7-7.88 0-4.34-3.05-8.03-7-8.97M11 2.05C6.99 2.55 4 5.9 4 9.93c0 4.03 2.99 7.37 7 7.88V15.8c-2.77-.49-5-2.9-5-5.87 0-2.97 2.23-5.38 5-5.87V2.05M12 12.5l4-4-1.41-1.42L12 9.67l-1.59-1.59L9 9.5l3 3z"/>
+    </svg>
+    View Activity
+  </a>
 </header>
 
 <main>
