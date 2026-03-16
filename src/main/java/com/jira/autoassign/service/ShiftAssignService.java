@@ -2,6 +2,7 @@ package com.jira.autoassign.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jira.autoassign.client.JiraClient;
+import com.jira.autoassign.config.JiraProperties;
 import com.jira.autoassign.entity.AssignmentLog;
 import com.jira.autoassign.entity.ShiftRoster;
 import com.jira.autoassign.repository.AssignmentLogRepository;
@@ -31,15 +32,17 @@ public class ShiftAssignService {
     private final JiraClient jiraClient;
     private final ShiftRosterRepository repository;
     private final AssignmentLogRepository logRepository;
+    private final JiraProperties props;
 
     // In-memory round-robin index — resets on restart, which is fine.
     private int rrIndex = 0;
 
     public ShiftAssignService(JiraClient jiraClient, ShiftRosterRepository repository,
-                              AssignmentLogRepository logRepository) {
-        this.jiraClient = jiraClient;
-        this.repository = repository;
+                              AssignmentLogRepository logRepository, JiraProperties props) {
+        this.jiraClient    = jiraClient;
+        this.repository    = repository;
         this.logRepository = logRepository;
+        this.props         = props;
     }
 
     // -----------------------------------------------------------------------
@@ -47,7 +50,7 @@ public class ShiftAssignService {
     // -----------------------------------------------------------------------
 
     public void runShiftAssignment() {
-        log.info("=== Shift Assignment Run ===");
+        log.info("=== Shift Assignment Run{} ===", props.isDryRun() ? " [DRY-RUN]" : "");
 
         LocalDate today     = LocalDate.now();
         LocalDate yesterday = today.minusDays(1);
@@ -77,7 +80,9 @@ public class ShiftAssignService {
                         for (JsonNode ticket : held) {
                             String key     = ticket.get("key").asText();
                             String summary = ticket.get("fields").path("summary").asText("");
-                            if (jiraClient.unassignTicket(key)) {
+                            if (props.isDryRun()) {
+                                log.info("    [DRY-RUN] Would unassign: {}", key);
+                            } else if (jiraClient.unassignTicket(key)) {
                                 log.info("    Unassigned: {}", key);
                                 logRepository.save(AssignmentLog.ofUnassign(key, summary, email));
                             }
@@ -127,12 +132,17 @@ public class ShiftAssignService {
             String accountId = accountIds.get(idx);
             String email     = resolvedEmails.get(idx);
 
-            log.info("  [{}] -> {}", issueKey, email);
-            if (jiraClient.assignTicket(issueKey, accountId)) {
+            if (props.isDryRun()) {
+                log.info("  [DRY-RUN] Would assign [{}] -> {}", issueKey, email);
                 assigned++;
-                logRepository.save(AssignmentLog.ofAssign(issueKey, summary, email));
             } else {
-                failed++;
+                log.info("  [{}] -> {}", issueKey, email);
+                if (jiraClient.assignTicket(issueKey, accountId)) {
+                    assigned++;
+                    logRepository.save(AssignmentLog.ofAssign(issueKey, summary, email));
+                } else {
+                    failed++;
+                }
             }
             rrIndex++;
             jiraClient.pauseBetweenAssignments();
@@ -144,6 +154,12 @@ public class ShiftAssignService {
     // -----------------------------------------------------------------------
     // Used by REST endpoints
     // -----------------------------------------------------------------------
+
+    public void clearActivityLog() {
+        long count = logRepository.count();
+        logRepository.deleteAll();
+        log.info("Activity log cleared — {} entries removed.", count);
+    }
 
     public List<ShiftRoster> getActiveShifts() {
         LocalDate today = LocalDate.now();

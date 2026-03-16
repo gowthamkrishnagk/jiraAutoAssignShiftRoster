@@ -31,4 +31,15 @@ public class AssignScheduler {
             log.error("Scheduler run failed: {}", e.getMessage(), e);
         }
     }
+
+    /** Clears the activity log every hour (at the top of the hour). */
+    @Scheduled(cron = "0 0 * * * *")
+    public void clearActivityLog() {
+        log.info("Clearing activity log.");
+        try {
+            shiftAssignService.clearActivityLog();
+        } catch (Exception e) {
+            log.error("Activity log clear failed: {}", e.getMessage(), e);
+        }
+    }
 }
