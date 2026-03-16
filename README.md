@@ -2,6 +2,8 @@
 
 A lightweight Spring Boot application that automatically manages Jira ticket assignments based on a monthly shift roster. Upload an Excel schedule once per month — the app assigns unassigned Jira tickets to whoever is currently on shift and unassigns them when the shift ends.
 
+https://jiraautoassignshiftroster-production.up.railway.app/
+
 ---
 
 ## Features
