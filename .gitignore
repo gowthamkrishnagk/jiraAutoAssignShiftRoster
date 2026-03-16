@@ -1,17 +1,5 @@
 target/
-src/main/resources/application.properties
-*.jar
-*.class
-round_robin_state.json
 .env
-*.log
-
-# IDE files
-.idea/
-*.iml
-.vscode/
-*.eclipse
-
-# OS files
-.DS_Store
-Thumbs.db
+*.class
+*.jar
+round_robin_state.json
