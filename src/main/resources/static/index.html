@@ -257,6 +257,43 @@
     .stat-val { font-size: 1.3rem; font-weight: 700; color: #0052cc; }
     .stat-lbl { font-size: .72rem; color: #5e6c84; margin-top: 2px; }
 
+    /* dry-run toggle */
+    .dry-run-card { border: 2px solid #ff8b00; }
+    .dry-run-banner {
+      display: none;
+      background: #ff8b00; color: #fff;
+      font-size: .78rem; font-weight: 700;
+      text-align: center; padding: 5px;
+      letter-spacing: .4px;
+    }
+    .dry-run-banner.visible { display: block; }
+    .toggle-row {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .toggle-label { font-size: .9rem; font-weight: 600; flex: 1; }
+    .toggle-desc  { font-size: .78rem; color: #5e6c84; margin-top: 4px; }
+    /* switch */
+    .switch { position: relative; display: inline-block; width: 46px; height: 26px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background: #dfe1e6; border-radius: 26px; transition: .25s;
+    }
+    .slider::before {
+      content: ''; position: absolute;
+      width: 20px; height: 20px; left: 3px; bottom: 3px;
+      background: #fff; border-radius: 50%; transition: .25s;
+    }
+    input:checked + .slider { background: #ff8b00; }
+    input:checked + .slider::before { transform: translateX(20px); }
+    .dry-status {
+      margin-top: 10px; padding: 8px 12px; border-radius: 4px;
+      font-size: .82rem; display: none;
+    }
+    .dry-status.visible { display: block; }
+    .dry-status.on  { background: #fff4e5; color: #974F0C; border: 1px solid #ffbe33; }
+    .dry-status.off { background: #e3fcef; color: #006644; border: 1px solid #57d9a3; }
+
     .no-data { color: #5e6c84; font-size: .85rem; padding: 4px 0; }
     .spin {
       border: 3px solid #dfe1e6; border-top-color: #0052cc;
@@ -280,6 +317,10 @@
     View Activity
   </a>
 </header>
+
+<div class="dry-run-banner" id="dry-run-banner">
+  ⚠ DRY-RUN MODE ACTIVE — no Jira tickets will be assigned
+</div>
 
 <main>
 
@@ -446,6 +487,22 @@
       </div>
       <div id="save-alert" class="hidden"></div>
     </div>
+  </div>
+
+  <!-- Dry-Run Toggle -->
+  <div class="card dry-run-card" id="dry-run-card" style="border-color:#dfe1e6;">
+    <div class="card-title">Auto-Assign Mode</div>
+    <div class="toggle-row">
+      <div>
+        <div class="toggle-label">Dry-Run Mode</div>
+        <div class="toggle-desc">When enabled, the scheduler logs what <em>would</em> be assigned but makes no changes in Jira.</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="dry-run-toggle" onchange="setDryRun(this.checked)">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="dry-status" id="dry-status"></div>
   </div>
 
   <!-- Current Shift -->
@@ -711,6 +768,54 @@ function toggleInstr(titleEl) {
   chevron.classList.toggle('open', !open);
 }
 
+// ---- dry-run ----
+async function loadDryRun() {
+  try {
+    const data = await (await fetch('/api/config')).json();
+    applyDryRunState(data.dryRun, null);
+  } catch { /* ignore */ }
+}
+
+async function setDryRun(enabled) {
+  const statusEl = document.getElementById('dry-status');
+  statusEl.className = 'dry-status';
+  statusEl.textContent = 'Saving…';
+  statusEl.classList.add('visible');
+  try {
+    const res  = await fetch('/api/config/dry-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dryRun: enabled })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      applyDryRunState(data.dryRun, data.message);
+    } else {
+      statusEl.className = 'dry-status visible';
+      statusEl.textContent = data.error || 'Failed to update.';
+    }
+  } catch (e) {
+    statusEl.className = 'dry-status visible';
+    statusEl.textContent = 'Network error: ' + e.message;
+  }
+}
+
+function applyDryRunState(enabled, message) {
+  document.getElementById('dry-run-toggle').checked = enabled;
+  const card    = document.getElementById('dry-run-card');
+  const banner  = document.getElementById('dry-run-banner');
+  const statusEl = document.getElementById('dry-status');
+  card.style.borderColor = enabled ? '#ff8b00' : '#dfe1e6';
+  banner.classList.toggle('visible', enabled);
+  if (message) {
+    statusEl.className = 'dry-status visible ' + (enabled ? 'on' : 'off');
+    statusEl.textContent = message;
+  } else {
+    statusEl.className = 'dry-status';
+  }
+}
+
+loadDryRun();
 loadStatus();
 loadSchedule();
 setInterval(loadStatus, 60000);

@@ -1,5 +1,6 @@
 package com.jira.autoassign.controller;
 
+import com.jira.autoassign.config.JiraProperties;
 import com.jira.autoassign.entity.AssignmentLog;
 import com.jira.autoassign.entity.ShiftRoster;
 import com.jira.autoassign.repository.AssignmentLogRepository;
@@ -20,12 +21,14 @@ public class UploadController {
     private final ExcelService excelService;
     private final ShiftAssignService shiftAssignService;
     private final AssignmentLogRepository logRepository;
+    private final JiraProperties jiraProperties;
 
     public UploadController(ExcelService excelService, ShiftAssignService shiftAssignService,
-                            AssignmentLogRepository logRepository) {
-        this.excelService       = excelService;
+                            AssignmentLogRepository logRepository, JiraProperties jiraProperties) {
+        this.excelService    = excelService;
         this.shiftAssignService = shiftAssignService;
-        this.logRepository      = logRepository;
+        this.logRepository   = logRepository;
+        this.jiraProperties  = jiraProperties;
     }
 
     /** Preview parsed rows — nothing saved to DB. */
@@ -116,5 +119,26 @@ public class UploadController {
                 return m;
             }).collect(Collectors.toList())
         );
+    }
+
+    /** Returns current runtime configuration. */
+    @GetMapping("/config")
+    public ResponseEntity<Map<String, Object>> getConfig() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("dryRun", jiraProperties.isDryRun());
+        return ResponseEntity.ok(resp);
+    }
+
+    /** Toggles dry-run mode at runtime without restarting. */
+    @PostMapping("/config/dry-run")
+    public ResponseEntity<Map<String, Object>> setDryRun(@RequestBody Map<String, Boolean> body) {
+        Boolean value = body.get("dryRun");
+        if (value == null)
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing 'dryRun' field"));
+        jiraProperties.setDryRun(value);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("dryRun", jiraProperties.isDryRun());
+        resp.put("message", value ? "Dry-run ENABLED — no tickets will be assigned." : "Dry-run DISABLED — assignments are live.");
+        return ResponseEntity.ok(resp);
     }
 }

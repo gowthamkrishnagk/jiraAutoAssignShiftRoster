@@ -14,4 +14,4 @@ COPY --from=build /app/target/*.jar app.jar
 EXPOSE 8080
 
 # Use 75% of available container RAM as heap; G1GC for low latency
-ENTRYPOINT ["java", "-XX:+UseG1GC", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-XX:+UseG1GC", "-XX:MaxRAMPercentage=75", "-Duser.timezone=Asia/Kolkata", "-jar", "app.jar"]

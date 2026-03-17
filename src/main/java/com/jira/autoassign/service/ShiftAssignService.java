@@ -20,9 +20,9 @@ import java.util.stream.Collectors;
  * Core shift-based assignment logic.
  *
  * Every scheduler tick:
- *  1. Find who is currently ON shift → assign new unassigned Jira tickets to them (round-robin).
- *  2. Find who is in today's roster but OFF shift → unassign any tickets they hold
- *     so the next active person can pick them up.
+ *  1. Find who is currently ON shift.
+ *  2. Assign only currently-unassigned Jira tickets to them (round-robin).
+ *     Already-assigned tickets are never touched.
  */
 @Service
 public class ShiftAssignService {
@@ -63,39 +63,7 @@ public class ShiftAssignService {
 
         log.info("Active shift assignees: {}", activeEmails.isEmpty() ? "NONE" : activeEmails);
 
-        // --- Step 2: unassign tickets from off-shift people ---
-        List<String> rosterEmails = repository.findAllEmailsInRange(today, yesterday);
-        List<String> offShift = rosterEmails.stream()
-            .filter(e -> !activeEmails.contains(e))
-            .collect(Collectors.toList());
-
-        if (!offShift.isEmpty()) {
-            log.info("Off-shift roster members (checking for tickets to unassign): {}", offShift);
-            for (String email : offShift) {
-                try {
-                    String accountId = jiraClient.getAccountId(email);
-                    List<JsonNode> held = jiraClient.getTicketsAssignedTo(accountId);
-                    if (!held.isEmpty()) {
-                        log.info("  Unassigning {} ticket(s) from {}", held.size(), email);
-                        for (JsonNode ticket : held) {
-                            String key     = ticket.get("key").asText();
-                            String summary = ticket.get("fields").path("summary").asText("");
-                            if (props.isDryRun()) {
-                                log.info("    [DRY-RUN] Would unassign: {}", key);
-                            } else if (jiraClient.unassignTicket(key)) {
-                                log.info("    Unassigned: {}", key);
-                                logRepository.save(AssignmentLog.ofUnassign(key, summary, email));
-                            }
-                            jiraClient.pauseBetweenAssignments();
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn("  Could not process off-shift user {}: {}", email, e.getMessage());
-                }
-            }
-        }
-
-        // --- Step 3: assign unassigned tickets to active shift people ---
+        // --- Step 2: assign unassigned tickets to active shift people ---
         if (activeEmails.isEmpty()) {
             log.info("No active shift right now — skipping assignment.");
             return;

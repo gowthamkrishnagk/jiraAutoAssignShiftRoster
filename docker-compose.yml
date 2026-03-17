@@ -34,6 +34,7 @@ services:
       JIRA_API_TOKEN: ${JIRA_API_TOKEN}
       JIRA_CUSTOM_JQL: ${JIRA_CUSTOM_JQL}
       JIRA_DRY_RUN: ${JIRA_DRY_RUN:-false}
+      TZ: Asia/Kolkata
 
 volumes:
   pgdata:
