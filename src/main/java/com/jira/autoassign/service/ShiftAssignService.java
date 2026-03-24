@@ -117,6 +117,75 @@ public class ShiftAssignService {
         }
 
         log.info("Done — assigned: {}, failed: {}", assigned, failed);
+
+        // --- Step 2b: escalated + unassigned → reassign to last historical assignee ---
+        List<JsonNode> escalatedUnassigned = jiraClient.getEscalatedUnassignedTickets().stream()
+            .filter(t -> t.get("fields").get("assignee").isNull())
+            .collect(Collectors.toList());
+
+        log.info("Escalated unassigned tickets to restore to last owner: {}", escalatedUnassigned.size());
+
+        for (JsonNode ticket : escalatedUnassigned) {
+            String issueKey     = ticket.get("key").asText();
+            String summary      = ticket.get("fields").path("summary").asText("");
+            String lastAccId    = jiraClient.getLastAssigneeAccountId(issueKey);
+
+            if (lastAccId == null) {
+                log.info("  [{}] No assignee history found — skipping", issueKey);
+                continue;
+            }
+
+            String lastEmail = jiraClient.getUserEmail(lastAccId);
+
+            if (props.isDryRun()) {
+                log.info("  [DRY-RUN] Would restore escalated [{}] -> {}", issueKey, lastEmail);
+            } else {
+                log.info("  Restore escalated [{}] -> {}", issueKey, lastEmail);
+                if (jiraClient.assignTicket(issueKey, lastAccId)) {
+                    logRepository.save(AssignmentLog.ofAssign(issueKey, summary, lastEmail));
+                }
+            }
+            jiraClient.pauseBetweenAssignments();
+        }
+
+        // --- Step 3: reassign tickets from off-shift people equally to active shift people ---
+        List<String> allRosterEmails = repository.findAllEmailsInRange(today, yesterday);
+        List<String> offShiftEmails  = allRosterEmails.stream()
+            .filter(e -> !activeEmails.contains(e))
+            .collect(Collectors.toList());
+
+        log.info("Off-shift sweep — people to check: {}", offShiftEmails.isEmpty() ? "NONE" : offShiftEmails);
+
+        for (String offEmail : offShiftEmails) {
+            try {
+                String offAccountId = jiraClient.getAccountId(offEmail);
+                List<JsonNode> theirTickets = jiraClient.getTicketsAssignedTo(offAccountId);
+
+                if (theirTickets.isEmpty()) continue;
+                log.info("  {} has {} ticket(s) to reassign", offEmail, theirTickets.size());
+
+                for (JsonNode ticket : theirTickets) {
+                    String issueKey = ticket.get("key").asText();
+                    String summary  = ticket.get("fields").path("summary").asText("");
+                    int    idx      = rrIndex % accountIds.size();
+                    String newAccId = accountIds.get(idx);
+                    String newEmail = resolvedEmails.get(idx);
+
+                    if (props.isDryRun()) {
+                        log.info("  [DRY-RUN] Would reassign [{}] {} -> {}", issueKey, offEmail, newEmail);
+                    } else {
+                        log.info("  Reassign [{}] {} -> {}", issueKey, offEmail, newEmail);
+                        if (jiraClient.assignTicket(issueKey, newAccId)) {
+                            logRepository.save(AssignmentLog.ofAssign(issueKey, summary, newEmail));
+                        }
+                    }
+                    rrIndex++;
+                    jiraClient.pauseBetweenAssignments();
+                }
+            } catch (Exception e) {
+                log.warn("  Could not sweep off-shift {}: {}", offEmail, e.getMessage());
+            }
+        }
     }
 
     // -----------------------------------------------------------------------

@@ -163,6 +163,80 @@ public class JiraClient {
         }
     }
 
+    /** Returns unassigned tickets where Escalation Path is NOT empty (reassign to last owner). */
+    public List<JsonNode> getEscalatedUnassignedTickets() {
+        String jql = buildEscalatedUnassignedJql();
+        log.debug("Fetching escalated unassigned tickets: {}", jql);
+        return searchTickets(jql);
+    }
+
+    private String buildEscalatedUnassignedJql() {
+        if (hasCustomJql()) {
+            // Swap "Escalation Path[Dropdown]" is EMPTY → is not EMPTY
+            return props.getCustomJql()
+                .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY",
+                            "\"Escalation Path[Dropdown]\" is not EMPTY");
+        }
+        List<String> conds = new ArrayList<>();
+        conds.add("project = " + props.getProjectKey());
+        conds.add("assignee = EMPTY");
+        addStatusFilter(conds);
+        addTypeFilter(conds);
+        addLabelFilter(conds);
+        conds.add("\"Escalation Path[Dropdown]\" is not EMPTY");
+        return String.join(" AND ", conds) + " ORDER BY created ASC";
+    }
+
+    /**
+     * Fetches the changelog for a ticket and returns the accountId of the most
+     * recent person it was assigned TO (i.e. last non-null assignee in history).
+     * Returns null if no assignee history exists.
+     */
+    public String getLastAssigneeAccountId(String issueKey) {
+        String url = props.getUrl() + "/rest/api/3/issue/" + issueKey + "/changelog";
+        try {
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                url, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+
+            JsonNode body = response.getBody();
+            if (body == null || !body.has("values")) return null;
+
+            List<JsonNode> entries = new ArrayList<>();
+            body.get("values").forEach(entries::add);
+            Collections.reverse(entries); // most recent first
+
+            for (JsonNode entry : entries) {
+                if (!entry.has("items")) continue;
+                for (JsonNode item : entry.get("items")) {
+                    if ("assignee".equals(item.path("field").asText())) {
+                        String to = item.path("to").asText(null);
+                        if (to != null && !to.isBlank()) return to;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not fetch changelog for {}: {}", issueKey, e.getMessage());
+        }
+        return null;
+    }
+
+    /** Reverse-lookup: accountId → email address. Returns accountId as fallback. */
+    public String getUserEmail(String accountId) {
+        String url = UriComponentsBuilder
+            .fromHttpUrl(props.getUrl() + "/rest/api/3/user")
+            .queryParam("accountId", accountId)
+            .toUriString();
+        try {
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                url, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+            JsonNode user = response.getBody();
+            if (user != null) return user.path("emailAddress").asText(accountId);
+        } catch (Exception e) {
+            log.warn("Could not fetch email for accountId {}: {}", accountId, e.getMessage());
+        }
+        return accountId;
+    }
+
     // -----------------------------------------------------------------------
     // Ticket mutations
     // -----------------------------------------------------------------------
