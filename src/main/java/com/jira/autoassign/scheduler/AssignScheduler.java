@@ -32,14 +32,14 @@ public class AssignScheduler {
         }
     }
 
-    /** Clears the activity log every hour (at the top of the hour). */
-    @Scheduled(cron = "0 0 * * * *")
-    public void clearActivityLog() {
-        log.info("Clearing activity log.");
+    /** Purges activity log and shift roster entries older than 7 days — runs daily at midnight IST. */
+    @Scheduled(cron = "0 0 0 * * *", zone = "Asia/Kolkata")
+    public void purgeOldData() {
+        log.info("Running daily purge of data older than 7 days.");
         try {
-            shiftAssignService.clearActivityLog();
+            shiftAssignService.purgeOldData();
         } catch (Exception e) {
-            log.error("Activity log clear failed: {}", e.getMessage(), e);
+            log.error("Daily purge failed: {}", e.getMessage(), e);
         }
     }
 }

@@ -12,6 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -78,18 +79,41 @@ public class UploadController {
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> status() {
         List<ShiftRoster> active = shiftAssignService.getActiveShifts();
+        Set<String> paused = shiftAssignService.getPausedEmails();
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("currentTime", LocalDateTime.now().toString());
-        resp.put("activeCount", active.size());
+        resp.put("activeCount", active.stream().map(ShiftRoster::getEmail).distinct()
+                .filter(e -> !paused.contains(e)).count());
         resp.put("activeAssignees", active.stream().map(s -> {
-            Map<String, String> m = new LinkedHashMap<>();
+            Map<String, Object> m = new LinkedHashMap<>();
             m.put("email",      s.getEmail());
             m.put("shiftDate",  s.getShiftDate().toString());
             m.put("shiftStart", s.getShiftStart().toString());
             m.put("shiftEnd",   s.getShiftEnd().toString());
+            m.put("paused",     paused.contains(s.getEmail()));
             return m;
         }).collect(Collectors.toList()));
         return ResponseEntity.ok(resp);
+    }
+
+    /** Pause an assignee — they stay on the roster but are skipped during ticket assignment. */
+    @PostMapping("/shift/pause")
+    public ResponseEntity<Map<String, Object>> pauseAssignee(@RequestBody Map<String, String> body) {
+        String email = body.get("email");
+        if (email == null || email.isBlank())
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing 'email' field"));
+        shiftAssignService.pauseEmail(email);
+        return ResponseEntity.ok(Map.of("paused", true, "email", email));
+    }
+
+    /** Resume a paused assignee so they receive tickets again. */
+    @PostMapping("/shift/resume")
+    public ResponseEntity<Map<String, Object>> resumeAssignee(@RequestBody Map<String, String> body) {
+        String email = body.get("email");
+        if (email == null || email.isBlank())
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing 'email' field"));
+        shiftAssignService.resumeEmail(email);
+        return ResponseEntity.ok(Map.of("paused", false, "email", email));
     }
 
     @GetMapping("/activity")

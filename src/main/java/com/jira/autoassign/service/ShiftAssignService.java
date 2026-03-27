@@ -12,8 +12,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.*;
+import java.util.Collections;
 import java.util.stream.Collectors;
 
 /**
@@ -37,6 +39,9 @@ public class ShiftAssignService {
     // In-memory round-robin index — resets on restart, which is fine.
     private int rrIndex = 0;
 
+    // Emails manually paused from receiving assignments via the UI.
+    private final Set<String> pausedEmails = new java.util.HashSet<>();
+
     public ShiftAssignService(JiraClient jiraClient, ShiftRosterRepository repository,
                               AssignmentLogRepository logRepository, JiraProperties props) {
         this.jiraClient    = jiraClient;
@@ -59,8 +64,13 @@ public class ShiftAssignService {
         // --- Step 1: who is on shift right now? ---
         List<ShiftRoster> activeShifts = repository.findActiveShifts(today, yesterday, now);
         List<String> activeEmails = activeShifts.stream()
-            .map(ShiftRoster::getEmail).distinct().collect(Collectors.toList());
+            .map(ShiftRoster::getEmail).distinct()
+            .filter(e -> !pausedEmails.contains(e))
+            .collect(Collectors.toList());
 
+        if (!pausedEmails.isEmpty()) {
+            log.info("Paused (skipped) assignees: {}", pausedEmails);
+        }
         log.info("Active shift assignees: {}", activeEmails.isEmpty() ? "NONE" : activeEmails);
 
         // --- Step 2: assign unassigned tickets to active shift people ---
@@ -192,10 +202,29 @@ public class ShiftAssignService {
     // Used by REST endpoints
     // -----------------------------------------------------------------------
 
-    public void clearActivityLog() {
-        long count = logRepository.count();
-        logRepository.deleteAll();
-        log.info("Activity log cleared — {} entries removed.", count);
+    public void pauseEmail(String email) {
+        pausedEmails.add(email.toLowerCase().trim());
+        log.info("Paused from assignments: {}", email);
+    }
+
+    public void resumeEmail(String email) {
+        pausedEmails.remove(email.toLowerCase().trim());
+        log.info("Resumed for assignments: {}", email);
+    }
+
+    public Set<String> getPausedEmails() {
+        return Collections.unmodifiableSet(pausedEmails);
+    }
+
+    public void purgeOldData() {
+        LocalDateTime logCutoff    = LocalDateTime.now().minusDays(7);
+        LocalDate     rosterCutoff = LocalDate.now().minusDays(7);
+
+        long logsDeleted   = logRepository.deleteByAssignedAtBefore(logCutoff);
+        long rosterDeleted = repository.deleteByShiftDateBefore(rosterCutoff);
+
+        log.info("Purged data older than 7 days — activity log: {} rows, shift roster: {} rows.",
+                 logsDeleted, rosterDeleted);
     }
 
     public List<ShiftRoster> getActiveShifts() {

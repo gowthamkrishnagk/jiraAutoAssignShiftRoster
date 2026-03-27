@@ -55,4 +55,9 @@ public interface ShiftRosterRepository extends JpaRepository<ShiftRoster, Long> 
     @Transactional
     @Query("DELETE FROM ShiftRoster s WHERE s.shiftDate >= :start AND s.shiftDate < :end")
     void deleteByMonthRange(@Param("start") LocalDate start, @Param("end") LocalDate end);
+
+    /** Delete all shift entries whose date is before the given cutoff. */
+    @Modifying
+    @Transactional
+    long deleteByShiftDateBefore(LocalDate cutoff);
 }

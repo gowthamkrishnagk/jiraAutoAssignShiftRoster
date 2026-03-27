@@ -215,9 +215,26 @@
       padding: 9px 12px;
       display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;
     }
+    .a-card.paused { background: #fff4e5; border: 1px solid #ffe380; opacity: .85; }
     .a-email { font-weight: 600; font-size: .88rem; }
     .a-time  { font-size: .78rem; color: #5e6c84; }
     .ts      { font-size: .72rem; color: #97a0af; margin-left: auto; }
+    .paused-tag {
+      font-size: .7rem; font-weight: 700; color: #974F0C;
+      background: #ffe380; border-radius: 10px; padding: 1px 8px; margin-left: 6px;
+    }
+    .btn-sm {
+      font-size: .75rem; font-weight: 600; padding: 4px 10px;
+      border-radius: 4px; cursor: pointer; border: none; transition: background .15s;
+    }
+    .btn-remove { background: #ffebe6; color: #de350b; border: 1px solid #ff8f73; }
+    .btn-remove:hover { background: #ff8f73; color: #fff; }
+    .btn-restore { background: #e3fcef; color: #006644; border: 1px solid #57d9a3; }
+    .btn-restore:hover { background: #57d9a3; color: #fff; }
+    .shift-section-label {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .5px; color: #5e6c84; margin: 12px 0 4px;
+    }
 
     /* schedule table */
     .tbl-wrap { overflow-x: auto; }
@@ -696,21 +713,39 @@ async function loadStatus() {
     document.getElementById('status-ts').textContent =
       'as of ' + new Date(data.currentTime).toLocaleTimeString();
 
-    const on = data.activeCount > 0;
+    const assignees = data.activeAssignees || [];
+    const active  = assignees.filter(a => !a.paused);
+    const paused  = assignees.filter(a =>  a.paused);
+    const on = active.length > 0;
+
     let html = `<span class="badge ${on ? 'badge-on' : 'badge-off'}">
       <span class="dot ${on ? 'dot-on' : 'dot-off'}"></span>
       ${on ? 'Shift Active' : 'No Active Shift'}
     </span>`;
 
-    if (on) {
-      html += '<div class="a-cards">';
-      data.activeAssignees.forEach(a => {
-        html += `<div class="a-card">
-          <span class="a-email">${esc(a.email)}</span>
-          <span class="a-time">${a.shiftDate} &nbsp; ${a.shiftStart} – ${a.shiftEnd}</span>
-        </div>`;
-      });
-      html += '</div>';
+    if (assignees.length > 0) {
+      if (active.length > 0) {
+        html += '<div class="shift-section-label">On Shift</div><div class="a-cards">';
+        active.forEach(a => {
+          html += `<div class="a-card">
+            <span class="a-email">${esc(a.email)}</span>
+            <span class="a-time">${a.shiftDate} &nbsp; ${a.shiftStart} – ${a.shiftEnd}</span>
+            <button class="btn-sm btn-remove" onclick="pauseAssignee('${esc(a.email)}')">Remove</button>
+          </div>`;
+        });
+        html += '</div>';
+      }
+      if (paused.length > 0) {
+        html += '<div class="shift-section-label">Paused</div><div class="a-cards">';
+        paused.forEach(a => {
+          html += `<div class="a-card paused">
+            <span class="a-email">${esc(a.email)}<span class="paused-tag">paused</span></span>
+            <span class="a-time">${a.shiftDate} &nbsp; ${a.shiftStart} – ${a.shiftEnd}</span>
+            <button class="btn-sm btn-restore" onclick="resumeAssignee('${esc(a.email)}')">Add Back</button>
+          </div>`;
+        });
+        html += '</div>';
+      }
     } else {
       html += '<p class="no-data" style="margin-top:8px;">No one is on shift right now.</p>';
     }
@@ -718,6 +753,24 @@ async function loadStatus() {
   } catch {
     el.innerHTML = '<p class="no-data">Could not load status.</p>';
   }
+}
+
+async function pauseAssignee(email) {
+  await fetch('/api/shift/pause', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+  loadStatus();
+}
+
+async function resumeAssignee(email) {
+  await fetch('/api/shift/resume', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+  loadStatus();
 }
 
 // ---- schedule ----
