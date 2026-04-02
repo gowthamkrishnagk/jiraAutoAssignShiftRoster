@@ -1,11 +1,23 @@
 package com.jira.autoassign.auth;
 
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "app_users")
 public class User {
 
-    private final String name;
-    private final String email;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+    private String email;
     private String password; // BCrypt hashed
+
+    @Enumerated(EnumType.STRING)
     private Role role;
+
+    public User() {}
 
     public User(String name, String email, String password, Role role) {
         this.name = name;
