@@ -27,9 +27,7 @@ public class UserStore {
 
     @PostConstruct
     public void init() {
-        // Add your team members here
-        addUser("Alice", "alice@company.com", Role.ADMIN);
-        addUser("Bob", "bob@company.com", Role.USER);
+        addUser("Gowtham", "gowtham.krishna@libertypr.com", Role.ADMIN);
     }
 
     /** Creates a user with default password: name + "Orderfallout" and role USER */
