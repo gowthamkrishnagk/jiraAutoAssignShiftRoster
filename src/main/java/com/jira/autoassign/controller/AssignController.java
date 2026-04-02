@@ -1,6 +1,6 @@
 package com.jira.autoassign.controller;
 
-import com.jira.autoassign.service.AssignService;
+import com.jira.autoassign.service.ShiftAssignService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,16 +12,16 @@ import java.util.Map;
 @RequestMapping("/api/assign")
 public class AssignController {
 
-    private final AssignService assignService;
+    private final ShiftAssignService assignService;
 
-    public AssignController(AssignService assignService) {
+    public AssignController(ShiftAssignService assignService) {
         this.assignService = assignService;
     }
 
     /** Manually trigger an assignment run. Requires JWT. */
     @PostMapping("/run")
     public ResponseEntity<?> triggerRun() {
-        assignService.runAssignment();
+        assignService.runShiftAssignment();
         return ResponseEntity.ok(Map.of("message", "Assignment run triggered"));
     }
 }
