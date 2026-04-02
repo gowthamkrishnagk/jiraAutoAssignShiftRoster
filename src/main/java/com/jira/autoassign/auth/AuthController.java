@@ -61,7 +61,33 @@ public class AuthController {
         ));
     }
 
+    /** Returns true if no users exist yet — used by UI to show setup screen */
+    @GetMapping("/needs-setup")
+    public ResponseEntity<?> needsSetup() {
+        return ResponseEntity.ok(Map.of("needsSetup", userStore.isEmpty()));
+    }
+
+    /** First-run setup — creates the first ADMIN. Blocked once any user exists. */
+    @PostMapping("/setup")
+    public ResponseEntity<?> setup(@RequestBody SetupRequest req) {
+        if (!userStore.isEmpty()) {
+            return ResponseEntity.status(403).body(Map.of("error", "Setup already completed"));
+        }
+        if (req.name() == null || req.name().isBlank() || req.email() == null || req.email().isBlank()) {
+            return ResponseEntity.status(400).body(Map.of("error", "Name and email are required"));
+        }
+        userStore.addUser(req.name(), req.email(), Role.ADMIN);
+        String token = jwtUtil.generateToken(req.email());
+        return ResponseEntity.ok(Map.of(
+                "token", token,
+                "name", req.name(),
+                "role", Role.ADMIN,
+                "defaultPassword", req.name() + "Orderfallout"
+        ));
+    }
+
     record LoginRequest(String email, String password) {}
     record ChangePasswordRequest(String currentPassword, String newPassword) {}
     record AddUserRequest(String name, String email, Role role) {}
+    record SetupRequest(String name, String email) {}
 }

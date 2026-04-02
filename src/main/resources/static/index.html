@@ -385,17 +385,43 @@
     </div>
     <h2>Jira Auto-Assign</h2>
     <p>Sign in to manage your shift roster</p>
-    <div class="login-err" id="login-err"></div>
-    <div class="login-field">
-      <label>Email</label>
-      <input type="email" id="login-email" placeholder="you@company.com" />
+    <!-- Setup panel (shown on first run) -->
+    <div id="setup-panel" style="display:none">
+      <p style="font-size:.82rem;color:#5e6c84;text-align:center;margin-bottom:18px;">
+        No accounts yet. Create the first admin account.
+      </p>
+      <div class="login-err" id="setup-err"></div>
+      <div class="login-field">
+        <label>Your Name</label>
+        <input type="text" id="setup-name" placeholder="Gowtham" />
+      </div>
+      <div class="login-field">
+        <label>Email</label>
+        <input type="email" id="setup-email" placeholder="you@company.com"
+               onkeydown="if(event.key==='Enter')doSetup()" />
+      </div>
+      <button class="login-submit" id="setup-btn" onclick="doSetup()">Create Admin Account</button>
+      <div id="setup-result" style="display:none;margin-top:14px;background:#e3fcef;border:1px solid #57d9a3;border-radius:4px;padding:12px;font-size:.82rem;">
+        <strong>Account created!</strong><br>
+        <span id="setup-creds"></span><br>
+        <span style="color:#5e6c84;">Logging you in…</span>
+      </div>
     </div>
-    <div class="login-field">
-      <label>Password</label>
-      <input type="password" id="login-pwd" placeholder="••••••••"
-             onkeydown="if(event.key==='Enter')doLogin()" />
+
+    <!-- Login panel (shown normally) -->
+    <div id="login-panel">
+      <div class="login-err" id="login-err"></div>
+      <div class="login-field">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="you@company.com" />
+      </div>
+      <div class="login-field">
+        <label>Password</label>
+        <input type="password" id="login-pwd" placeholder="••••••••"
+               onkeydown="if(event.key==='Enter')doLogin()" />
+      </div>
+      <button class="login-submit" id="login-btn" onclick="doLogin()">Sign In</button>
     </div>
-    <button class="login-submit" id="login-btn" onclick="doLogin()">Sign In</button>
   </div>
 </div>
 
@@ -703,9 +729,58 @@ function showApp() {
   loadSchedule();
 }
 
-// Auto-enter app if already logged in
+async function doSetup() {
+  const name  = document.getElementById('setup-name').value.trim();
+  const email = document.getElementById('setup-email').value.trim();
+  const errEl = document.getElementById('setup-err');
+  const btn   = document.getElementById('setup-btn');
+  errEl.classList.remove('visible');
+  if (!name || !email) { errEl.textContent = 'Name and email are required'; errEl.classList.add('visible'); return; }
+  btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    const res  = await _fetch('/api/auth/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email })
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Setup failed'; errEl.classList.add('visible'); btn.disabled = false; btn.textContent = 'Create Admin Account'; return; }
+    // Show credentials
+    document.getElementById('setup-creds').textContent =
+      'Email: ' + email + ' | Password: ' + data.defaultPassword;
+    document.getElementById('setup-result').style.display = 'block';
+    btn.style.display = 'none';
+    // Auto-login after 2 seconds
+    token    = data.token;
+    userName = data.name;
+    userRole = String(data.role);
+    localStorage.setItem('jira_token', token);
+    localStorage.setItem('jira_user', userName);
+    localStorage.setItem('jira_role', userRole);
+    setTimeout(showApp, 2000);
+  } catch {
+    errEl.textContent = 'Cannot connect to server';
+    errEl.classList.add('visible');
+    btn.disabled = false; btn.textContent = 'Create Admin Account';
+  }
+}
+
+async function checkSetup() {
+  try {
+    const res  = await _fetch('/api/auth/needs-setup');
+    const data = await res.json();
+    if (data.needsSetup) {
+      document.getElementById('setup-panel').style.display = 'block';
+      document.getElementById('login-panel').style.display = 'none';
+    }
+  } catch { /* ignore — show login by default */ }
+}
+
+// Auto-enter app if already logged in, otherwise check if setup needed
 if (token) {
   document.addEventListener('DOMContentLoaded', showApp);
+} else {
+  document.addEventListener('DOMContentLoaded', checkSetup);
 }
 
 // ---- file pick / drag-drop ----

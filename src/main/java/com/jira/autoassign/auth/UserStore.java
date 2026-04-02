@@ -27,7 +27,11 @@ public class UserStore {
 
     @PostConstruct
     public void init() {
-        addUser("Gowtham", "gowtham.krishna@libertypr.com", Role.ADMIN);
+        // Empty — first admin is created via POST /api/auth/setup
+    }
+
+    public boolean isEmpty() {
+        return users.isEmpty();
     }
 
     /** Creates a user with default password: name + "Orderfallout" and role USER */
