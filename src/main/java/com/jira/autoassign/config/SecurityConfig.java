@@ -25,7 +25,7 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/index.html", "/activity.html", "/favicon.ico",
+                .requestMatchers("/", "/index.html", "/activity.html", "/add-user.html", "/favicon.ico",
                         "/api/auth/login", "/api/auth/setup", "/api/auth/needs-setup",
                         "/api/status").permitAll()  // public
                 .anyRequest().authenticated()                    // everything else needs JWT

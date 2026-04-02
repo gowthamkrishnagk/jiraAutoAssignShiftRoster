@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add User — Jira Shift Roster</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f4f5f7;
+      color: #172b4d;
+    }
+
+    header {
+      background: #0052cc;
+      color: #fff;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 2px 4px rgba(0,0,0,.25);
+    }
+    header h1 { font-size: 1.05rem; font-weight: 600; flex: 1; }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255,255,255,.15);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,.35);
+      border-radius: 4px;
+      padding: 5px 12px;
+      font-size: .8rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background .15s;
+    }
+    .back-btn:hover { background: rgba(255,255,255,.25); }
+
+    main {
+      max-width: 520px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 28px 28px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.1);
+    }
+    .card-title {
+      font-size: .8rem;
+      font-weight: 700;
+      color: #0052cc;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      margin-bottom: 22px;
+    }
+
+    .field { margin-bottom: 16px; }
+    label {
+      display: block;
+      font-size: .78rem;
+      font-weight: 600;
+      color: #5e6c84;
+      margin-bottom: 5px;
+    }
+    input, select {
+      width: 100%;
+      padding: 8px 11px;
+      border: 1.5px solid #dfe1e6;
+      border-radius: 4px;
+      font-size: .88rem;
+      outline: none;
+      background: #fff;
+      transition: border-color .15s;
+    }
+    input:focus, select:focus { border-color: #0052cc; }
+
+    .btn {
+      width: 100%;
+      padding: 10px;
+      background: #0052cc;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: .88rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background .15s;
+    }
+    .btn:hover { background: #0043a8; }
+    .btn:disabled { background: #97a0af; cursor: not-allowed; }
+
+    .alert { margin-top: 14px; padding: 10px 14px; border-radius: 4px; font-size: .85rem; display: none; }
+    .ok  { background: #e3fcef; color: #006644; border: 1px solid #57d9a3; }
+    .err { background: #ffebe6; color: #bf2600; border: 1px solid #ff8f73; }
+
+    .admin-note {
+      margin-top: 18px;
+      font-size: .78rem;
+      color: #5e6c84;
+      background: #f8f9ff;
+      border: 1px solid #dce4ff;
+      border-radius: 6px;
+      padding: 10px 14px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M21.41 11.58l-9-9A2 2 0 0011 2H4a2 2 0 00-2 2v7c0 .53.21 1.04.59 1.42l9 9a2 2 0 002.82 0l7-7a2 2 0 000-2.84zM7 9a2 2 0 110-4 2 2 0 010 4z"/>
+  </svg>
+  <h1>Add User</h1>
+  <a class="back-btn" href="/">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+    </svg>
+    Back to Roster
+  </a>
+</header>
+
+<main>
+  <div class="card">
+    <div class="card-title">Create New User</div>
+
+    <div class="field">
+      <label for="new-name">Full Name</label>
+      <input type="text" id="new-name" placeholder="Gowtham" />
+    </div>
+
+    <div class="field">
+      <label for="new-email">Email Address</label>
+      <input type="email" id="new-email" placeholder="gowtham@company.com" />
+    </div>
+
+    <div class="field">
+      <label for="new-role">Role</label>
+      <select id="new-role">
+        <option value="USER">User</option>
+        <option value="ADMIN">Admin</option>
+      </select>
+    </div>
+
+    <button class="btn" id="add-btn" onclick="addUser()">Add User</button>
+
+    <div id="result" class="alert"></div>
+
+    <div class="admin-note">
+      The default password will be <strong>&lt;name&gt;Orderfallout</strong>. The user can change it after logging in.
+    </div>
+  </div>
+</main>
+
+<script>
+  const token = localStorage.getItem('jira_token');
+  const role  = localStorage.getItem('jira_role');
+
+  // Redirect if not logged in or not admin
+  if (!token || role !== 'ADMIN') {
+    window.location.href = '/';
+  }
+
+  async function addUser() {
+    const name  = document.getElementById('new-name').value.trim();
+    const email = document.getElementById('new-email').value.trim();
+    const role  = document.getElementById('new-role').value;
+    const resEl = document.getElementById('result');
+    const btn   = document.getElementById('add-btn');
+    resEl.style.display = 'none';
+
+    if (!name || !email) {
+      resEl.textContent = 'Name and email are required.';
+      resEl.className = 'alert err';
+      resEl.style.display = 'block';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+
+    try {
+      const res  = await fetch('/api/auth/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ name, email, role })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        resEl.textContent = data.error || 'Failed to add user.';
+        resEl.className = 'alert err';
+      } else {
+        resEl.textContent = 'User added! Default password: ' + name + 'Orderfallout';
+        resEl.className = 'alert ok';
+        document.getElementById('new-name').value  = '';
+        document.getElementById('new-email').value = '';
+        document.getElementById('new-role').value  = 'USER';
+      }
+    } catch {
+      resEl.textContent = 'Cannot connect to server.';
+      resEl.className = 'alert err';
+    }
+
+    resEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Add User';
+  }
+</script>
+</body>
+</html>

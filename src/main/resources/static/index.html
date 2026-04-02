@@ -432,6 +432,12 @@
   <h1>Jira Shift Roster Manager</h1>
   <span class="user-badge" id="user-badge"></span>
   <button class="logout-btn" id="logout-btn" onclick="doLogout()">Logout</button>
+  <a class="activity-btn" id="add-user-btn" href="/add-user.html" style="display:none">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+    </svg>
+    Add User
+  </a>
   <a class="activity-btn" href="/activity.html">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
       <path d="M13 2.05V4.07c3.39.49 6 3.39 6 6.93 0 3.21-1.81 6-4.72 7.28L13 17v2.95c4.01-.5 7-3.85 7-7.88 0-4.34-3.05-8.03-7-8.97M11 2.05C6.99 2.55 4 5.9 4 9.93c0 4.03 2.99 7.37 7 7.88V15.8c-2.77-.49-5-2.9-5-5.87 0-2.97 2.23-5.38 5-5.87V2.05M12 12.5l4-4-1.41-1.42L12 9.67l-1.59-1.59L9 9.5l3 3z"/>
@@ -642,32 +648,6 @@
     <div id="schedule-content"><div class="spin"></div></div>
   </div>
 
-  <!-- Add User (ADMIN only) -->
-  <div class="card" id="add-user-card" style="display:none">
-    <div class="card-title">Add User</div>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
-      <div style="flex:1;min-width:140px;">
-        <label style="display:block;font-size:.78rem;font-weight:600;color:#5e6c84;margin-bottom:4px;">Name</label>
-        <input type="text" id="new-user-name" placeholder="Gowtham"
-          style="width:100%;padding:7px 10px;border:1.5px solid #dfe1e6;border-radius:4px;font-size:.88rem;outline:none;" />
-      </div>
-      <div style="flex:1;min-width:200px;">
-        <label style="display:block;font-size:.78rem;font-weight:600;color:#5e6c84;margin-bottom:4px;">Email</label>
-        <input type="email" id="new-user-email" placeholder="gowtham@company.com"
-          style="width:100%;padding:7px 10px;border:1.5px solid #dfe1e6;border-radius:4px;font-size:.88rem;outline:none;" />
-      </div>
-      <div style="min-width:120px;">
-        <label style="display:block;font-size:.78rem;font-weight:600;color:#5e6c84;margin-bottom:4px;">Role</label>
-        <select id="new-user-role"
-          style="width:100%;padding:7px 10px;border:1.5px solid #dfe1e6;border-radius:4px;font-size:.88rem;outline:none;background:#fff;">
-          <option value="USER">User</option>
-          <option value="ADMIN">Admin</option>
-        </select>
-      </div>
-      <button class="btn" onclick="addUser()" style="flex-shrink:0;">Add User</button>
-    </div>
-    <div id="add-user-result" style="margin-top:10px;display:none;" class="alert ok"></div>
-  </div>
 
 </main>
 
@@ -752,47 +732,11 @@ function showApp() {
   badge.style.display = 'inline-flex';
   document.getElementById('logout-btn').style.display = 'inline-block';
   if (userRole === 'ADMIN') {
-    document.getElementById('add-user-card').style.display = 'block';
+    document.getElementById('add-user-btn').style.display = 'inline-flex';
   }
   loadDryRun();
   loadStatus();
   loadSchedule();
-}
-
-async function addUser() {
-  const name  = document.getElementById('new-user-name').value.trim();
-  const email = document.getElementById('new-user-email').value.trim();
-  const role  = document.getElementById('new-user-role').value;
-  const resEl = document.getElementById('add-user-result');
-  resEl.style.display = 'none';
-  if (!name || !email) {
-    resEl.textContent = 'Name and email are required';
-    resEl.className = 'alert err';
-    resEl.style.display = 'block';
-    return;
-  }
-  try {
-    const res  = await fetch('/api/auth/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, role })
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      resEl.textContent = data.error || 'Failed to add user';
-      resEl.className = 'alert err';
-    } else {
-      resEl.textContent = 'User added! Default password: ' + name + 'Orderfallout';
-      resEl.className = 'alert ok';
-      document.getElementById('new-user-name').value = '';
-      document.getElementById('new-user-email').value = '';
-      document.getElementById('new-user-role').value = '';
-    }
-  } catch {
-    resEl.textContent = 'Cannot connect to server';
-    resEl.className = 'alert err';
-  }
-  resEl.style.display = 'block';
 }
 
 async function doSetup() {
