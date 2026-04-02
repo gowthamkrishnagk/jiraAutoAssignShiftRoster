@@ -244,6 +244,21 @@
 </main>
 
 <script>
+  // ---- Auth guard ----
+  const _token = localStorage.getItem('jira_token');
+  if (!_token) { location.href = '/'; }
+
+  const _fetch = window.fetch.bind(window);
+  window.fetch = function(url, opts = {}) {
+    if (_token && typeof url === 'string' && url.startsWith('/api/')) {
+      opts.headers = { ...opts.headers, 'Authorization': 'Bearer ' + _token };
+    }
+    return _fetch(url, opts).then(res => {
+      if (res.status === 401 || res.status === 403) { location.href = '/'; }
+      return res;
+    });
+  };
+
   async function load() {
     const btn = document.getElementById('refreshBtn');
     btn.disabled = true;

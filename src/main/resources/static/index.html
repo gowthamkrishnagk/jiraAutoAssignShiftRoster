@@ -311,6 +311,59 @@
     .dry-status.on  { background: #fff4e5; color: #974F0C; border: 1px solid #ffbe33; }
     .dry-status.off { background: #e3fcef; color: #006644; border: 1px solid #57d9a3; }
 
+    /* ---- Login overlay ---- */
+    #login-overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      background: linear-gradient(135deg, #0052cc 0%, #172b4d 100%);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .login-box {
+      background: #fff; border-radius: 12px; padding: 36px 40px;
+      width: 100%; max-width: 400px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.4);
+    }
+    .login-logo {
+      width: 56px; height: 56px; border-radius: 12px; background: #0052cc;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 16px;
+    }
+    .login-box h2 { text-align:center; font-size: 1.25rem; font-weight: 700; color: #172b4d; margin-bottom: 4px; }
+    .login-box p  { text-align:center; font-size: .82rem; color: #5e6c84; margin-bottom: 22px; }
+    .login-field  { margin-bottom: 14px; }
+    .login-field label { display:block; font-size:.8rem; font-weight:600; color:#5e6c84; margin-bottom:5px; }
+    .login-field input {
+      width:100%; padding:9px 12px; border:1.5px solid #dfe1e6;
+      border-radius:4px; font-size:.9rem; outline:none; transition:border-color .15s;
+    }
+    .login-field input:focus { border-color:#0052cc; }
+    .login-submit {
+      width:100%; padding:10px; background:#0052cc; color:#fff;
+      border:none; border-radius:4px; font-size:.95rem; font-weight:700;
+      cursor:pointer; margin-top:4px; transition:background .15s;
+    }
+    .login-submit:hover:not(:disabled) { background:#0065ff; }
+    .login-submit:disabled { background:#97a0af; cursor:not-allowed; }
+    .login-err {
+      background:#ffebe6; color:#bf2600; border:1px solid #ff8f73;
+      border-radius:4px; padding:8px 12px; font-size:.82rem;
+      margin-bottom:14px; display:none;
+    }
+    .login-err.visible { display:block; }
+    /* ---- Header auth area ---- */
+    .user-badge {
+      display:none; align-items:center; gap:5px;
+      background:rgba(255,255,255,.15); color:#fff;
+      border:1px solid rgba(255,255,255,.3); border-radius:4px;
+      padding:4px 10px; font-size:.8rem; font-weight:600;
+    }
+    .logout-btn {
+      display:none; background:rgba(255,255,255,.12); color:#fff;
+      border:1px solid rgba(255,255,255,.3); border-radius:4px;
+      padding:4px 10px; font-size:.8rem; font-weight:600;
+      cursor:pointer; transition:background .15s;
+    }
+    .logout-btn:hover { background:rgba(255,255,255,.25); }
+
     .no-data { color: #5e6c84; font-size: .85rem; padding: 4px 0; }
     .spin {
       border: 3px solid #dfe1e6; border-top-color: #0052cc;
@@ -322,11 +375,37 @@
 </head>
 <body>
 
+<!-- LOGIN OVERLAY -->
+<div id="login-overlay">
+  <div class="login-box">
+    <div class="login-logo">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff">
+        <path d="M21.41 11.58l-9-9A2 2 0 0011 2H4a2 2 0 00-2 2v7c0 .53.21 1.04.59 1.42l9 9a2 2 0 002.82 0l7-7a2 2 0 000-2.84zM7 9a2 2 0 110-4 2 2 0 010 4z"/>
+      </svg>
+    </div>
+    <h2>Jira Auto-Assign</h2>
+    <p>Sign in to manage your shift roster</p>
+    <div class="login-err" id="login-err"></div>
+    <div class="login-field">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="you@company.com" />
+    </div>
+    <div class="login-field">
+      <label>Password</label>
+      <input type="password" id="login-pwd" placeholder="••••••••"
+             onkeydown="if(event.key==='Enter')doLogin()" />
+    </div>
+    <button class="login-submit" id="login-btn" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+
 <header>
   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
     <path d="M21.41 11.58l-9-9A2 2 0 0011 2H4a2 2 0 00-2 2v7c0 .53.21 1.04.59 1.42l9 9a2 2 0 002.82 0l7-7a2 2 0 000-2.84zM7 9a2 2 0 110-4 2 2 0 010 4z"/>
   </svg>
   <h1>Jira Shift Roster Manager</h1>
+  <span class="user-badge" id="user-badge"></span>
+  <button class="logout-btn" id="logout-btn" onclick="doLogout()">Logout</button>
   <a class="activity-btn" href="/activity.html">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
       <path d="M13 2.05V4.07c3.39.49 6 3.39 6 6.93 0 3.21-1.81 6-4.72 7.28L13 17v2.95c4.01-.5 7-3.85 7-7.88 0-4.34-3.05-8.03-7-8.97M11 2.05C6.99 2.55 4 5.9 4 9.93c0 4.03 2.99 7.37 7 7.88V15.8c-2.77-.49-5-2.9-5-5.87 0-2.97 2.23-5.38 5-5.87V2.05M12 12.5l4-4-1.41-1.42L12 9.67l-1.59-1.59L9 9.5l3 3z"/>
@@ -540,6 +619,95 @@
 </main>
 
 <script>
+// ================================================================
+// AUTH — login overlay + JWT injection via fetch override
+// ================================================================
+let token    = localStorage.getItem('jira_token');
+let userName = localStorage.getItem('jira_user') || '';
+let userRole = localStorage.getItem('jira_role') || '';
+
+// Keep a reference to the real fetch before overriding
+const _fetch = window.fetch.bind(window);
+
+// Override fetch so every /api/* call automatically carries the JWT
+window.fetch = function(url, opts = {}) {
+  if (token && typeof url === 'string' && url.startsWith('/api/') && url !== '/api/auth/login') {
+    opts.headers = { ...opts.headers, 'Authorization': 'Bearer ' + token };
+  }
+  return _fetch(url, opts).then(res => {
+    if ((res.status === 401 || res.status === 403) && url !== '/api/auth/login') {
+      doLogout();
+    }
+    return res;
+  });
+};
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pwd   = document.getElementById('login-pwd').value;
+  const errEl = document.getElementById('login-err');
+  const btn   = document.getElementById('login-btn');
+  errEl.classList.remove('visible');
+  if (!email || !pwd) {
+    errEl.textContent = 'Email and password are required';
+    errEl.classList.add('visible');
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const res  = await _fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pwd })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Login failed';
+      errEl.classList.add('visible');
+      return;
+    }
+    token    = data.token;
+    userName = data.name;
+    userRole = data.role;
+    localStorage.setItem('jira_token', token);
+    localStorage.setItem('jira_user', userName);
+    localStorage.setItem('jira_role', userRole);
+    showApp();
+  } catch {
+    errEl.textContent = 'Cannot connect to server';
+    errEl.classList.add('visible');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Sign In';
+  }
+}
+
+function doLogout() {
+  token = null;
+  localStorage.removeItem('jira_token');
+  localStorage.removeItem('jira_user');
+  localStorage.removeItem('jira_role');
+  document.getElementById('login-overlay').style.display = 'flex';
+  document.getElementById('login-err').classList.remove('visible');
+  document.getElementById('login-email').value = '';
+  document.getElementById('login-pwd').value   = '';
+}
+
+function showApp() {
+  document.getElementById('login-overlay').style.display = 'none';
+  const badge = document.getElementById('user-badge');
+  badge.textContent = userName + (userRole === 'ADMIN' ? ' · Admin' : '');
+  badge.style.display = 'inline-flex';
+  document.getElementById('logout-btn').style.display = 'inline-block';
+  loadDryRun();
+  loadStatus();
+  loadSchedule();
+}
+
+// Auto-enter app if already logged in
+if (token) {
+  document.addEventListener('DOMContentLoaded', showApp);
+}
+
 // ---- file pick / drag-drop ----
 const dropZone   = document.getElementById('drop-zone');
 const fileInput  = document.getElementById('file-input');
@@ -868,9 +1036,6 @@ function applyDryRunState(enabled, message) {
   }
 }
 
-loadDryRun();
-loadStatus();
-loadSchedule();
 setInterval(loadStatus, 60000);
 </script>
 </body>
