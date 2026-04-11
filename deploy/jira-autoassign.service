@@ -1,0 +1,34 @@
+[Unit]
+Description=Jira Auto-Assign Shift Roster
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/jira-autoassign/app
+
+# ── Jira credentials ──────────────────────────────────────────
+Environment="JIRA_URL=https://lla.atlassian.net"
+Environment="JIRA_EMAIL=your-email@company.com"
+Environment="JIRA_API_TOKEN=your-api-token-here"
+Environment="JIRA_CUSTOM_JQL=project = SAC AND status in (\"In Progress\",\"Waiting for support\",\"Escalated\") and \"Reporting Area[Dropdown]\" = \"Order Fallout\" and Assignee in (EMPTY) and \"Escalation Path[Dropdown]\" is EMPTY ORDER BY created ASC"
+
+# ── Database ──────────────────────────────────────────────────
+Environment="DB_PROFILE=postgres"
+Environment="DB_URL=jdbc:postgresql://localhost:5432/jiraassign"
+Environment="DB_USER=jiraassign"
+Environment="DB_PASSWORD=changeme"
+
+# ── App ───────────────────────────────────────────────────────
+Environment="PORT=8080"
+Environment="JIRA_DRY_RUN=false"
+
+ExecStart=/usr/bin/java -jar /opt/jira-autoassign/app/autoassign-1.0.0.jar
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

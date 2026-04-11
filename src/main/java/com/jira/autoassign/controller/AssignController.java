@@ -18,10 +18,10 @@ public class AssignController {
         this.assignService = assignService;
     }
 
-    /** Manually trigger an assignment run. Requires JWT. */
+    /** Manually trigger an assignment run across all teams. */
     @PostMapping("/run")
     public ResponseEntity<?> triggerRun() {
-        assignService.runShiftAssignment();
-        return ResponseEntity.ok(Map.of("message", "Assignment run triggered"));
+        assignService.runAllTeams();
+        return ResponseEntity.ok(Map.of("message", "Assignment run triggered for all teams"));
     }
 }

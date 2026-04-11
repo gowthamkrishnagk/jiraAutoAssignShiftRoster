@@ -7,8 +7,7 @@ import java.time.LocalTime;
 
 @Entity
 @Table(name = "shift_roster", indexes = {
-    @Index(name = "idx_email",       columnList = "email"),
-    @Index(name = "idx_shift_date",  columnList = "shift_date")
+    @Index(name = "idx_roster_team_date", columnList = "team_id, shift_date")
 })
 public class ShiftRoster {
 
@@ -16,7 +15,10 @@ public class ShiftRoster {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 255)
+    @Column(name = "team_id", nullable = false)
+    private String teamId;
+
+    @Column(nullable = false)
     private String email;
 
     @Column(name = "shift_date", nullable = false)
@@ -28,22 +30,21 @@ public class ShiftRoster {
     @Column(name = "shift_end", nullable = false)
     private LocalTime shiftEnd;
 
-    @Column(name = "created_at", updatable = false)
+    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
-    }
-
-    public Long getId()               { return id; }
-    public String getEmail()          { return email; }
-    public void setEmail(String v)    { this.email = v; }
-    public LocalDate getShiftDate()   { return shiftDate; }
-    public void setShiftDate(LocalDate v) { this.shiftDate = v; }
-    public LocalTime getShiftStart()  { return shiftStart; }
-    public void setShiftStart(LocalTime v) { this.shiftStart = v; }
-    public LocalTime getShiftEnd()    { return shiftEnd; }
-    public void setShiftEnd(LocalTime v) { this.shiftEnd = v; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
+    public Long getId()                      { return id; }
+    public void setId(Long id)               { this.id = id; }
+    public String getTeamId()                { return teamId; }
+    public void setTeamId(String v)          { this.teamId = v; }
+    public String getEmail()                 { return email; }
+    public void setEmail(String v)           { this.email = v; }
+    public LocalDate getShiftDate()          { return shiftDate; }
+    public void setShiftDate(LocalDate v)    { this.shiftDate = v; }
+    public LocalTime getShiftStart()         { return shiftStart; }
+    public void setShiftStart(LocalTime v)   { this.shiftStart = v; }
+    public LocalTime getShiftEnd()           { return shiftEnd; }
+    public void setShiftEnd(LocalTime v)     { this.shiftEnd = v; }
+    public LocalDateTime getCreatedAt()      { return createdAt; }
+    public void setCreatedAt(LocalDateTime v){ this.createdAt = v; }
 }

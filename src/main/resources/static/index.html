@@ -311,58 +311,158 @@
     .dry-status.on  { background: #fff4e5; color: #974F0C; border: 1px solid #ffbe33; }
     .dry-status.off { background: #e3fcef; color: #006644; border: 1px solid #57d9a3; }
 
-    /* ---- Login overlay ---- */
-    #login-overlay {
-      position: fixed; inset: 0; z-index: 9999;
-      background: linear-gradient(135deg, #0052cc 0%, #172b4d 100%);
-      display: flex; align-items: center; justify-content: center;
+    /* ---- Team tab bar ---- */
+    .team-bar {
+      background: #fff;
+      border-bottom: 2px solid #dfe1e6;
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 0 24px;
+      overflow-x: auto;
     }
-    .login-box {
-      background: #fff; border-radius: 12px; padding: 36px 40px;
-      width: 100%; max-width: 400px;
-      box-shadow: 0 20px 60px rgba(0,0,0,.4);
+    .team-tab {
+      padding: 8px 18px;
+      font-size: .85rem;
+      font-weight: 600;
+      color: #5e6c84;
+      border: none;
+      border-radius: 6px 6px 0 0;
+      background: none;
+      cursor: pointer;
+      white-space: nowrap;
+      margin: 6px 2px 0;
+      transition: color .15s, background .15s;
     }
-    .login-logo {
-      width: 56px; height: 56px; border-radius: 12px; background: #0052cc;
-      display: flex; align-items: center; justify-content: center;
-      margin: 0 auto 16px;
+    .team-tab:hover { color: #0052cc; background: #e9f0ff; }
+    .team-tab.active {
+      color: #fff;
+      background: #0052cc;
+      box-shadow: 0 -2px 6px rgba(0,82,204,.25);
     }
-    .login-box h2 { text-align:center; font-size: 1.25rem; font-weight: 700; color: #172b4d; margin-bottom: 4px; }
-    .login-box p  { text-align:center; font-size: .82rem; color: #5e6c84; margin-bottom: 22px; }
-    .login-field  { margin-bottom: 14px; }
-    .login-field label { display:block; font-size:.8rem; font-weight:600; color:#5e6c84; margin-bottom:5px; }
-    .login-field input {
-      width:100%; padding:9px 12px; border:1.5px solid #dfe1e6;
-      border-radius:4px; font-size:.9rem; outline:none; transition:border-color .15s;
+    .team-tab-add {
+      margin-left: 8px;
+      padding: 6px 14px;
+      font-size: .8rem;
+      font-weight: 600;
+      color: #0052cc;
+      border: 1.5px dashed #0052cc;
+      border-radius: 4px;
+      background: none;
+      cursor: pointer;
+      transition: background .15s;
+      white-space: nowrap;
     }
-    .login-field input:focus { border-color:#0052cc; }
-    .login-submit {
-      width:100%; padding:10px; background:#0052cc; color:#fff;
-      border:none; border-radius:4px; font-size:.95rem; font-weight:700;
-      cursor:pointer; margin-top:4px; transition:background .15s;
+    .team-tab-add:hover { background: #e9f0ff; }
+
+    /* ---- Active team context strip ---- */
+    .team-context-bar {
+      background: #0052cc;
+      color: #fff;
+      padding: 7px 24px;
+      font-size: .78rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      letter-spacing: .3px;
     }
-    .login-submit:hover:not(:disabled) { background:#0065ff; }
-    .login-submit:disabled { background:#97a0af; cursor:not-allowed; }
-    .login-err {
-      background:#ffebe6; color:#bf2600; border:1px solid #ff8f73;
-      border-radius:4px; padding:8px 12px; font-size:.82rem;
-      margin-bottom:14px; display:none;
+    .team-context-bar .ctx-label {
+      opacity: .75;
+      font-weight: 400;
     }
-    .login-err.visible { display:block; }
-    /* ---- Header auth area ---- */
-    .user-badge {
-      display:none; align-items:center; gap:5px;
-      background:rgba(255,255,255,.15); color:#fff;
-      border:1px solid rgba(255,255,255,.3); border-radius:4px;
-      padding:4px 10px; font-size:.8rem; font-weight:600;
+    .team-context-bar .ctx-name {
+      background: rgba(255,255,255,.2);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: .78rem;
     }
-    .logout-btn {
-      display:none; background:rgba(255,255,255,.12); color:#fff;
-      border:1px solid rgba(255,255,255,.3); border-radius:4px;
-      padding:4px 10px; font-size:.8rem; font-weight:600;
-      cursor:pointer; transition:background .15s;
+
+    /* ---- Main content fade on team switch ---- */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
     }
-    .logout-btn:hover { background:rgba(255,255,255,.25); }
+    main.team-switch { animation: fadeIn .22s ease; }
+
+    /* ---- Inline JQL card ---- */
+    .jql-view-text {
+      font-family: monospace;
+      font-size: .78rem;
+      line-height: 1.6;
+      background: #f4f5f7;
+      border: 1px solid #dfe1e6;
+      border-radius: 4px;
+      padding: 10px 14px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #172b4d;
+      margin: 0;
+    }
+    #jql-inline-input {
+      width: 100%;
+      min-height: 72px;
+      padding: 9px 12px;
+      border: 1.5px solid #0052cc;
+      border-radius: 4px;
+      font-size: .78rem;
+      font-family: monospace;
+      resize: vertical;
+      outline: none;
+      line-height: 1.6;
+      margin-bottom: 6px;
+    }
+    .jql-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .btn-sm {
+      padding: 5px 14px;
+      font-size: .78rem;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      border: none;
+      background: #0052cc;
+      color: #fff;
+      transition: background .15s;
+    }
+    .btn-sm:hover { background: #0041a8; }
+    .btn-sm.secondary {
+      background: #fff;
+      color: #42526e;
+      border: 1px solid #dfe1e6;
+    }
+    .btn-sm.secondary:hover { background: #f4f5f7; }
+
+    /* ---- Add Team Modal ---- */
+    .modal-backdrop {
+      display: none;
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0,0,0,.45);
+      align-items: center; justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal-box {
+      background: #fff; border-radius: 8px; padding: 28px 30px;
+      width: 100%; max-width: 500px;
+      box-shadow: 0 8px 40px rgba(0,0,0,.25);
+    }
+    .modal-title { font-size: 1rem; font-weight: 700; color: #172b4d; margin-bottom: 18px; }
+    .modal-field { margin-bottom: 14px; }
+    .modal-field label { display:block; font-size:.8rem; font-weight:600; color:#5e6c84; margin-bottom:5px; }
+    .modal-field input, .modal-field textarea {
+      width:100%; padding:8px 10px; border:1.5px solid #dfe1e6;
+      border-radius:4px; font-size:.88rem; outline:none; transition:border-color .15s;
+      font-family: inherit;
+    }
+    .modal-field textarea { resize: vertical; min-height: 80px; }
+    .modal-field input:focus, .modal-field textarea:focus { border-color:#0052cc; }
+    .modal-hint { font-size:.75rem; color:#97a0af; margin-top:4px; }
+    .modal-err { background:#ffebe6;color:#bf2600;border:1px solid #ff8f73;border-radius:4px;padding:8px 12px;font-size:.82rem;margin-bottom:12px;display:none; }
+    .modal-err.visible { display:block; }
+    .modal-actions { display:flex; gap:10px; margin-top:18px; }
+    .modal-actions .btn-cancel {
+      background:#fff; color:#172b4d; border:1.5px solid #dfe1e6;
+      padding:8px 18px; border-radius:4px; font-size:.88rem; font-weight:600; cursor:pointer;
+    }
 
     .no-data { color: #5e6c84; font-size: .85rem; padding: 4px 0; }
     .spin {
@@ -375,69 +475,11 @@
 </head>
 <body>
 
-<!-- LOGIN OVERLAY -->
-<div id="login-overlay">
-  <div class="login-box">
-    <div class="login-logo">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff">
-        <path d="M21.41 11.58l-9-9A2 2 0 0011 2H4a2 2 0 00-2 2v7c0 .53.21 1.04.59 1.42l9 9a2 2 0 002.82 0l7-7a2 2 0 000-2.84zM7 9a2 2 0 110-4 2 2 0 010 4z"/>
-      </svg>
-    </div>
-    <h2>Jira Auto-Assign</h2>
-    <p>Sign in to manage your shift roster</p>
-    <!-- Setup panel (shown on first run) -->
-    <div id="setup-panel" style="display:none">
-      <p style="font-size:.82rem;color:#5e6c84;text-align:center;margin-bottom:18px;">
-        No accounts yet. Create the first admin account.
-      </p>
-      <div class="login-err" id="setup-err"></div>
-      <div class="login-field">
-        <label>Your Name</label>
-        <input type="text" id="setup-name" placeholder="Gowtham" />
-      </div>
-      <div class="login-field">
-        <label>Email</label>
-        <input type="email" id="setup-email" placeholder="you@company.com"
-               onkeydown="if(event.key==='Enter')doSetup()" />
-      </div>
-      <button class="login-submit" id="setup-btn" onclick="doSetup()">Create Admin Account</button>
-      <div id="setup-result" style="display:none;margin-top:14px;background:#e3fcef;border:1px solid #57d9a3;border-radius:4px;padding:12px;font-size:.82rem;">
-        <strong>Account created!</strong><br>
-        <span id="setup-creds"></span><br>
-        <span style="color:#5e6c84;">Logging you in…</span>
-      </div>
-    </div>
-
-    <!-- Login panel (shown normally) -->
-    <div id="login-panel">
-      <div class="login-err" id="login-err"></div>
-      <div class="login-field">
-        <label>Email</label>
-        <input type="email" id="login-email" placeholder="you@company.com" />
-      </div>
-      <div class="login-field">
-        <label>Password</label>
-        <input type="password" id="login-pwd" placeholder="••••••••"
-               onkeydown="if(event.key==='Enter')doLogin()" />
-      </div>
-      <button class="login-submit" id="login-btn" onclick="doLogin()">Sign In</button>
-    </div>
-  </div>
-</div>
-
 <header>
   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
     <path d="M21.41 11.58l-9-9A2 2 0 0011 2H4a2 2 0 00-2 2v7c0 .53.21 1.04.59 1.42l9 9a2 2 0 002.82 0l7-7a2 2 0 000-2.84zM7 9a2 2 0 110-4 2 2 0 010 4z"/>
   </svg>
   <h1>Jira Shift Roster Manager</h1>
-  <span class="user-badge" id="user-badge"></span>
-  <button class="logout-btn" id="logout-btn" onclick="doLogout()">Logout</button>
-  <a class="activity-btn" id="add-user-btn" href="/add-user.html" style="display:none">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-    </svg>
-    Add User
-  </a>
   <a class="activity-btn" href="/activity.html">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
       <path d="M13 2.05V4.07c3.39.49 6 3.39 6 6.93 0 3.21-1.81 6-4.72 7.28L13 17v2.95c4.01-.5 7-3.85 7-7.88 0-4.34-3.05-8.03-7-8.97M11 2.05C6.99 2.55 4 5.9 4 9.93c0 4.03 2.99 7.37 7 7.88V15.8c-2.77-.49-5-2.9-5-5.87 0-2.97 2.23-5.38 5-5.87V2.05M12 12.5l4-4-1.41-1.42L12 9.67l-1.59-1.59L9 9.5l3 3z"/>
@@ -447,10 +489,68 @@
 </header>
 
 <div class="dry-run-banner" id="dry-run-banner">
-  ⚠ DRY-RUN MODE ACTIVE — no Jira tickets will be assigned
+  ⚠ DRY-RUN MODE ACTIVE for <span id="dry-run-team-name"></span> — no Jira tickets will be assigned
+</div>
+
+<!-- Team tab bar -->
+<div class="team-bar">
+  <div id="team-tabs" style="display:flex;align-items:center;"></div>
+  <div style="display:flex;align-items:center;gap:8px;margin-left:auto;padding-right:4px;">
+    <button class="team-tab-add" onclick="openAddTeam()">+ Add Team</button>
+  </div>
+</div>
+
+<!-- Active team context strip -->
+<div class="team-context-bar" id="team-context-bar">
+  <span class="ctx-label">Viewing team:</span>
+  <span class="ctx-name" id="ctx-team-name">—</span>
+</div>
+
+<!-- Add Team Modal -->
+<div class="modal-backdrop" id="add-team-modal">
+  <div class="modal-box">
+    <div class="modal-title">Add New Team</div>
+    <div class="modal-err" id="modal-err"></div>
+    <div class="modal-field">
+      <label>Team Name</label>
+      <input type="text" id="new-team-name" placeholder="e.g. SAC Team" />
+    </div>
+    <div class="modal-field">
+      <label>JQL — Unassigned Ticket Query</label>
+      <textarea id="new-team-jql" placeholder='project = SAC AND status in ("In Progress") AND Assignee in (EMPTY) ORDER BY created ASC'></textarea>
+      <div class="modal-hint">Must include <code>Assignee in (EMPTY)</code> to find unassigned tickets.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="doAddTeam()">Add Team</button>
+      <button class="btn-cancel" onclick="closeAddTeam()">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <main>
+
+  <!-- Inline JQL card -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div class="card-title" style="margin-bottom:0;" id="jql-card-label">Ticket Query (JQL)</div>
+      <button class="btn-sm secondary" id="jql-edit-toggle-btn" onclick="toggleJqlEdit()">Edit</button>
+    </div>
+
+    <!-- View mode -->
+    <div id="jql-inline-view">
+      <pre class="jql-view-text" id="jql-inline-text">(loading…)</pre>
+    </div>
+
+    <!-- Edit mode (hidden by default) -->
+    <div id="jql-inline-edit" style="display:none;">
+      <textarea id="jql-inline-input"></textarea>
+      <div id="jql-inline-err" style="display:none;color:#bf2600;font-size:.78rem;margin-bottom:6px;"></div>
+      <div class="jql-actions">
+        <button class="btn-sm" onclick="saveJqlInline()">Save</button>
+        <button class="btn-sm secondary" onclick="cancelJqlEdit()">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Upload -->
   <div class="card">
@@ -607,7 +707,7 @@
       </div>
       <div id="preview-warnings" class="hidden"></div>
       <div class="row" style="margin-top:14px;">
-        <button class="btn" id="save-btn" onclick="doSave()">Confirm &amp; Save to Database</button>
+        <button class="btn" id="save-btn" onclick="doSave()">Confirm &amp; Save</button>
         <button class="btn" id="cancel-btn"
           style="background:#fff;color:#de350b;border:1px solid #de350b;"
           onclick="cancelPreview()">Cancel</button>
@@ -653,147 +753,113 @@
 
 <script>
 // ================================================================
-// AUTH — login overlay + JWT injection via fetch override
+// TEAM STATE
 // ================================================================
-let token    = localStorage.getItem('jira_token');
-let userName = localStorage.getItem('jira_user') || '';
-let userRole = localStorage.getItem('jira_role') || '';
+let teams      = [];
+let activeTeam = null;
 
-// Keep a reference to the real fetch before overriding
-const _fetch = window.fetch.bind(window);
-
-// Override fetch so every /api/* call automatically carries the JWT
-window.fetch = function(url, opts = {}) {
-  if (token && typeof url === 'string' && url.startsWith('/api/') && url !== '/api/auth/login') {
-    opts.headers = { ...opts.headers, 'Authorization': 'Bearer ' + token };
-  }
-  return _fetch(url, opts).then(res => {
-    if ((res.status === 401 || res.status === 403) && url !== '/api/auth/login') {
-      doLogout();
-    }
-    return res;
-  });
-};
-
-async function doLogin() {
-  const email = document.getElementById('login-email').value.trim();
-  const pwd   = document.getElementById('login-pwd').value;
-  const errEl = document.getElementById('login-err');
-  const btn   = document.getElementById('login-btn');
-  errEl.classList.remove('visible');
-  if (!email || !pwd) {
-    errEl.textContent = 'Email and password are required';
-    errEl.classList.add('visible');
-    return;
-  }
-  btn.disabled = true; btn.textContent = 'Signing in…';
+async function initTeams() {
   try {
-    const res  = await _fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: pwd })
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      errEl.textContent = data.error || 'Login failed';
-      errEl.classList.add('visible');
-      return;
-    }
-    token    = data.token;
-    userName = data.name;
-    userRole = data.role;
-    localStorage.setItem('jira_token', token);
-    localStorage.setItem('jira_user', userName);
-    localStorage.setItem('jira_role', userRole);
-    showApp();
-  } catch {
-    errEl.textContent = 'Cannot connect to server';
-    errEl.classList.add('visible');
-  } finally {
-    btn.disabled = false; btn.textContent = 'Sign In';
-  }
+    const res = await fetch('/api/teams');
+    teams = await res.json();
+  } catch { teams = []; }
+  renderTabs();
+  if (teams.length > 0) switchToTeam(teams[0].id);
 }
 
-function doLogout() {
-  token = null;
-  localStorage.removeItem('jira_token');
-  localStorage.removeItem('jira_user');
-  localStorage.removeItem('jira_role');
-  document.getElementById('login-overlay').style.display = 'flex';
-  document.getElementById('login-err').classList.remove('visible');
-  document.getElementById('login-email').value = '';
-  document.getElementById('login-pwd').value   = '';
+function renderTabs() {
+  const bar = document.getElementById('team-tabs');
+  bar.innerHTML = '';
+  teams.forEach(t => {
+    const isActive = t.id === activeTeam;
+
+    const btn = document.createElement('button');
+    btn.className = 'team-tab' + (isActive ? ' active' : '');
+    btn.onclick = () => switchToTeam(t.id);
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = t.name;
+
+    btn.appendChild(nameSpan);
+    bar.appendChild(btn);
+  });
 }
 
-function showApp() {
-  document.getElementById('login-overlay').style.display = 'none';
-  const badge = document.getElementById('user-badge');
-  badge.textContent = userName + (userRole === 'ADMIN' ? ' · Admin' : '');
-  badge.style.display = 'inline-flex';
-  document.getElementById('logout-btn').style.display = 'inline-block';
-  if (userRole === 'ADMIN') {
-    document.getElementById('add-user-btn').style.display = 'inline-flex';
+function switchToTeam(teamId) {
+  activeTeam = teamId;
+  renderTabs();
+
+  // Update context strip
+  const team = teams.find(t => t.id === teamId);
+  const ctxName = document.getElementById('ctx-team-name');
+  if (ctxName && team) ctxName.textContent = team.name;
+
+  // Update page title
+  if (team) document.title = team.name + ' — Jira Shift Roster';
+
+  // Fade-in main content
+  const mainEl = document.querySelector('main');
+  if (mainEl) {
+    mainEl.classList.remove('team-switch');
+    void mainEl.offsetWidth; // force reflow
+    mainEl.classList.add('team-switch');
   }
+
+  resetUpload();
   loadDryRun();
+  loadJql();
   loadStatus();
   loadSchedule();
 }
 
-async function doSetup() {
-  const name  = document.getElementById('setup-name').value.trim();
-  const email = document.getElementById('setup-email').value.trim();
-  const errEl = document.getElementById('setup-err');
-  const btn   = document.getElementById('setup-btn');
+document.addEventListener('DOMContentLoaded', initTeams);
+
+// ================================================================
+// ADD TEAM MODAL
+// ================================================================
+function openAddTeam() {
+  document.getElementById('new-team-name').value = '';
+  document.getElementById('new-team-jql').value  = '';
+  document.getElementById('modal-err').classList.remove('visible');
+  document.getElementById('add-team-modal').classList.add('open');
+}
+function closeAddTeam() {
+  document.getElementById('add-team-modal').classList.remove('open');
+}
+// Close modal on backdrop click
+document.getElementById('add-team-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeAddTeam();
+});
+
+async function doAddTeam() {
+  const name   = document.getElementById('new-team-name').value.trim();
+  const jql    = document.getElementById('new-team-jql').value.trim();
+  const errEl  = document.getElementById('modal-err');
   errEl.classList.remove('visible');
-  if (!name || !email) { errEl.textContent = 'Name and email are required'; errEl.classList.add('visible'); return; }
-  btn.disabled = true; btn.textContent = 'Creating…';
+  if (!name) { errEl.textContent = 'Team name is required'; errEl.classList.add('visible'); return; }
+  if (!jql)  { errEl.textContent = 'JQL is required';       errEl.classList.add('visible'); return; }
   try {
-    const res  = await _fetch('/api/auth/setup', {
+    const res  = await fetch('/api/teams', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email })
+      body: JSON.stringify({ name, jql })
     });
     const data = await res.json();
-    if (!res.ok) { errEl.textContent = data.error || 'Setup failed'; errEl.classList.add('visible'); btn.disabled = false; btn.textContent = 'Create Admin Account'; return; }
-    // Show credentials
-    document.getElementById('setup-creds').textContent =
-      'Email: ' + email + ' | Password: ' + data.defaultPassword;
-    document.getElementById('setup-result').style.display = 'block';
-    btn.style.display = 'none';
-    // Auto-login after 2 seconds
-    token    = data.token;
-    userName = data.name;
-    userRole = String(data.role);
-    localStorage.setItem('jira_token', token);
-    localStorage.setItem('jira_user', userName);
-    localStorage.setItem('jira_role', userRole);
-    setTimeout(showApp, 2000);
-  } catch {
-    errEl.textContent = 'Cannot connect to server';
+    if (!res.ok) { errEl.textContent = data.error || 'Failed to add team'; errEl.classList.add('visible'); return; }
+    closeAddTeam();
+    const teamsRes = await fetch('/api/teams');
+    teams = await teamsRes.json();
+    renderTabs();
+    switchToTeam(data.id);
+  } catch (e) {
+    errEl.textContent = 'Network error: ' + e.message;
     errEl.classList.add('visible');
-    btn.disabled = false; btn.textContent = 'Create Admin Account';
   }
 }
 
-async function checkSetup() {
-  try {
-    const res  = await _fetch('/api/auth/needs-setup');
-    const data = await res.json();
-    if (data.needsSetup) {
-      document.getElementById('setup-panel').style.display = 'block';
-      document.getElementById('login-panel').style.display = 'none';
-    }
-  } catch { /* ignore — show login by default */ }
-}
-
-// Auto-enter app if already logged in, otherwise check if setup needed
-if (token) {
-  document.addEventListener('DOMContentLoaded', showApp);
-} else {
-  document.addEventListener('DOMContentLoaded', checkSetup);
-}
-
-// ---- file pick / drag-drop ----
+// ================================================================
+// FILE PICK / DRAG-DROP
+// ================================================================
 const dropZone   = document.getElementById('drop-zone');
 const fileInput  = document.getElementById('file-input');
 const fileNameEl = document.getElementById('file-name');
@@ -809,6 +875,15 @@ dropZone.addEventListener('drop', e => {
   const f = e.dataTransfer.files[0];
   if (f && (f.name.endsWith('.xlsx') || f.name.endsWith('.xls'))) setFile(f);
 });
+
+function resetUpload() {
+  pickedFile = null;
+  fileNameEl.textContent = '';
+  fileInput.value = '';
+  previewBtn.disabled = true;
+  document.getElementById('upload-alert').className = 'hidden';
+  document.getElementById('preview-panel').className = 'hidden';
+}
 
 function setFile(f) {
   if (!f) return;
@@ -929,7 +1004,8 @@ async function doSave() {
   const form = new FormData();
   form.append('file', pickedFile);
   try {
-    const res  = await fetch('/api/upload', { method: 'POST', body: form });
+    const url = '/api/upload' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+    const res  = await fetch(url, { method: 'POST', body: form });
     const data = await res.json();
     if (res.ok && data.success) {
       alertEl.className = 'alert ok';
@@ -941,11 +1017,7 @@ async function doSave() {
       alertEl.innerHTML = html;
       loadStatus();
       loadSchedule();
-      // reset file selection
-      pickedFile = null;
-      fileNameEl.textContent = '';
-      fileInput.value = '';
-      previewBtn.disabled = true;
+      resetUpload();
     } else {
       alertEl.className = 'alert err';
       alertEl.textContent = data.error || 'Save failed.';
@@ -962,7 +1034,8 @@ async function doSave() {
 async function loadStatus() {
   const el = document.getElementById('status-content');
   try {
-    const data = await (await fetch('/api/status')).json();
+    const url  = '/api/status' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+    const data = await (await fetch(url)).json();
     document.getElementById('status-ts').textContent =
       'as of ' + new Date(data.currentTime).toLocaleTimeString();
 
@@ -1012,7 +1085,7 @@ async function pauseAssignee(email) {
   await fetch('/api/shift/pause', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email })
+    body: JSON.stringify({ email, teamId: activeTeam })
   });
   loadStatus();
 }
@@ -1021,7 +1094,7 @@ async function resumeAssignee(email) {
   await fetch('/api/shift/resume', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email })
+    body: JSON.stringify({ email, teamId: activeTeam })
   });
   loadStatus();
 }
@@ -1031,7 +1104,8 @@ async function loadSchedule() {
   const el    = document.getElementById('schedule-content');
   const title = document.getElementById('schedule-title');
   try {
-    const rows = await (await fetch('/api/schedule')).json();
+    const url  = '/api/schedule' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+    const rows = await (await fetch(url)).json();
     const now  = new Date();
     title.textContent = now.toLocaleString('default', { month: 'long', year: 'numeric' }) + ' Schedule';
 
@@ -1062,6 +1136,58 @@ async function loadSchedule() {
   }
 }
 
+// ---- Inline JQL card ----
+function loadJql() {
+  const team = teams.find(t => t.id === activeTeam);
+  if (!team) return;
+  document.getElementById('jql-inline-text').textContent = team.jql || '(no JQL set)';
+  cancelJqlEdit();
+}
+
+function toggleJqlEdit() {
+  const editDiv = document.getElementById('jql-inline-edit');
+  if (editDiv.style.display === 'none') {
+    const team = teams.find(t => t.id === activeTeam);
+    document.getElementById('jql-inline-input').value = team ? (team.jql || '') : '';
+    document.getElementById('jql-inline-err').style.display = 'none';
+    document.getElementById('jql-inline-view').style.display = 'none';
+    editDiv.style.display = 'block';
+    document.getElementById('jql-edit-toggle-btn').textContent = 'Cancel';
+    document.getElementById('jql-inline-input').focus();
+  } else {
+    cancelJqlEdit();
+  }
+}
+
+function cancelJqlEdit() {
+  document.getElementById('jql-inline-view').style.display = 'block';
+  document.getElementById('jql-inline-edit').style.display = 'none';
+  document.getElementById('jql-edit-toggle-btn').textContent = 'Edit';
+}
+
+async function saveJqlInline() {
+  const jql   = document.getElementById('jql-inline-input').value.trim();
+  const errEl = document.getElementById('jql-inline-err');
+  errEl.style.display = 'none';
+  if (!jql) { errEl.textContent = 'JQL cannot be empty'; errEl.style.display = 'block'; return; }
+  try {
+    const res  = await fetch('/api/teams/' + encodeURIComponent(activeTeam), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jql })
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Save failed'; errEl.style.display = 'block'; return; }
+    const idx = teams.findIndex(t => t.id === activeTeam);
+    if (idx !== -1) teams[idx].jql = data.jql;
+    document.getElementById('jql-inline-text').textContent = data.jql;
+    cancelJqlEdit();
+  } catch (e) {
+    errEl.textContent = 'Network error: ' + e.message;
+    errEl.style.display = 'block';
+  }
+}
+
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -1074,10 +1200,11 @@ function toggleInstr(titleEl) {
   chevron.classList.toggle('open', !open);
 }
 
-// ---- dry-run ----
+// ---- dry-run (per team) ----
 async function loadDryRun() {
   try {
-    const data = await (await fetch('/api/config')).json();
+    const url  = '/api/config' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+    const data = await (await fetch(url)).json();
     applyDryRunState(data.dryRun, null);
   } catch { /* ignore */ }
 }
@@ -1091,7 +1218,7 @@ async function setDryRun(enabled) {
     const res  = await fetch('/api/config/dry-run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dryRun: enabled })
+      body: JSON.stringify({ dryRun: enabled, teamId: activeTeam })
     });
     const data = await res.json();
     if (res.ok) {
@@ -1108,9 +1235,14 @@ async function setDryRun(enabled) {
 
 function applyDryRunState(enabled, message) {
   document.getElementById('dry-run-toggle').checked = enabled;
-  const card    = document.getElementById('dry-run-card');
-  const banner  = document.getElementById('dry-run-banner');
+  const card     = document.getElementById('dry-run-card');
+  const banner   = document.getElementById('dry-run-banner');
+  const nameSpan = document.getElementById('dry-run-team-name');
   const statusEl = document.getElementById('dry-status');
+
+  const activeTeamObj = teams.find(t => t.id === activeTeam);
+  if (nameSpan && activeTeamObj) nameSpan.textContent = activeTeamObj.name;
+
   card.style.borderColor = enabled ? '#ff8b00' : '#dfe1e6';
   banner.classList.toggle('visible', enabled);
   if (message) {

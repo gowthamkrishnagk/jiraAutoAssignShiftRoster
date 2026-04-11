@@ -41,8 +41,38 @@
     }
     .back-btn:hover { background: rgba(255,255,255,.25); }
 
+    /* Team tab bar */
+    .team-bar {
+      background: #fff;
+      border-bottom: 2px solid #dfe1e6;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      overflow-x: auto;
+    }
+    .team-tab {
+      padding: 10px 20px;
+      font-size: .85rem;
+      font-weight: 600;
+      color: #5e6c84;
+      border: none;
+      border-bottom: 2px solid transparent;
+      background: none;
+      cursor: pointer;
+      white-space: nowrap;
+      margin-bottom: -2px;
+      transition: color .15s, border-color .15s;
+    }
+    .team-tab:hover { color: #0052cc; }
+    .team-tab.active { color: #0052cc; border-bottom-color: #0052cc; }
+    .team-tab-all {
+      font-style: italic;
+      color: #8993a4;
+    }
+    .team-tab-all.active { color: #0052cc; font-style: normal; }
+
     main {
-      max-width: 900px;
+      max-width: 960px;
       margin: 24px auto;
       padding: 0 16px;
       display: flex;
@@ -101,16 +131,12 @@
       padding: 14px 18px;
       text-align: center;
     }
-    .stat-num { font-size: 1.6rem; font-weight: 700; color: #0052cc; }
+    .stat-num   { font-size: 1.6rem; font-weight: 700; color: #0052cc; }
     .stat-label { font-size: .72rem; color: #5e6c84; margin-top: 2px; }
 
     /* Table */
     .table-wrap { overflow-x: auto; }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: .82rem;
-    }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
     thead th {
       background: #f4f5f7;
       color: #5e6c84;
@@ -138,6 +164,17 @@
     .badge-assign   { background: #e3fcef; color: #006644; }
     .badge-unassign { background: #fff0b3; color: #7a5c00; }
 
+    .team-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: .7rem;
+      font-weight: 600;
+      background: #e9f0ff;
+      color: #0052cc;
+      white-space: nowrap;
+    }
+
     .issue-key {
       font-family: 'Courier New', monospace;
       font-size: .8rem;
@@ -161,11 +198,10 @@
     }
     .empty-state svg { display: block; margin: 0 auto 12px; opacity: .35; }
 
-    .ts {
-      font-size: .75rem;
-      color: #8993a4;
-      white-space: nowrap;
-    }
+    .ts { font-size: .75rem; color: #8993a4; white-space: nowrap; }
+
+    .col-team { /* hidden when viewing a single team */ }
+    .hide-col-team .col-team { display: none; }
 
     .spinner {
       display: inline-block;
@@ -193,11 +229,16 @@
   </a>
 </header>
 
+<!-- Team filter tabs -->
+<div class="team-bar">
+  <div id="team-tabs" style="display:flex;align-items:center;"></div>
+</div>
+
 <main>
 
   <div class="card">
     <div class="card-header">
-      <div class="card-title">Recent Jira Ticket Assignments</div>
+      <div class="card-title" id="card-title">Recent Jira Ticket Assignments</div>
       <button class="refresh-btn" id="refreshBtn" onclick="load()">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
           <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
@@ -225,10 +266,11 @@
       </div>
     </div>
 
-    <div class="table-wrap">
-      <table>
+    <div class="table-wrap" id="table-wrap">
+      <table id="log-table">
         <thead>
           <tr>
+            <th class="col-team">Team</th>
             <th>Ticket</th>
             <th>Summary</th>
             <th>Action</th>
@@ -244,34 +286,61 @@
 </main>
 
 <script>
-  // ---- Auth guard ----
-  const _token = localStorage.getItem('jira_token');
-  if (!_token) { location.href = '/'; }
+  let allData    = [];   // full unfiltered activity from API
+  let teams      = [];   // [{id, name}]
+  let activeTeam = 'all';
 
-  const _fetch = window.fetch.bind(window);
-  window.fetch = function(url, opts = {}) {
-    if (_token && typeof url === 'string' && url.startsWith('/api/')) {
-      opts.headers = { ...opts.headers, 'Authorization': 'Bearer ' + _token };
-    }
-    return _fetch(url, opts).then(res => {
-      if (res.status === 401 || res.status === 403) { location.href = '/'; }
-      return res;
+  // ---- init ----
+  async function init() {
+    try {
+      const res = await fetch('/api/teams');
+      teams = await res.json();
+    } catch { teams = []; }
+    renderTabs();
+    await load();
+  }
+
+  // ---- tabs ----
+  function renderTabs() {
+    const bar = document.getElementById('team-tabs');
+    bar.innerHTML = '';
+
+    // "All Teams" tab
+    const allBtn = document.createElement('button');
+    allBtn.className = 'team-tab team-tab-all' + (activeTeam === 'all' ? ' active' : '');
+    allBtn.textContent = 'All Teams';
+    allBtn.onclick = () => switchTeam('all');
+    bar.appendChild(allBtn);
+
+    // One tab per team
+    teams.forEach(t => {
+      const btn = document.createElement('button');
+      btn.className = 'team-tab' + (activeTeam === t.id ? ' active' : '');
+      btn.textContent = t.name;
+      btn.onclick = () => switchTeam(t.id);
+      bar.appendChild(btn);
     });
-  };
+  }
 
+  function switchTeam(teamId) {
+    activeTeam = teamId;
+    renderTabs();
+    renderFiltered();
+  }
+
+  // ---- load from API ----
   async function load() {
     const btn = document.getElementById('refreshBtn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Loading…';
-
     try {
       const resp = await fetch('/api/activity');
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const data = await resp.json();
-      render(data);
+      allData = await resp.json();
+      renderFiltered();
     } catch (e) {
       document.getElementById('logBody').innerHTML =
-        '<tr><td colspan="5" style="padding:20px;color:#de350b;text-align:center">Failed to load: ' + e.message + '</td></tr>';
+        '<tr><td colspan="6" style="padding:20px;color:#de350b;text-align:center">Failed to load: ' + e.message + '</td></tr>';
     } finally {
       btn.disabled = false;
       btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
@@ -280,24 +349,50 @@
     }
   }
 
+  // ---- filter + render ----
+  function renderFiltered() {
+    const data = activeTeam === 'all'
+      ? allData
+      : allData.filter(r => r.teamId === activeTeam);
+
+    // Update card title
+    const teamObj = teams.find(t => t.id === activeTeam);
+    document.getElementById('card-title').textContent =
+      activeTeam === 'all'
+        ? 'All Teams — Recent Assignments'
+        : (teamObj ? teamObj.name : activeTeam) + ' — Recent Assignments';
+
+    // Show/hide Team column (redundant when filtered to one team)
+    const table = document.getElementById('log-table');
+    if (activeTeam === 'all') {
+      table.classList.remove('hide-col-team');
+    } else {
+      table.classList.add('hide-col-team');
+    }
+
+    render(data);
+  }
+
   function render(data) {
     const tbody = document.getElementById('logBody');
 
     if (!data.length) {
-      tbody.innerHTML = '';
       document.getElementById('statsRow').style.display = 'none';
-      tbody.innerHTML = `<tr><td colspan="5">
+      const msg = activeTeam === 'all'
+        ? 'No assignment activity yet.<br>The scheduler runs every minute and will log assignments here.'
+        : 'No activity for this team yet.';
+      tbody.innerHTML = `<tr><td colspan="6">
         <div class="empty-state">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
             <path d="M20 6h-2.18c.07-.44.18-.88.18-1.36C18 2.06 15.94 0 13.36 0c-1.46 0-2.72.64-3.59 1.66L9 3 8.23 1.66C7.36.64 6.1 0 4.64 0 2.06 0 0 2.06 0 4.64c0 .48.11.92.18 1.36H0v2h20V6zM4.64 4.5c-.75 0-1.36-.61-1.36-1.36 0-.75.61-1.36 1.36-1.36.46 0 .87.23 1.12.58L7.1 4.5H4.64zm8.72 0H10.9l1.34-2.28c.25-.35.66-.58 1.12-.58.75 0 1.36.61 1.36 1.36 0 .75-.61 1.36-1.36 1.36zM1 8v12c0 1.1.9 2 2 2h6V8H1zm10 14h6c1.1 0 2-.9 2-2V8h-8v14z"/>
           </svg>
-          No assignment activity yet.<br>The scheduler runs every minute and will log assignments here.
+          ${msg}
         </div>
       </td></tr>`;
       return;
     }
 
-    // Stats
+    // Stats for the filtered view
     const assigns   = data.filter(r => r.action === 'ASSIGN').length;
     const unassigns = data.filter(r => r.action === 'UNASSIGN').length;
     const people    = new Set(data.map(r => r.assignedToEmail)).size;
@@ -307,8 +402,15 @@
     document.getElementById('statPeople').textContent   = people;
     document.getElementById('statsRow').style.display   = 'flex';
 
+    // Resolve teamId → display name
+    const teamName = id => {
+      const t = teams.find(t => t.id === id);
+      return t ? t.name : (id || '—');
+    };
+
     tbody.innerHTML = data.map(row => `
       <tr>
+        <td class="col-team"><span class="team-badge">${esc(teamName(row.teamId))}</span></td>
         <td><span class="issue-key">${esc(row.issueKey)}</span></td>
         <td><span class="issue-summary" title="${esc(row.issueSummary)}">${esc(row.issueSummary) || '<span style="color:#c1c7d0">—</span>'}</span></td>
         <td><span class="badge ${row.action === 'ASSIGN' ? 'badge-assign' : 'badge-unassign'}">${esc(row.action)}</span></td>
@@ -331,8 +433,7 @@
     } catch { return iso; }
   }
 
-  load();
-  // Auto-refresh every 60 seconds
+  init();
   setInterval(load, 60000);
 </script>
 </body>

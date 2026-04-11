@@ -163,6 +163,45 @@ public class JiraClient {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Team-scoped ticket queries — caller supplies the JQL directly
+    // -----------------------------------------------------------------------
+
+    /** Returns unassigned tickets matching the given JQL (used for per-team assignment). */
+    public List<JsonNode> getTicketsByJql(String jql) {
+        log.debug("Fetching unassigned tickets by JQL: {}", jql);
+        return searchTickets(jql);
+    }
+
+    /**
+     * Returns tickets assigned to accountId, filtered by the team's base JQL.
+     * Strips the "Assignee in (EMPTY)" clause and appends the accountId filter.
+     */
+    public List<JsonNode> getTicketsAssignedToByJql(String accountId, String baseJql) {
+        String base = baseJql
+            .replaceAll("(?i)\\s+AND\\s+Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
+            .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)\\s+AND\\s+", "")
+            .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
+            .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
+        String jql = base + " AND assignee = \"" + accountId + "\" ORDER BY created ASC";
+        log.debug("Fetching tickets assigned to {}: {}", accountId, jql);
+        return searchTickets(jql);
+    }
+
+    /**
+     * Returns escalated-unassigned tickets for a team — same as baseJql but
+     * swaps "Escalation Path[Dropdown] is EMPTY" → "is not EMPTY".
+     */
+    public List<JsonNode> getEscalatedUnassignedByJql(String baseJql) {
+        String jql = baseJql.replaceAll(
+            "(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY",
+            "\"Escalation Path[Dropdown]\" is not EMPTY");
+        log.debug("Fetching escalated unassigned by JQL: {}", jql);
+        return searchTickets(jql);
+    }
+
+    // -----------------------------------------------------------------------
+
     /** Returns unassigned tickets where Escalation Path is NOT empty (reassign to last owner). */
     public List<JsonNode> getEscalatedUnassignedTickets() {
         String jql = buildEscalatedUnassignedJql();

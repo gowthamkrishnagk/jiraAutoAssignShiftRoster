@@ -82,10 +82,10 @@ public class ExcelService {
     }
 
     // -----------------------------------------------------------------------
-    // SAVE — parse, expand date ranges, persist to DB
+    // SAVE — parse, expand date ranges, persist (scoped to a team)
     // -----------------------------------------------------------------------
     @Transactional
-    public Map<String, Object> processExcel(MultipartFile file) throws IOException {
+    public Map<String, Object> processExcel(MultipartFile file, String teamId) throws IOException {
         ParseResult result = parseFile(file);
 
         // Expand each raw row into one ShiftRoster entry per day
@@ -93,15 +93,17 @@ public class ExcelService {
         for (RawRow r : result.rows()) {
             for (LocalDate d = r.fromDate(); !d.isAfter(r.toDate()); d = d.plusDays(1)) {
                 ShiftRoster s = new ShiftRoster();
+                s.setTeamId(teamId);
                 s.setEmail(r.email());
                 s.setShiftDate(d);
                 s.setShiftStart(r.shiftStart());
                 s.setShiftEnd(r.shiftEnd());
+                s.setCreatedAt(java.time.LocalDateTime.now());
                 entries.add(s);
             }
         }
 
-        // Replace existing data month-by-month then save fresh entries
+        // Replace existing data for this team month-by-month, then save fresh entries
         Set<Integer> monthKeys = entries.stream()
             .map(s -> s.getShiftDate().getYear() * 100 + s.getShiftDate().getMonthValue())
             .collect(Collectors.toSet());
@@ -109,7 +111,7 @@ public class ExcelService {
         for (int key : monthKeys) {
             int year = key / 100, month = key % 100;
             LocalDate start = LocalDate.of(year, month, 1);
-            rosterRepo.deleteByMonthRange(start, start.plusMonths(1));
+            rosterRepo.deleteByMonthRange(teamId, start, start.plusMonths(1));
         }
         rosterRepo.saveAll(entries);
 

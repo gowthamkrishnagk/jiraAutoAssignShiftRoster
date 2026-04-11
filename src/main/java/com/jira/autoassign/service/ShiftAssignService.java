@@ -2,11 +2,12 @@ package com.jira.autoassign.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jira.autoassign.client.JiraClient;
-import com.jira.autoassign.config.JiraProperties;
 import com.jira.autoassign.entity.AssignmentLog;
 import com.jira.autoassign.entity.ShiftRoster;
+import com.jira.autoassign.entity.Team;
 import com.jira.autoassign.repository.AssignmentLogRepository;
 import com.jira.autoassign.repository.ShiftRosterRepository;
+import com.jira.autoassign.repository.TeamRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -15,16 +16,18 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.*;
-import java.util.Collections;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 /**
  * Core shift-based assignment logic.
  *
- * Every scheduler tick:
- *  1. Find who is currently ON shift.
- *  2. Assign only currently-unassigned Jira tickets to them (round-robin).
- *     Already-assigned tickets are never touched.
+ * Every scheduler tick runs all registered teams in isolation:
+ *  1. Find who is currently ON shift for that team.
+ *  2. Assign only unassigned Jira tickets (from the team's JQL) round-robin.
+ *  3. Sweep off-shift people's tickets and reassign to active shift (same team).
+ *
+ * Each team has its own round-robin index and paused-email set — zero cross-team interference.
  */
 @Service
 public class ShiftAssignService {
@@ -34,90 +37,139 @@ public class ShiftAssignService {
     private final JiraClient jiraClient;
     private final ShiftRosterRepository repository;
     private final AssignmentLogRepository logRepository;
-    private final JiraProperties props;
+    private final TeamRepository teamRepository;
 
-    // In-memory round-robin index — resets on restart, which is fine.
-    private int rrIndex = 0;
+    // Per-team round-robin index (resets on restart — fine)
+    private final Map<String, Integer> rrIndexByTeam = new ConcurrentHashMap<>();
 
-    // Emails manually paused from receiving assignments via the UI.
-    private final Set<String> pausedEmails = new java.util.HashSet<>();
+    // Per-team paused emails
+    private final Map<String, Set<String>> pausedByTeam = new ConcurrentHashMap<>();
+
+    // One thread per team, daemon so they don't block JVM shutdown
+    private final ExecutorService teamExecutor = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r);
+        t.setDaemon(true);
+        return t;
+    });
 
     public ShiftAssignService(JiraClient jiraClient, ShiftRosterRepository repository,
-                              AssignmentLogRepository logRepository, JiraProperties props) {
-        this.jiraClient    = jiraClient;
-        this.repository    = repository;
-        this.logRepository = logRepository;
-        this.props         = props;
+                              AssignmentLogRepository logRepository, TeamRepository teamRepository) {
+        this.jiraClient     = jiraClient;
+        this.repository     = repository;
+        this.logRepository  = logRepository;
+        this.teamRepository = teamRepository;
     }
 
     // -----------------------------------------------------------------------
-    // Called by scheduler every minute
+    // Called by scheduler every minute — runs all teams independently
     // -----------------------------------------------------------------------
 
-    public void runShiftAssignment() {
-        log.info("=== Shift Assignment Run{} ===", props.isDryRun() ? " [DRY-RUN]" : "");
+    public void runAllTeams() {
+        List<Team> teams = teamRepository.findAll();
+        if (teams.isEmpty()) return;
+
+        log.info("Starting parallel assignment run for {} team(s): {}",
+            teams.size(), teams.stream().map(Team::getName).collect(Collectors.joining(", ")));
+
+        List<CompletableFuture<Void>> futures = teams.stream()
+            .map(team -> CompletableFuture.runAsync(() -> {
+                try {
+                    runShiftAssignment(team);
+                } catch (Exception e) {
+                    log.error("[{}] Assignment run failed: {}", team.getName(), e.getMessage(), e);
+                }
+            }, teamExecutor))
+            .collect(Collectors.toList());
+
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                             .get(10, TimeUnit.MINUTES); // safety timeout
+            log.info("All teams finished assignment run.");
+        } catch (TimeoutException e) {
+            log.error("Assignment run timed out after 10 minutes — some teams may not have completed.");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Assignment run interrupted.");
+        } catch (ExecutionException e) {
+            log.error("Assignment run execution error: {}", e.getCause().getMessage());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Single-team assignment run
+    // -----------------------------------------------------------------------
+
+    public void runShiftAssignment(Team team) {
+        String teamName = team.getName();
+        String teamId   = team.getId();
+        log.info("=== [{}] Shift Assignment Run{} ===", teamName, team.isDryRun() ? " [DRY-RUN]" : "");
 
         LocalDate today     = LocalDate.now();
         LocalDate yesterday = today.minusDays(1);
         LocalTime now       = LocalTime.now();
 
-        // --- Step 1: who is on shift right now? ---
-        List<ShiftRoster> activeShifts = repository.findActiveShifts(today, yesterday, now);
+        Set<String> paused = pausedByTeam.getOrDefault(teamId, Collections.emptySet());
+
+        // --- Step 1: who is on shift right now for this team? ---
+        List<ShiftRoster> activeShifts = repository.findActiveShifts(teamId, today, yesterday, now);
         List<String> activeEmails = activeShifts.stream()
             .map(ShiftRoster::getEmail).distinct()
-            .filter(e -> !pausedEmails.contains(e))
+            .filter(e -> !paused.contains(e))
             .collect(Collectors.toList());
 
-        if (!pausedEmails.isEmpty()) {
-            log.info("Paused (skipped) assignees: {}", pausedEmails);
+        if (!paused.isEmpty()) {
+            log.info("[{}] Paused (skipped) assignees: {}", teamName, paused);
         }
-        log.info("Active shift assignees: {}", activeEmails.isEmpty() ? "NONE" : activeEmails);
+        log.info("[{}] Active shift assignees: {}", teamName,
+            activeEmails.isEmpty() ? "NONE" : activeEmails);
 
-        // --- Step 2: assign unassigned tickets to active shift people ---
         if (activeEmails.isEmpty()) {
-            log.info("No active shift right now — skipping assignment.");
+            log.info("[{}] No active shift right now — skipping assignment.", teamName);
             return;
         }
 
-        // Resolve emails → accountIds (skip failures gracefully)
-        List<String> accountIds   = new ArrayList<>();
+        // Resolve emails → accountIds
+        List<String> accountIds     = new ArrayList<>();
         List<String> resolvedEmails = new ArrayList<>();
         for (String email : activeEmails) {
             try {
                 accountIds.add(jiraClient.getAccountId(email));
                 resolvedEmails.add(email);
             } catch (Exception e) {
-                log.warn("  Could not resolve Jira account for {}: {}", email, e.getMessage());
+                log.warn("[{}] Could not resolve Jira account for {}: {}", teamName, email, e.getMessage());
             }
         }
 
         if (accountIds.isEmpty()) {
-            log.warn("Could not resolve any active shift accounts — skipping assignment.");
+            log.warn("[{}] Could not resolve any active shift accounts — skipping.", teamName);
             return;
         }
 
-        List<JsonNode> unassigned = jiraClient.getTickets().stream()
+        int rrIndex = rrIndexByTeam.getOrDefault(teamId, 0);
+
+        // --- Step 2: assign unassigned tickets (team JQL) ---
+        List<JsonNode> unassigned = jiraClient.getTicketsByJql(team.getJql()).stream()
             .filter(t -> t.get("fields").get("assignee").isNull())
             .collect(Collectors.toList());
 
-        log.info("Unassigned tickets to assign: {}", unassigned.size());
+        log.info("[{}] Unassigned tickets to assign: {}", teamName, unassigned.size());
 
         int assigned = 0, failed = 0;
         for (JsonNode ticket : unassigned) {
             String issueKey  = ticket.get("key").asText();
             String summary   = ticket.get("fields").path("summary").asText("");
-            int idx          = rrIndex % accountIds.size();
+            int    idx       = rrIndex % accountIds.size();
             String accountId = accountIds.get(idx);
             String email     = resolvedEmails.get(idx);
 
-            if (props.isDryRun()) {
-                log.info("  [DRY-RUN] Would assign [{}] -> {}", issueKey, email);
+            if (team.isDryRun()) {
+                log.info("[{}][DRY-RUN] Would assign [{}] -> {}", teamName, issueKey, email);
                 assigned++;
             } else {
-                log.info("  [{}] -> {}", issueKey, email);
+                log.info("[{}] [{}] -> {}", teamName, issueKey, email);
                 if (jiraClient.assignTicket(issueKey, accountId)) {
                     assigned++;
-                    logRepository.save(AssignmentLog.ofAssign(issueKey, summary, email));
+                    logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, email));
                 } else {
                     failed++;
                 }
@@ -125,54 +177,53 @@ public class ShiftAssignService {
             rrIndex++;
             jiraClient.pauseBetweenAssignments();
         }
+        log.info("[{}] Done — assigned: {}, failed: {}", teamName, assigned, failed);
 
-        log.info("Done — assigned: {}, failed: {}", assigned, failed);
-
-        // --- Step 2b: escalated + unassigned → reassign to last historical assignee ---
-        List<JsonNode> escalatedUnassigned = jiraClient.getEscalatedUnassignedTickets().stream()
+        // --- Step 2b: escalated + unassigned → restore to last historical assignee ---
+        List<JsonNode> escalated = jiraClient.getEscalatedUnassignedByJql(team.getJql()).stream()
             .filter(t -> t.get("fields").get("assignee").isNull())
             .collect(Collectors.toList());
 
-        log.info("Escalated unassigned tickets to restore to last owner: {}", escalatedUnassigned.size());
+        log.info("[{}] Escalated unassigned to restore: {}", teamName, escalated.size());
 
-        for (JsonNode ticket : escalatedUnassigned) {
-            String issueKey     = ticket.get("key").asText();
-            String summary      = ticket.get("fields").path("summary").asText("");
-            String lastAccId    = jiraClient.getLastAssigneeAccountId(issueKey);
+        for (JsonNode ticket : escalated) {
+            String issueKey  = ticket.get("key").asText();
+            String summary   = ticket.get("fields").path("summary").asText("");
+            String lastAccId = jiraClient.getLastAssigneeAccountId(issueKey);
 
             if (lastAccId == null) {
-                log.info("  [{}] No assignee history found — skipping", issueKey);
+                log.info("[{}] [{}] No assignee history — skipping", teamName, issueKey);
                 continue;
             }
-
             String lastEmail = jiraClient.getUserEmail(lastAccId);
 
-            if (props.isDryRun()) {
-                log.info("  [DRY-RUN] Would restore escalated [{}] -> {}", issueKey, lastEmail);
+            if (team.isDryRun()) {
+                log.info("[{}][DRY-RUN] Would restore escalated [{}] -> {}", teamName, issueKey, lastEmail);
             } else {
-                log.info("  Restore escalated [{}] -> {}", issueKey, lastEmail);
+                log.info("[{}] Restore escalated [{}] -> {}", teamName, issueKey, lastEmail);
                 if (jiraClient.assignTicket(issueKey, lastAccId)) {
-                    logRepository.save(AssignmentLog.ofAssign(issueKey, summary, lastEmail));
+                    logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, lastEmail));
                 }
             }
             jiraClient.pauseBetweenAssignments();
         }
 
-        // --- Step 3: reassign tickets from off-shift people equally to active shift people ---
-        List<String> allRosterEmails = repository.findAllEmailsInRange(today, yesterday);
+        // --- Step 3: reassign off-shift people's tickets to active shift ---
+        List<String> allRosterEmails = repository.findAllEmailsInRange(teamId, today, yesterday);
         List<String> offShiftEmails  = allRosterEmails.stream()
             .filter(e -> !activeEmails.contains(e))
             .collect(Collectors.toList());
 
-        log.info("Off-shift sweep — people to check: {}", offShiftEmails.isEmpty() ? "NONE" : offShiftEmails);
+        log.info("[{}] Off-shift sweep — people to check: {}",
+            teamName, offShiftEmails.isEmpty() ? "NONE" : offShiftEmails);
 
         for (String offEmail : offShiftEmails) {
             try {
                 String offAccountId = jiraClient.getAccountId(offEmail);
-                List<JsonNode> theirTickets = jiraClient.getTicketsAssignedTo(offAccountId);
+                List<JsonNode> theirTickets = jiraClient.getTicketsAssignedToByJql(offAccountId, team.getJql());
 
                 if (theirTickets.isEmpty()) continue;
-                log.info("  {} has {} ticket(s) to reassign", offEmail, theirTickets.size());
+                log.info("[{}] {} has {} ticket(s) to reassign", teamName, offEmail, theirTickets.size());
 
                 for (JsonNode ticket : theirTickets) {
                     String issueKey = ticket.get("key").asText();
@@ -181,39 +232,62 @@ public class ShiftAssignService {
                     String newAccId = accountIds.get(idx);
                     String newEmail = resolvedEmails.get(idx);
 
-                    if (props.isDryRun()) {
-                        log.info("  [DRY-RUN] Would reassign [{}] {} -> {}", issueKey, offEmail, newEmail);
+                    if (team.isDryRun()) {
+                        log.info("[{}][DRY-RUN] Would reassign [{}] {} -> {}", teamName, issueKey, offEmail, newEmail);
                     } else {
-                        log.info("  Reassign [{}] {} -> {}", issueKey, offEmail, newEmail);
+                        log.info("[{}] Reassign [{}] {} -> {}", teamName, issueKey, offEmail, newEmail);
                         if (jiraClient.assignTicket(issueKey, newAccId)) {
-                            logRepository.save(AssignmentLog.ofAssign(issueKey, summary, newEmail));
+                            logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, newEmail));
                         }
                     }
                     rrIndex++;
                     jiraClient.pauseBetweenAssignments();
                 }
             } catch (Exception e) {
-                log.warn("  Could not sweep off-shift {}: {}", offEmail, e.getMessage());
+                log.warn("[{}] Could not sweep off-shift {}: {}", teamName, offEmail, e.getMessage());
             }
         }
+
+        rrIndexByTeam.put(teamId, rrIndex);
     }
 
     // -----------------------------------------------------------------------
-    // Used by REST endpoints
+    // Pause / resume — per team
     // -----------------------------------------------------------------------
 
-    public void pauseEmail(String email) {
-        pausedEmails.add(email.toLowerCase().trim());
-        log.info("Paused from assignments: {}", email);
+    public void pauseEmail(String teamId, String email) {
+        pausedByTeam.computeIfAbsent(teamId, k -> ConcurrentHashMap.newKeySet())
+                    .add(email.toLowerCase().trim());
+        log.info("[{}] Paused from assignments: {}", teamId, email);
     }
 
-    public void resumeEmail(String email) {
-        pausedEmails.remove(email.toLowerCase().trim());
-        log.info("Resumed for assignments: {}", email);
+    public void resumeEmail(String teamId, String email) {
+        Set<String> set = pausedByTeam.get(teamId);
+        if (set != null) set.remove(email.toLowerCase().trim());
+        log.info("[{}] Resumed for assignments: {}", teamId, email);
     }
 
-    public Set<String> getPausedEmails() {
-        return Collections.unmodifiableSet(pausedEmails);
+    public Set<String> getPausedEmails(String teamId) {
+        return Collections.unmodifiableSet(
+            pausedByTeam.getOrDefault(teamId, Collections.emptySet()));
+    }
+
+    // -----------------------------------------------------------------------
+    // Queries used by REST endpoints
+    // -----------------------------------------------------------------------
+
+    public List<ShiftRoster> getActiveShifts(String teamId) {
+        LocalDate today = LocalDate.now();
+        return repository.findActiveShifts(teamId, today, today.minusDays(1), LocalTime.now());
+    }
+
+    public List<ShiftRoster> getCurrentMonthSchedule(String teamId) {
+        LocalDate now = LocalDate.now();
+        return repository.findByShiftDateBetween(
+            teamId,
+            now.withDayOfMonth(1),
+            now.withDayOfMonth(now.lengthOfMonth())
+        );
     }
 
     public void purgeOldData() {
@@ -225,18 +299,5 @@ public class ShiftAssignService {
 
         log.info("Purged data older than 7 days — activity log: {} rows, shift roster: {} rows.",
                  logsDeleted, rosterDeleted);
-    }
-
-    public List<ShiftRoster> getActiveShifts() {
-        LocalDate today = LocalDate.now();
-        return repository.findActiveShifts(today, today.minusDays(1), LocalTime.now());
-    }
-
-    public List<ShiftRoster> getCurrentMonthSchedule() {
-        LocalDate now = LocalDate.now();
-        return repository.findByShiftDateBetweenOrderByShiftDateAscShiftStartAsc(
-            now.withDayOfMonth(1),
-            now.withDayOfMonth(now.lengthOfMonth())
-        );
     }
 }

@@ -13,51 +13,71 @@ import java.util.List;
 
 public interface ShiftRosterRepository extends JpaRepository<ShiftRoster, Long> {
 
-    /**
-     * Returns shifts that are active RIGHT NOW.
-     *
-     * Three cases:
-     *  1. Regular (non-overnight):  shift_date=today,     start <= now <= end,  start < end
-     *  2. Overnight first half:     shift_date=today,     start <= now,         start > end
-     *  3. Overnight second half:    shift_date=yesterday, now <= end,            start > end
-     */
+    /** Active shifts right now for a given team — handles overnight shifts. */
     @Query("""
-        SELECT s FROM ShiftRoster s WHERE
-          (s.shiftDate = :today     AND s.shiftStart <= s.shiftEnd AND s.shiftStart <= :now AND s.shiftEnd >= :now)
-          OR
-          (s.shiftDate = :today     AND s.shiftStart > s.shiftEnd AND s.shiftStart <= :now)
-          OR
-          (s.shiftDate = :yesterday AND s.shiftStart > s.shiftEnd AND s.shiftEnd >= :now)
+        SELECT s FROM ShiftRoster s WHERE s.teamId = :teamId AND (
+            (s.shiftStart <= s.shiftEnd
+                AND s.shiftDate = :today
+                AND s.shiftStart <= :now AND s.shiftEnd >= :now)
+            OR
+            (s.shiftStart > s.shiftEnd
+                AND s.shiftDate = :today
+                AND s.shiftStart <= :now)
+            OR
+            (s.shiftStart > s.shiftEnd
+                AND s.shiftDate = :yesterday
+                AND s.shiftEnd >= :now)
+        )
         """)
     List<ShiftRoster> findActiveShifts(
+        @Param("teamId")    String teamId,
         @Param("today")     LocalDate today,
         @Param("yesterday") LocalDate yesterday,
         @Param("now")       LocalTime now
     );
 
-    /** All distinct emails that have any shift entry for today or yesterday (for unassign sweep). */
+    /** Distinct emails with any shift on today or yesterday for a given team. */
     @Query("""
         SELECT DISTINCT s.email FROM ShiftRoster s
-        WHERE s.shiftDate = :today OR s.shiftDate = :yesterday
+        WHERE s.teamId = :teamId
+          AND (s.shiftDate = :today OR s.shiftDate = :yesterday)
         """)
     List<String> findAllEmailsInRange(
+        @Param("teamId")    String teamId,
         @Param("today")     LocalDate today,
         @Param("yesterday") LocalDate yesterday
     );
 
-    /** Ordered list of shifts for a date range (used by UI schedule endpoint). */
-    List<ShiftRoster> findByShiftDateBetweenOrderByShiftDateAscShiftStartAsc(
-        LocalDate start, LocalDate end
+    /** Shifts for a team within a date range, ordered by date then start time. */
+    @Query("""
+        SELECT s FROM ShiftRoster s
+        WHERE s.teamId = :teamId
+          AND s.shiftDate >= :start AND s.shiftDate <= :end
+        ORDER BY s.shiftDate, s.shiftStart
+        """)
+    List<ShiftRoster> findByShiftDateBetween(
+        @Param("teamId") String teamId,
+        @Param("start")  LocalDate start,
+        @Param("end")    LocalDate end
     );
 
-    /** Delete all entries for a given month so re-uploading replaces them cleanly. */
+    /** Delete a team's entries within a date range (used on re-upload). */
     @Modifying
     @Transactional
-    @Query("DELETE FROM ShiftRoster s WHERE s.shiftDate >= :start AND s.shiftDate < :end")
-    void deleteByMonthRange(@Param("start") LocalDate start, @Param("end") LocalDate end);
+    @Query("""
+        DELETE FROM ShiftRoster s
+        WHERE s.teamId = :teamId
+          AND s.shiftDate >= :start AND s.shiftDate < :end
+        """)
+    void deleteByMonthRange(
+        @Param("teamId") String teamId,
+        @Param("start")  LocalDate start,
+        @Param("end")    LocalDate end
+    );
 
-    /** Delete all shift entries whose date is before the given cutoff. */
+    /** Purge old entries across all teams. */
     @Modifying
     @Transactional
-    long deleteByShiftDateBefore(LocalDate cutoff);
+    @Query("DELETE FROM ShiftRoster s WHERE s.shiftDate < :cutoff")
+    long deleteByShiftDateBefore(@Param("cutoff") LocalDate cutoff);
 }

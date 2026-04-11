@@ -24,12 +24,8 @@ public class AssignScheduler {
      */
     @Scheduled(cron = "${jira.schedule.cron}")
     public void scheduledRun() {
-        log.info("Scheduler triggered.");
-        try {
-            shiftAssignService.runShiftAssignment();
-        } catch (Exception e) {
-            log.error("Scheduler run failed: {}", e.getMessage(), e);
-        }
+        log.info("Scheduler triggered — running all teams.");
+        shiftAssignService.runAllTeams();
     }
 
     /** Purges activity log and shift roster entries older than 7 days — runs daily at midnight IST. */

@@ -13,42 +13,48 @@ public class AssignmentLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "issue_key", nullable = false, length = 50)
+    @Column(name = "team_id")
+    private String teamId;
+
+    @Column(name = "issue_key", nullable = false)
     private String issueKey;
 
-    @Column(name = "issue_summary", length = 500)
+    @Column(name = "issue_summary", columnDefinition = "TEXT")
     private String issueSummary;
 
-    @Column(name = "assigned_to_email", nullable = false, length = 255)
+    @Column(name = "assigned_to_email", nullable = false)
     private String assignedToEmail;
 
     @Column(name = "assigned_at", nullable = false)
     private LocalDateTime assignedAt;
 
-    @Column(name = "action", length = 20)
-    private String action; // ASSIGN or UNASSIGN
+    @Column(nullable = false)
+    private String action;
 
-    public static AssignmentLog ofAssign(String issueKey, String issueSummary, String email) {
+    public static AssignmentLog ofAssign(String teamId, String issueKey, String issueSummary, String email) {
         AssignmentLog log = new AssignmentLog();
-        log.issueKey = issueKey;
-        log.issueSummary = issueSummary;
+        log.teamId          = teamId;
+        log.issueKey        = issueKey;
+        log.issueSummary    = issueSummary;
         log.assignedToEmail = email;
-        log.assignedAt = LocalDateTime.now();
-        log.action = "ASSIGN";
+        log.assignedAt      = LocalDateTime.now();
+        log.action          = "ASSIGN";
         return log;
     }
 
-    public static AssignmentLog ofUnassign(String issueKey, String issueSummary, String email) {
+    public static AssignmentLog ofUnassign(String teamId, String issueKey, String issueSummary, String email) {
         AssignmentLog log = new AssignmentLog();
-        log.issueKey = issueKey;
-        log.issueSummary = issueSummary;
+        log.teamId          = teamId;
+        log.issueKey        = issueKey;
+        log.issueSummary    = issueSummary;
         log.assignedToEmail = email;
-        log.assignedAt = LocalDateTime.now();
-        log.action = "UNASSIGN";
+        log.assignedAt      = LocalDateTime.now();
+        log.action          = "UNASSIGN";
         return log;
     }
 
     public Long getId()                  { return id; }
+    public String getTeamId()            { return teamId; }
     public String getIssueKey()          { return issueKey; }
     public String getIssueSummary()      { return issueSummary; }
     public String getAssignedToEmail()   { return assignedToEmail; }
