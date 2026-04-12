@@ -31,6 +31,7 @@ jobs:
           source: "target/autoassign-1.0.0.jar"
           target: "/opt/jira-autoassign/app/"
           strip_components: 1
+          overwrite: true
 
       - name: Restart service on EC2
         uses: appleboy/ssh-action@v1.0.3
