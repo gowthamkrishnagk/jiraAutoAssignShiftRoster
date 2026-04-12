@@ -324,6 +324,45 @@ public class JiraClient {
         }
     }
 
+    /**
+     * Transitions a ticket to the target status name (e.g. "In Progress").
+     * Fetches available transitions and picks the one whose name or destination
+     * status name matches. No-op if the transition is not available.
+     */
+    public void transitionTicket(String issueKey, String targetStatus) {
+        String url = baseUrl() + "/rest/api/3/issue/" + issueKey + "/transitions";
+        try {
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                url, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+
+            JsonNode body = response.getBody();
+            if (body == null || !body.has("transitions")) return;
+
+            String transitionId = null;
+            for (JsonNode t : body.get("transitions")) {
+                String name   = t.path("name").asText("");
+                String toName = t.path("to").path("name").asText("");
+                if (targetStatus.equalsIgnoreCase(name) || targetStatus.equalsIgnoreCase(toName)) {
+                    transitionId = t.path("id").asText();
+                    break;
+                }
+            }
+
+            if (transitionId == null) {
+                log.warn("[{}] No transition to '{}' available", issueKey, targetStatus);
+                return;
+            }
+
+            Map<String, Object> payload = Map.of("transition", Map.of("id", transitionId));
+            restTemplate.exchange(url, HttpMethod.POST,
+                new HttpEntity<>(payload, authHeaders()), Void.class);
+            log.info("[{}] Transitioned to '{}'", issueKey, targetStatus);
+
+        } catch (Exception e) {
+            log.warn("[{}] Could not transition to '{}': {}", issueKey, targetStatus, e.getMessage());
+        }
+    }
+
     /** 1-second pause between assignments to avoid Jira rate limits (429). */
     public void pauseBetweenAssignments() {
         sleep(1000);

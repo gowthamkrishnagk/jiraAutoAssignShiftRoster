@@ -170,6 +170,11 @@ public class ShiftAssignService {
                 if (jiraClient.assignTicket(issueKey, accountId)) {
                     assigned++;
                     logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, email));
+                    // Auto-transition "Waiting for support" → "In Progress"
+                    String status = ticket.get("fields").path("status").path("name").asText("");
+                    if ("Waiting for support".equalsIgnoreCase(status)) {
+                        jiraClient.transitionTicket(issueKey, "In Progress");
+                    }
                 } else {
                     failed++;
                 }
