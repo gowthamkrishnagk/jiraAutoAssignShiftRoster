@@ -2,6 +2,7 @@ package com.jira.autoassign.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jira.autoassign.config.JiraProperties;
+import com.jira.autoassign.service.JiraConfigService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
@@ -19,10 +20,12 @@ public class JiraClient {
 
     private final RestTemplate restTemplate;
     private final JiraProperties props;
+    private final JiraConfigService configService;
 
-    public JiraClient(RestTemplate restTemplate, JiraProperties props) {
-        this.restTemplate = restTemplate;
-        this.props = props;
+    public JiraClient(RestTemplate restTemplate, JiraProperties props, JiraConfigService configService) {
+        this.restTemplate  = restTemplate;
+        this.props         = props;
+        this.configService = configService;
     }
 
     // -----------------------------------------------------------------------
@@ -30,7 +33,7 @@ public class JiraClient {
     // -----------------------------------------------------------------------
 
     private HttpHeaders authHeaders() {
-        String credentials = props.getEmail() + ":" + props.getApiToken();
+        String credentials = configService.getEmail() + ":" + configService.getApiToken();
         String encoded = Base64.getEncoder().encodeToString(credentials.getBytes());
         HttpHeaders headers = new HttpHeaders();
         headers.set("Authorization", "Basic " + encoded);
@@ -39,13 +42,15 @@ public class JiraClient {
         return headers;
     }
 
+    private String baseUrl() { return configService.getUrl(); }
+
     // -----------------------------------------------------------------------
     // User lookup
     // -----------------------------------------------------------------------
 
     public String getAccountId(String email) {
         String url = UriComponentsBuilder
-            .fromHttpUrl(props.getUrl() + "/rest/api/3/user/search")
+            .fromHttpUrl(baseUrl() + "/rest/api/3/user/search")
             .queryParam("query", email)
             .toUriString();
 
@@ -79,7 +84,7 @@ public class JiraClient {
 
     private List<JsonNode> searchTickets(String jql) {
         URI uri = UriComponentsBuilder
-            .fromHttpUrl(props.getUrl() + "/rest/api/3/search/jql")
+            .fromHttpUrl(baseUrl() + "/rest/api/3/search/jql")
             .queryParam("jql",        "{jql}")
             .queryParam("maxResults", 100)
             .queryParam("fields",     "summary,assignee,status,issuetype,labels")
@@ -232,7 +237,7 @@ public class JiraClient {
      * Returns null if no assignee history exists.
      */
     public String getLastAssigneeAccountId(String issueKey) {
-        String url = props.getUrl() + "/rest/api/3/issue/" + issueKey + "/changelog";
+        String url = baseUrl() + "/rest/api/3/issue/" + issueKey + "/changelog";
         try {
             ResponseEntity<JsonNode> response = restTemplate.exchange(
                 url, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
@@ -262,7 +267,7 @@ public class JiraClient {
     /** Reverse-lookup: accountId → email address. Returns accountId as fallback. */
     public String getUserEmail(String accountId) {
         String url = UriComponentsBuilder
-            .fromHttpUrl(props.getUrl() + "/rest/api/3/user")
+            .fromHttpUrl(baseUrl() + "/rest/api/3/user")
             .queryParam("accountId", accountId)
             .toUriString();
         try {
@@ -282,7 +287,7 @@ public class JiraClient {
 
     /** Assigns a ticket to the given accountId. Retries on 429 rate limit. */
     public boolean assignTicket(String issueKey, String accountId) {
-        String url = props.getUrl() + "/rest/api/3/issue/" + issueKey + "/assignee";
+        String url = baseUrl() + "/rest/api/3/issue/" + issueKey + "/assignee";
         HttpEntity<Map<String, String>> req = new HttpEntity<>(Map.of("accountId", accountId), authHeaders());
 
         int[] delays = {5000, 15000, 30000};
@@ -305,7 +310,7 @@ public class JiraClient {
 
     /** Removes the assignee from a ticket (sets to unassigned). */
     public boolean unassignTicket(String issueKey) {
-        String url = props.getUrl() + "/rest/api/3/issue/" + issueKey + "/assignee";
+        String url = baseUrl() + "/rest/api/3/issue/" + issueKey + "/assignee";
         // HashMap allows null values; Map.of() does not
         Map<String, Object> body = new HashMap<>();
         body.put("accountId", null);

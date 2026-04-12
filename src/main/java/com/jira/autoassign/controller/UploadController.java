@@ -6,6 +6,7 @@ import com.jira.autoassign.entity.Team;
 import com.jira.autoassign.repository.AssignmentLogRepository;
 import com.jira.autoassign.repository.TeamRepository;
 import com.jira.autoassign.service.ExcelService;
+import com.jira.autoassign.service.JiraConfigService;
 import com.jira.autoassign.service.ShiftAssignService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,13 +24,16 @@ public class UploadController {
     private final ShiftAssignService shiftAssignService;
     private final AssignmentLogRepository logRepository;
     private final TeamRepository teamRepository;
+    private final JiraConfigService jiraConfigService;
 
     public UploadController(ExcelService excelService, ShiftAssignService shiftAssignService,
-                            AssignmentLogRepository logRepository, TeamRepository teamRepository) {
+                            AssignmentLogRepository logRepository, TeamRepository teamRepository,
+                            JiraConfigService jiraConfigService) {
         this.excelService       = excelService;
         this.shiftAssignService = shiftAssignService;
         this.logRepository      = logRepository;
         this.teamRepository     = teamRepository;
+        this.jiraConfigService  = jiraConfigService;
     }
 
     // -----------------------------------------------------------------------
@@ -248,6 +252,38 @@ public class UploadController {
             ? "Dry-run ENABLED for " + team.getName() + " — no tickets will be assigned."
             : "Dry-run DISABLED for " + team.getName() + " — assignments are live.");
         return ResponseEntity.ok(resp);
+    }
+
+    // -----------------------------------------------------------------------
+    // Jira connection settings
+    // -----------------------------------------------------------------------
+
+    @GetMapping("/jira-settings")
+    public ResponseEntity<Map<String, Object>> getJiraSettings() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("configured", jiraConfigService.isConfigured());
+        resp.put("jiraUrl",    jiraConfigService.getUrl() != null ? jiraConfigService.getUrl() : "");
+        resp.put("jiraEmail",  jiraConfigService.getEmail() != null ? jiraConfigService.getEmail() : "");
+        // never return the actual token — just whether it's set
+        resp.put("apiTokenSet", jiraConfigService.getApiToken() != null && !jiraConfigService.getApiToken().isBlank());
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/jira-settings")
+    public ResponseEntity<?> saveJiraSettings(@RequestBody Map<String, String> body) {
+        String jiraUrl   = body.get("jiraUrl");
+        String jiraEmail = body.get("jiraEmail");
+        String apiToken  = body.get("apiToken");
+
+        if (jiraUrl == null || jiraUrl.isBlank())
+            return ResponseEntity.badRequest().body(Map.of("error", "Jira URL is required"));
+        if (jiraEmail == null || jiraEmail.isBlank())
+            return ResponseEntity.badRequest().body(Map.of("error", "Email is required"));
+        if (apiToken == null || apiToken.isBlank())
+            return ResponseEntity.badRequest().body(Map.of("error", "API token is required"));
+
+        jiraConfigService.save(jiraUrl, jiraEmail, apiToken);
+        return ResponseEntity.ok(Map.of("saved", true, "configured", true));
     }
 
     // -----------------------------------------------------------------------
