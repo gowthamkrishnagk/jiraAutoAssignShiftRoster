@@ -17,7 +17,6 @@ public class JiraConfigService {
     private final JiraProperties props;
 
     // Live in-memory values — updated whenever user saves from UI
-    private volatile String url;
     private volatile String email;
     private volatile String apiToken;
 
@@ -29,37 +28,32 @@ public class JiraConfigService {
     @PostConstruct
     public void init() {
         JiraConfig saved = repo.findById(1L).orElse(null);
-        if (saved != null && saved.getJiraUrl() != null && !saved.getJiraUrl().isBlank()) {
-            url      = saved.getJiraUrl();
+        if (saved != null && saved.getJiraEmail() != null && !saved.getJiraEmail().isBlank()) {
             email    = saved.getJiraEmail();
             apiToken = saved.getApiToken();
         } else {
             // Fall back to application.properties
-            url      = props.getUrl();
             email    = props.getEmail();
             apiToken = props.getApiToken();
         }
     }
 
-    public String getUrl()      { return url; }
+    public String getUrl()      { return props.getUrl(); } // always from application.properties
     public String getEmail()    { return email; }
     public String getApiToken() { return apiToken; }
 
     public boolean isConfigured() {
-        return url != null && !url.isBlank()
-            && email != null && !email.isBlank()
+        return email != null && !email.isBlank()
             && apiToken != null && !apiToken.isBlank();
     }
 
-    public void save(String jiraUrl, String jiraEmail, String token) {
+    public void save(String jiraEmail, String token) {
         JiraConfig cfg = repo.findById(1L).orElse(new JiraConfig());
-        cfg.setJiraUrl(jiraUrl.trim());
         cfg.setJiraEmail(jiraEmail.trim());
         cfg.setApiToken(token.trim());
         repo.save(cfg);
 
         // Update live values immediately — no restart needed
-        this.url      = jiraUrl.trim();
         this.email    = jiraEmail.trim();
         this.apiToken = token.trim();
     }

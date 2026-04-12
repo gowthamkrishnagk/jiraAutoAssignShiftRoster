@@ -12,9 +12,6 @@ public class JiraConfig {
     @Id
     private Long id = 1L; // single-row table
 
-    @Column(name = "jira_url")
-    private String jiraUrl;
-
     @Column(name = "jira_email")
     private String jiraEmail;
 
@@ -22,8 +19,6 @@ public class JiraConfig {
     private String apiToken;
 
     public Long getId()                  { return id; }
-    public String getJiraUrl()           { return jiraUrl; }
-    public void   setJiraUrl(String v)   { this.jiraUrl = v; }
     public String getJiraEmail()         { return jiraEmail; }
     public void   setJiraEmail(String v) { this.jiraEmail = v; }
     public String getApiToken()          { return apiToken; }

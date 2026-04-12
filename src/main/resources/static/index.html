@@ -521,7 +521,6 @@
     <!-- View mode -->
     <div id="settings-view">
       <div style="font-size:.82rem;color:#42526e;margin-bottom:16px;line-height:1.6;">
-        <div style="margin-bottom:6px;"><strong>Jira URL:</strong> <span id="sv-url" style="color:#172b4d;"></span></div>
         <div style="margin-bottom:6px;"><strong>Email:</strong> <span id="sv-email" style="color:#172b4d;"></span></div>
         <div><strong>API Token:</strong> <span style="color:#172b4d;letter-spacing:2px;">••••••••••••</span></div>
       </div>
@@ -533,10 +532,6 @@
 
     <!-- Edit mode -->
     <div id="settings-edit" style="display:none;">
-      <div class="modal-field">
-        <label>Jira URL</label>
-        <input type="text" id="si-url" placeholder="https://yourcompany.atlassian.net" />
-      </div>
       <div class="modal-field">
         <label>Email</label>
         <input type="email" id="si-email" placeholder="your-email@company.com" />
@@ -882,13 +877,11 @@ async function openSettingsModal() {
   try {
     const data = await (await fetch('/api/jira-settings')).json();
     if (data.configured) {
-      document.getElementById('sv-url').textContent   = data.jiraUrl;
       document.getElementById('sv-email').textContent = data.jiraEmail;
       document.getElementById('settings-view').style.display = 'block';
       document.getElementById('settings-edit').style.display = 'none';
     } else {
       // Not configured yet — go straight to edit mode
-      document.getElementById('si-url').value   = data.jiraUrl || '';
       document.getElementById('si-email').value = data.jiraEmail || '';
       document.getElementById('si-token').value = '';
       document.getElementById('settings-view').style.display = 'none';
@@ -906,9 +899,7 @@ function closeSettingsModal() {
 }
 
 function switchToEditSettings() {
-  const url   = document.getElementById('sv-url').textContent;
   const email = document.getElementById('sv-email').textContent;
-  document.getElementById('si-url').value   = url;
   document.getElementById('si-email').value = email;
   document.getElementById('si-token').value = '';
   document.getElementById('settings-view').style.display = 'none';
@@ -919,21 +910,18 @@ function switchToEditSettings() {
 async function saveSettings() {
   const errEl = document.getElementById('settings-err');
   errEl.style.display = 'none';
-  const jiraUrl  = document.getElementById('si-url').value.trim();
   const jiraEmail = document.getElementById('si-email').value.trim();
   const apiToken  = document.getElementById('si-token').value.trim();
-  if (!jiraUrl)   { errEl.textContent = 'Jira URL is required';  errEl.style.display = 'block'; return; }
   if (!jiraEmail) { errEl.textContent = 'Email is required';     errEl.style.display = 'block'; return; }
   if (!apiToken)  { errEl.textContent = 'API Token is required'; errEl.style.display = 'block'; return; }
   try {
     const res  = await fetch('/api/jira-settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jiraUrl, jiraEmail, apiToken })
+      body: JSON.stringify({ jiraEmail, apiToken })
     });
     const data = await res.json();
     if (!res.ok) { errEl.textContent = data.error || 'Save failed'; errEl.style.display = 'block'; return; }
-    document.getElementById('sv-url').textContent   = jiraUrl;
     document.getElementById('sv-email').textContent = jiraEmail;
     document.getElementById('settings-view').style.display = 'block';
     document.getElementById('settings-edit').style.display = 'none';

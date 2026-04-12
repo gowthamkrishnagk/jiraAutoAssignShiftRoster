@@ -261,28 +261,23 @@ public class UploadController {
     @GetMapping("/jira-settings")
     public ResponseEntity<Map<String, Object>> getJiraSettings() {
         Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("configured", jiraConfigService.isConfigured());
-        resp.put("jiraUrl",    jiraConfigService.getUrl() != null ? jiraConfigService.getUrl() : "");
-        resp.put("jiraEmail",  jiraConfigService.getEmail() != null ? jiraConfigService.getEmail() : "");
-        // never return the actual token — just whether it's set
+        resp.put("configured",  jiraConfigService.isConfigured());
+        resp.put("jiraEmail",   jiraConfigService.getEmail() != null ? jiraConfigService.getEmail() : "");
         resp.put("apiTokenSet", jiraConfigService.getApiToken() != null && !jiraConfigService.getApiToken().isBlank());
         return ResponseEntity.ok(resp);
     }
 
     @PostMapping("/jira-settings")
     public ResponseEntity<?> saveJiraSettings(@RequestBody Map<String, String> body) {
-        String jiraUrl   = body.get("jiraUrl");
         String jiraEmail = body.get("jiraEmail");
         String apiToken  = body.get("apiToken");
 
-        if (jiraUrl == null || jiraUrl.isBlank())
-            return ResponseEntity.badRequest().body(Map.of("error", "Jira URL is required"));
         if (jiraEmail == null || jiraEmail.isBlank())
             return ResponseEntity.badRequest().body(Map.of("error", "Email is required"));
         if (apiToken == null || apiToken.isBlank())
             return ResponseEntity.badRequest().body(Map.of("error", "API token is required"));
 
-        jiraConfigService.save(jiraUrl, jiraEmail, apiToken);
+        jiraConfigService.save(jiraEmail, apiToken);
         return ResponseEntity.ok(Map.of("saved", true, "configured", true));
     }
 
