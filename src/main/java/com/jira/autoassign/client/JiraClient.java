@@ -205,6 +205,36 @@ public class JiraClient {
         return searchTickets(jql);
     }
 
+    /**
+     * Returns escalated-unassigned tickets whose escalation path is one of the given values.
+     * Used to restore tickets on specific escalation paths to their last historical assignee.
+     */
+    public List<JsonNode> getEscalatedByPathsAndJql(String baseJql, List<String> escalationPaths) {
+        String inList = escalationPaths.stream()
+            .map(p -> "\"" + p.replace("\"", "\\\"") + "\"")
+            .collect(java.util.stream.Collectors.joining(", "));
+        String jql = baseJql.replaceAll(
+            "(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY",
+            "\"Escalation Path[Dropdown]\" in (" + inList + ")");
+        log.debug("Fetching escalated (paths in [{}]) unassigned by JQL: {}", inList, jql);
+        return searchTickets(jql);
+    }
+
+    /**
+     * Returns escalated-unassigned tickets whose escalation path is NOT one of the given values.
+     * These tickets are assigned round-robin to the active shift instead of restored.
+     */
+    public List<JsonNode> getEscalatedNotByPathsAndJql(String baseJql, List<String> escalationPaths) {
+        String inList = escalationPaths.stream()
+            .map(p -> "\"" + p.replace("\"", "\\\"") + "\"")
+            .collect(java.util.stream.Collectors.joining(", "));
+        String jql = baseJql.replaceAll(
+            "(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY",
+            "\"Escalation Path[Dropdown]\" is not EMPTY AND \"Escalation Path[Dropdown]\" not in (" + inList + ")");
+        log.debug("Fetching escalated (paths not in [{}]) unassigned by JQL: {}", inList, jql);
+        return searchTickets(jql);
+    }
+
     // -----------------------------------------------------------------------
 
     /** Returns unassigned tickets where Escalation Path is NOT empty (reassign to last owner). */

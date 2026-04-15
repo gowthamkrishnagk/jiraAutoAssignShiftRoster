@@ -184,14 +184,24 @@ public class ShiftAssignService {
         }
         log.info("[{}] Done — assigned: {}, failed: {}", teamName, assigned, failed);
 
-        // --- Step 2b: escalated + unassigned → restore to last historical assignee ---
-        List<JsonNode> escalated = jiraClient.getEscalatedUnassignedByJql(team.getJql()).stream()
+        // --- Step 2b: escalated + unassigned ---
+        // ITOPS L2 Salesforce / Salesforce L3 B2B / Salesforce L3 B2C → restore to last historical assignee
+        // Any other escalation path → assign round-robin to active shift
+
+        final List<String> restorePaths = List.of(
+            "ITOPS L2 Salesforce",
+            "Salesforce L3 B2B",
+            "Salesforce L3 B2C"
+        );
+
+        // 2b-i: restore paths → restore to last assignee
+        List<JsonNode> restoreEscalated = jiraClient.getEscalatedByPathsAndJql(team.getJql(), restorePaths).stream()
             .filter(t -> t.get("fields").get("assignee").isNull())
             .collect(Collectors.toList());
 
-        log.info("[{}] Escalated unassigned to restore: {}", teamName, escalated.size());
+        log.info("[{}] Escalated (restore paths) to restore: {}", teamName, restoreEscalated.size());
 
-        for (JsonNode ticket : escalated) {
+        for (JsonNode ticket : restoreEscalated) {
             String issueKey  = ticket.get("key").asText();
             String summary   = ticket.get("fields").path("summary").asText("");
             String lastAccId = jiraClient.getLastAssigneeAccountId(issueKey);
@@ -210,6 +220,32 @@ public class ShiftAssignService {
                     logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, lastEmail));
                 }
             }
+            jiraClient.pauseBetweenAssignments();
+        }
+
+        // 2b-ii: other escalation paths → round-robin to active shift
+        List<JsonNode> otherEscalated = jiraClient.getEscalatedNotByPathsAndJql(team.getJql(), restorePaths).stream()
+            .filter(t -> t.get("fields").get("assignee").isNull())
+            .collect(Collectors.toList());
+
+        log.info("[{}] Other-path escalated to assign round-robin: {}", teamName, otherEscalated.size());
+
+        for (JsonNode ticket : otherEscalated) {
+            String issueKey  = ticket.get("key").asText();
+            String summary   = ticket.get("fields").path("summary").asText("");
+            int    idx       = rrIndex % accountIds.size();
+            String accountId = accountIds.get(idx);
+            String email     = resolvedEmails.get(idx);
+
+            if (team.isDryRun()) {
+                log.info("[{}][DRY-RUN] Would assign other-escalated [{}] -> {}", teamName, issueKey, email);
+            } else {
+                log.info("[{}] Assign other-escalated [{}] -> {}", teamName, issueKey, email);
+                if (jiraClient.assignTicket(issueKey, accountId)) {
+                    logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, email));
+                }
+            }
+            rrIndex++;
             jiraClient.pauseBetweenAssignments();
         }
 
