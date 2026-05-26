@@ -117,25 +117,17 @@ public class SlaController {
 
         String sevKey = jiraClient.discoverSeverityFieldKey();
 
-        // Open tickets — use original team JQL status filter, no date limit
-        // (a ticket breached 60 days ago that is still open must still show)
-        List<JsonNode> openAll = jiraClient.getOpenSlaTickets(t.getJql(), fieldId);
-        List<JsonNode> openBreached = openAll.stream()
-            .filter(tk -> Boolean.TRUE.equals(extractSla(tk.path("fields").path(fieldId)).get("breached")))
-            .collect(java.util.stream.Collectors.toList());
+        // Both queries use cf[X]=breached() — Jira is the source of truth for breach detection.
+        // No Java-side re-filtering: every ticket returned is already confirmed breached by Jira.
+        List<JsonNode> openBreached     = jiraClient.getOpenSlaTickets(t.getJql(), fieldId);
+        List<JsonNode> resolvedBreached = jiraClient.getResolvedSlaTickets(t.getJql(), fieldId, period);
 
-        // Resolved/Closed tickets — filtered by resolved date window (period)
-        List<JsonNode> resolvedAll = jiraClient.getResolvedSlaTickets(t.getJql(), fieldId, period);
-        List<JsonNode> resolvedBreached = resolvedAll.stream()
-            .filter(tk -> Boolean.TRUE.equals(extractSla(tk.path("fields").path(fieldId)).get("breached")))
-            .collect(java.util.stream.Collectors.toList());
-
-        log.info("[SLA] period={} openTotal={} openBreached={} resolvedTotal={} resolvedBreached={}",
-            period, openAll.size(), openBreached.size(), resolvedAll.size(), resolvedBreached.size());
+        log.info("[SLA] period={} openBreached={} resolvedBreached={}",
+            period, openBreached.size(), resolvedBreached.size());
 
         Map<String, Object> result = new LinkedHashMap<>();
         // Open: attribute breaches to who had ticket at breach time (changelog lookup)
-        // Resolved: skip attribution — 1000+ changelog calls would time out; use current assignee
+        // Resolved: skip attribution — too many tickets; use current assignee
         result.put("open",     groupByBreachOwner(openBreached,     fieldId, sevKey, true));
         result.put("resolved", groupByBreachOwner(resolvedBreached, fieldId, sevKey, false));
         return ResponseEntity.ok(result);
@@ -159,13 +151,28 @@ public class SlaController {
             String currentName  = unassigned ? "" : assigneeNode.path("displayName").asText(currentEmail);
 
             JsonNode slaField        = ticket.path("fields").path(fieldId);
-            Map<String, Object> slaInfo = extractSla(slaField);
+            Map<String, Object> slaInfo = new LinkedHashMap<>(extractSla(slaField));
+
+            // Every ticket here came from cf[X]=breached() — Jira confirmed it.
+            // Force breached=true so the frontend isBreached() check never drops it,
+            // even when extractSla() can't parse the SLA field structure perfectly.
+            slaInfo.put("breached", true);
+            if (!"completed_breached".equals(slaInfo.get("status"))
+                    && !"breached".equals(slaInfo.get("status"))) {
+                // Preserve readable status: completed cycle → completed_breached, else breached
+                boolean hasCycles = !ticket.path("fields").path(fieldId)
+                                           .path("completedCycles").isMissingNode()
+                                    && ticket.path("fields").path(fieldId)
+                                             .path("completedCycles").size() > 0;
+                slaInfo.put("status", hasCycles ? "completed_breached" : "breached");
+            }
+            slaInfo.put("available", true);
 
             String severity = (sevKey != null)
                 ? extractSeverity(ticket.path("fields").path(sevKey)) : "";
             String issueKey = ticket.path("key").asText();
 
-            boolean breached    = Boolean.TRUE.equals(slaInfo.get("breached"));
+            boolean breached    = true; // always true — ticket came from breached() JQL
             long    breachEpoch = slaInfo.containsKey("breachEpoch")
                                   ? ((Number) slaInfo.get("breachEpoch")).longValue() : 0L;
 
