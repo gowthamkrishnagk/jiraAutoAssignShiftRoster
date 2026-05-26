@@ -122,7 +122,7 @@ public class JiraClient {
         URI uri = UriComponentsBuilder
             .fromHttpUrl(baseUrl() + "/rest/api/3/search/jql")
             .queryParam("jql",        "{jql}")
-            .queryParam("maxResults", 100)
+            .queryParam("maxResults", 500)
             .queryParam("fields",     fields)
             .build()
             .expand(jql)
@@ -145,56 +145,33 @@ public class JiraClient {
      * Used by the SLA Tracker — strips "Assignee in (EMPTY)" and flips to
      * "assignee is not EMPTY" so we see every person's current load.
      */
+    /**
+     * Single unified SLA query — fetches ALL statuses (open, in-progress, waiting,
+     * escalated, resolved, closed) filtered only by created date window.
+     * Status filter is stripped from the base JQL so no tickets are missed.
+     * Returns up to 500 tickets; backend filters to breached-only.
+     */
     public List<JsonNode> getSlaTickets(String baseJql, String slaFieldId, String period) {
         String base = baseJql
+            // remove assignee empty filter
             .replaceAll("(?i)\\s+AND\\s+Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
             .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)\\s+AND\\s+", "")
             .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
-            .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
-
-        // Date filter — Jira JQL relative dates
-        String dateFilter = switch (period == null ? "all" : period) {
-            case "weekly"  -> " AND created >= -7d";
-            case "monthly" -> " AND created >= -30d";
-            default        -> "";   // "all" — no date restriction
-        };
-
-        String jql = base + " AND assignee is not EMPTY" + dateFilter + " ORDER BY assignee ASC";
-        log.debug("[SLA] Fetching tickets (period={}): {}", period, jql);
-        String sevKey = discoverSeverityFieldKey();
-        String fields = "summary,assignee,status," + slaFieldId
-                        + (sevKey != null ? "," + sevKey : "");
-        return searchTicketsWithFields(jql, fields);
-    }
-
-    /**
-     * Fetches Resolved/Closed tickets that had their SLA breached.
-     * Strips the status and assignee-empty filters from the base JQL and
-     * restricts to status in ("Resolved","Closed") with a resolved-date window.
-     */
-    public List<JsonNode> getResolvedSlaTickets(String baseJql, String slaFieldId, String period) {
-        String base = baseJql
-            .replaceAll("(?i)\\s+AND\\s+Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
-            .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)\\s+AND\\s+", "")
-            .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
-            // strip any existing status filter so we can replace it
+            // remove status filter — we want ALL statuses (open, waiting, resolved, closed…)
             .replaceAll("(?i)\\s+AND\\s+status\\s+in\\s*\\([^)]+\\)", "")
             .replaceAll("(?i)status\\s+in\\s*\\([^)]+\\)\\s+AND\\s+", "")
             .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
 
-        // Limit resolved date window to avoid fetching all history
+        // Date filter by created date
         String dateFilter = switch (period == null ? "all" : period) {
-            case "weekly"  -> " AND resolved >= -7d";
-            case "monthly" -> " AND resolved >= -30d";
-            default        -> " AND resolved >= -30d";  // cap at 30 days for "all"
+            case "weekly"  -> " AND created >= -7d";
+            case "monthly" -> " AND created >= -30d";
+            default        -> " AND created >= -90d";  // "all" = last 90 days
         };
 
-        String jql = base
-            + " AND status in (\"Resolved\",\"Closed\")"
-            + " AND assignee is not EMPTY"
-            + dateFilter
-            + " ORDER BY resolved DESC";
-        log.debug("[SLA] Fetching resolved tickets (period={}): {}", period, jql);
+        String jql = base + " AND assignee is not EMPTY" + dateFilter + " ORDER BY created DESC";
+        log.info("[SLA] Unified query (period={}): {}", period, jql);
+
         String sevKey = discoverSeverityFieldKey();
         String fields = "summary,assignee,status," + slaFieldId
                         + (sevKey != null ? "," + sevKey : "");

@@ -117,26 +117,38 @@ public class SlaController {
 
         String sevKey = jiraClient.discoverSeverityFieldKey();
 
-        // --- Open tickets ---
-        List<JsonNode> openTickets = jiraClient.getSlaTickets(t.getJql(), fieldId, period);
-        List<Map<String, Object>> openSection = groupByBreachOwner(openTickets, fieldId, sevKey);
+        // Single unified query — all statuses, filtered by created date window
+        List<JsonNode> allTickets = jiraClient.getSlaTickets(t.getJql(), fieldId, period);
 
-        // --- Resolved / Closed breached tickets ---
-        List<Map<String, Object>> resolvedSection = new ArrayList<>();
-        try {
-            List<JsonNode> resolvedTickets = jiraClient.getResolvedSlaTickets(t.getJql(), fieldId, period);
-            // Keep only those where SLA was actually breached
-            List<JsonNode> resolvedBreached = resolvedTickets.stream()
-                .filter(rt -> Boolean.TRUE.equals(extractSla(rt.path("fields").path(fieldId)).get("breached")))
-                .collect(java.util.stream.Collectors.toList());
-            resolvedSection = groupByBreachOwner(resolvedBreached, fieldId, sevKey);
-        } catch (Exception e) {
-            log.warn("[SLA] Could not fetch resolved tickets: {}", e.getMessage());
+        // Split into open vs resolved/closed by ticket status
+        List<JsonNode> openTickets     = new ArrayList<>();
+        List<JsonNode> resolvedTickets = new ArrayList<>();
+
+        for (JsonNode ticket : allTickets) {
+            String status = ticket.path("fields").path("status").path("name").asText("").toLowerCase();
+            boolean isResolved = status.equals("resolved") || status.equals("closed");
+            if (isResolved) {
+                resolvedTickets.add(ticket);
+            } else {
+                openTickets.add(ticket);
+            }
         }
 
+        // Filter each group to breached-only
+        List<JsonNode> openBreached = openTickets.stream()
+            .filter(tk -> Boolean.TRUE.equals(extractSla(tk.path("fields").path(fieldId)).get("breached")))
+            .collect(java.util.stream.Collectors.toList());
+
+        List<JsonNode> resolvedBreached = resolvedTickets.stream()
+            .filter(tk -> Boolean.TRUE.equals(extractSla(tk.path("fields").path(fieldId)).get("breached")))
+            .collect(java.util.stream.Collectors.toList());
+
+        log.info("[SLA] period={} total={} openBreached={} resolvedBreached={}",
+            period, allTickets.size(), openBreached.size(), resolvedBreached.size());
+
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("open",     openSection);
-        result.put("resolved", resolvedSection);
+        result.put("open",     groupByBreachOwner(openBreached,     fieldId, sevKey));
+        result.put("resolved", groupByBreachOwner(resolvedBreached, fieldId, sevKey));
         return ResponseEntity.ok(result);
     }
 
