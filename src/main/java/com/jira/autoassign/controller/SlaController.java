@@ -111,49 +111,55 @@ public class SlaController {
         if (fieldId == null || fieldId.isBlank())
             return ResponseEntity.ok(Map.of("error", "sla_not_configured"));
 
-        // Open tickets (In Progress, Waiting, Escalated, …)
-        List<JsonNode> tickets = new ArrayList<>(jiraClient.getSlaTickets(t.getJql(), fieldId, period));
+        String sevKey = jiraClient.discoverSeverityFieldKey();
 
-        // Resolved / Closed tickets — keep only those where SLA was breached
+        // --- Open tickets ---
+        List<JsonNode> openTickets = jiraClient.getSlaTickets(t.getJql(), fieldId, period);
+        List<Map<String, Object>> openSection = groupByBreachOwner(openTickets, fieldId, sevKey);
+
+        // --- Resolved / Closed breached tickets ---
+        List<Map<String, Object>> resolvedSection = new ArrayList<>();
         try {
-            List<JsonNode> resolved = jiraClient.getResolvedSlaTickets(t.getJql(), fieldId, period);
-            for (JsonNode rt : resolved) {
-                JsonNode slaField = rt.path("fields").path(fieldId);
-                Map<String, Object> slaInfo = extractSla(slaField);
-                if (Boolean.TRUE.equals(slaInfo.get("breached"))) {
-                    tickets.add(rt);
-                }
-            }
+            List<JsonNode> resolvedTickets = jiraClient.getResolvedSlaTickets(t.getJql(), fieldId, period);
+            // Keep only those where SLA was actually breached
+            List<JsonNode> resolvedBreached = resolvedTickets.stream()
+                .filter(rt -> Boolean.TRUE.equals(extractSla(rt.path("fields").path(fieldId)).get("breached")))
+                .collect(java.util.stream.Collectors.toList());
+            resolvedSection = groupByBreachOwner(resolvedBreached, fieldId, sevKey);
         } catch (Exception e) {
-            // Non-fatal — open tickets still shown even if resolved query fails
             log.warn("[SLA] Could not fetch resolved tickets: {}", e.getMessage());
         }
 
-        // Discover severity field key once outside the loop (cached after first call)
-        String sevKey = jiraClient.discoverSeverityFieldKey();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("open",     openSection);
+        result.put("resolved", resolvedSection);
+        return ResponseEntity.ok(result);
+    }
 
-        // Group by the person responsible at breach time (current assignee for non-breached)
+    // -----------------------------------------------------------------------
+    // Grouping helper — shared by open and resolved sections
+    // -----------------------------------------------------------------------
+
+    private List<Map<String, Object>> groupByBreachOwner(
+            List<JsonNode> tickets, String fieldId, String sevKey) {
+
         Map<String, Map<String, Object>> byAssignee = new LinkedHashMap<>();
 
         for (JsonNode ticket : tickets) {
             JsonNode assigneeNode = ticket.path("fields").path("assignee");
             if (assigneeNode.isNull() || assigneeNode.isMissingNode()) continue;
 
-            String currentAccId  = assigneeNode.path("accountId").asText("");
-            String currentEmail  = assigneeNode.path("emailAddress").asText("");
-            String currentName   = assigneeNode.path("displayName").asText(currentEmail);
+            String currentAccId = assigneeNode.path("accountId").asText("");
+            String currentEmail = assigneeNode.path("emailAddress").asText("");
+            String currentName  = assigneeNode.path("displayName").asText(currentEmail);
 
             JsonNode slaField        = ticket.path("fields").path(fieldId);
             Map<String, Object> slaInfo = extractSla(slaField);
 
-            String severity  = (sevKey != null)
+            String severity = (sevKey != null)
                 ? extractSeverity(ticket.path("fields").path(sevKey)) : "";
-            String issueKey  = ticket.path("key").asText();
+            String issueKey = ticket.path("key").asText();
 
-            // --- Breach attribution ---
-            // For ongoing-breached tickets (breach epoch known), check who held the
-            // ticket AT the breach time via the changelog.
-            // If it was a different person, attribute the breach to that person.
             boolean breached    = Boolean.TRUE.equals(slaInfo.get("breached"));
             long    breachEpoch = slaInfo.containsKey("breachEpoch")
                                   ? ((Number) slaInfo.get("breachEpoch")).longValue() : 0L;
@@ -161,17 +167,16 @@ public class SlaController {
             String groupAccId   = currentAccId;
             String groupEmail   = currentEmail;
             String groupName    = currentName;
-            String reassignedTo = null; // non-null → ticket was reassigned AFTER breach
+            String reassignedTo = null;
 
             if (breached && breachEpoch > 0) {
                 String ownerAtBreach = jiraClient.getAssigneeAtEpoch(issueKey, breachEpoch);
                 if (ownerAtBreach != null && !ownerAtBreach.equals(currentAccId)) {
-                    // Different person had it when the SLA breached
                     Map<String, String> ownerInfo = jiraClient.getUserInfo(ownerAtBreach);
-                    groupAccId  = ownerAtBreach;
-                    groupEmail  = ownerInfo.getOrDefault("email", "");
-                    groupName   = ownerInfo.getOrDefault("displayName",
-                                      groupEmail.isEmpty() ? ownerAtBreach : groupEmail);
+                    groupAccId   = ownerAtBreach;
+                    groupEmail   = ownerInfo.getOrDefault("email", "");
+                    groupName    = ownerInfo.getOrDefault("displayName",
+                                       groupEmail.isEmpty() ? ownerAtBreach : groupEmail);
                     reassignedTo = currentName.isEmpty() ? currentEmail : currentName;
                 }
             }
@@ -179,7 +184,7 @@ public class SlaController {
             String mapKey = groupEmail.isEmpty() ? groupAccId : groupEmail;
             if (mapKey.isEmpty()) mapKey = "unknown";
 
-            Map<String, Object> assigneeEntry = byAssignee.computeIfAbsent(mapKey, k -> {
+            Map<String, Object> entry = byAssignee.computeIfAbsent(mapKey, k -> {
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("email",   groupEmail);
                 m.put("name",    groupName);
@@ -193,17 +198,14 @@ public class SlaController {
             ticketData.put("status",   ticket.path("fields").path("status").path("name").asText(""));
             ticketData.put("severity", severity);
             ticketData.put("sla",      slaInfo);
-            if (reassignedTo != null) {
-                ticketData.put("reassignedTo", reassignedTo); // frontend shows "→ Now with: [name]"
-            }
+            if (reassignedTo != null) ticketData.put("reassignedTo", reassignedTo);
 
             @SuppressWarnings("unchecked")
-            List<Map<String, Object>> ticketList =
-                (List<Map<String, Object>>) assigneeEntry.get("tickets");
-            ticketList.add(ticketData);
+            List<Map<String, Object>> list = (List<Map<String, Object>>) entry.get("tickets");
+            list.add(ticketData);
         }
 
-        return ResponseEntity.ok(new ArrayList<>(byAssignee.values()));
+        return new ArrayList<>(byAssignee.values());
     }
 
     // -----------------------------------------------------------------------

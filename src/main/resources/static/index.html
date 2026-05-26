@@ -1843,10 +1843,13 @@ async function loadSla() {
       'Last fetched: ' + new Date().toLocaleTimeString() +
       (team ? '  ·  ' + team.name : '');
 
-    // Store full data for client-side assignee filter
-    slaAllData = Array.isArray(data) ? data : [];
-    populateAssigneeFilter(slaAllData);
-    renderSla(slaAllData, mainEl);
+    // New response shape: { open: [...], resolved: [...] }
+    slaAllData = {
+      open:     Array.isArray(data.open)     ? data.open     : [],
+      resolved: Array.isArray(data.resolved) ? data.resolved : []
+    };
+    populateAssigneeFilter([...slaAllData.open, ...slaAllData.resolved]);
+    renderSlaPage(slaAllData, mainEl);
   } catch (e) {
     mainEl.innerHTML = `<div class="sla-empty-state" style="color:#bf2600;">
       <strong>Network error</strong>${esc(e.message)}
@@ -1869,13 +1872,17 @@ function populateAssigneeFilter(assignees) {
   const sel = document.getElementById('sla-assignee-filter');
   const prev = sel.value;
   sel.innerHTML = '<option value="">All Assignees</option>';
+  // Deduplicate by key (email or name)
+  const seen = new Set();
   assignees.forEach(a => {
+    const key = a.email || a.name;
+    if (!key || seen.has(key)) return;
+    seen.add(key);
     const opt = document.createElement('option');
-    opt.value       = a.email || a.name;
+    opt.value       = key;
     opt.textContent = a.name || a.email;
     sel.appendChild(opt);
   });
-  // Restore previous selection if still present
   if (prev) sel.value = prev;
 }
 
@@ -1885,10 +1892,13 @@ function filterSlaByAssignee() {
   const mainEl   = document.getElementById('sla-main');
 
   if (!selected) {
-    renderSla(slaAllData, mainEl);
+    renderSlaPage(slaAllData, mainEl);
   } else {
-    const filtered = slaAllData.filter(a => (a.email || a.name) === selected);
-    renderSla(filtered, mainEl);
+    const filtered = {
+      open:     slaAllData.open.filter(a     => (a.email || a.name) === selected),
+      resolved: slaAllData.resolved.filter(a => (a.email || a.name) === selected)
+    };
+    renderSlaPage(filtered, mainEl);
   }
 }
 
@@ -1909,12 +1919,53 @@ function isBreached(sla) {
       || (sla.status === 'ongoing' && sla.remainingMillis <= 0);
 }
 
+// Top-level renderer — splits into Open and Resolved sections
+function renderSlaPage(data, container) {
+  const openAssignees     = (data.open     || []);
+  const resolvedAssignees = (data.resolved || []);
+
+  // Check if anything to show at all
+  const hasOpen     = openAssignees.some(a     => (a.tickets || []).some(t => isBreached(t.sla)));
+  const hasResolved = resolvedAssignees.some(a => (a.tickets || []).some(t => isBreached(t.sla)));
+
+  if (!hasOpen && !hasResolved) {
+    container.innerHTML = `<div class="sla-empty-state">
+      <strong style="color:#006644;">✅ No SLA breaches</strong>
+      All assigned tickets are currently within their SLA targets.
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = '';
+
+  // --- Open breached section ---
+  if (hasOpen) {
+    const openHeader = document.createElement('div');
+    openHeader.innerHTML = `<div style="padding:16px 0 8px;font-size:.88rem;font-weight:700;color:#bf2600;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #ff8f73;margin-bottom:16px;">
+      🔴 Open Breached Tickets
+    </div>`;
+    container.appendChild(openHeader);
+    const openDiv = document.createElement('div');
+    container.appendChild(openDiv);
+    renderSla(openAssignees, openDiv);
+  }
+
+  // --- Resolved breached section ---
+  if (hasResolved) {
+    const resolvedHeader = document.createElement('div');
+    resolvedHeader.innerHTML = `<div style="padding:24px 0 8px;font-size:.88rem;font-weight:700;color:#5e4c00;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #ffbe33;margin-bottom:16px;">
+      ❌ Resolved / Closed — Breached Before Resolution
+    </div>`;
+    container.appendChild(resolvedHeader);
+    const resolvedDiv = document.createElement('div');
+    container.appendChild(resolvedDiv);
+    renderSla(resolvedAssignees, resolvedDiv);
+  }
+}
+
 function renderSla(assignees, container) {
   if (!assignees || assignees.length === 0) {
-    container.innerHTML = `<div class="sla-empty-state">
-      <strong>No assigned tickets found</strong>
-      No tickets with assignees match this team's JQL right now.
-    </div>`;
+    container.innerHTML = '';
     return;
   }
 
@@ -1924,10 +1975,7 @@ function renderSla(assignees, container) {
     .filter(a => a.tickets.length > 0);
 
   if (!breachedAssignees.length) {
-    container.innerHTML = `<div class="sla-empty-state">
-      <strong style="color:#006644;">✅ No SLA breaches</strong>
-      All assigned tickets are currently within their SLA targets.
-    </div>`;
+    container.innerHTML = '';
     return;
   }
 
