@@ -167,6 +167,40 @@ public class JiraClient {
         return searchTicketsWithFields(jql, fields);
     }
 
+    /**
+     * Fetches Resolved/Closed tickets that had their SLA breached.
+     * Strips the status and assignee-empty filters from the base JQL and
+     * restricts to status in ("Resolved","Closed") with a resolved-date window.
+     */
+    public List<JsonNode> getResolvedSlaTickets(String baseJql, String slaFieldId, String period) {
+        String base = baseJql
+            .replaceAll("(?i)\\s+AND\\s+Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
+            .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)\\s+AND\\s+", "")
+            .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
+            // strip any existing status filter so we can replace it
+            .replaceAll("(?i)\\s+AND\\s+status\\s+in\\s*\\([^)]+\\)", "")
+            .replaceAll("(?i)status\\s+in\\s*\\([^)]+\\)\\s+AND\\s+", "")
+            .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
+
+        // Limit resolved date window to avoid fetching all history
+        String dateFilter = switch (period == null ? "all" : period) {
+            case "weekly"  -> " AND resolved >= -7d";
+            case "monthly" -> " AND resolved >= -30d";
+            default        -> " AND resolved >= -30d";  // cap at 30 days for "all"
+        };
+
+        String jql = base
+            + " AND status in (\"Resolved\",\"Closed\")"
+            + " AND assignee is not EMPTY"
+            + dateFilter
+            + " ORDER BY resolved DESC";
+        log.debug("[SLA] Fetching resolved tickets (period={}): {}", period, jql);
+        String sevKey = discoverSeverityFieldKey();
+        String fields = "summary,assignee,status," + slaFieldId
+                        + (sevKey != null ? "," + sevKey : "");
+        return searchTicketsWithFields(jql, fields);
+    }
+
     private String buildUnassignedJql() {
         if (hasCustomJql()) return props.getCustomJql();
 

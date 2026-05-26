@@ -111,7 +111,23 @@ public class SlaController {
         if (fieldId == null || fieldId.isBlank())
             return ResponseEntity.ok(Map.of("error", "sla_not_configured"));
 
-        List<JsonNode> tickets = jiraClient.getSlaTickets(t.getJql(), fieldId, period);
+        // Open tickets (In Progress, Waiting, Escalated, …)
+        List<JsonNode> tickets = new ArrayList<>(jiraClient.getSlaTickets(t.getJql(), fieldId, period));
+
+        // Resolved / Closed tickets — keep only those where SLA was breached
+        try {
+            List<JsonNode> resolved = jiraClient.getResolvedSlaTickets(t.getJql(), fieldId, period);
+            for (JsonNode rt : resolved) {
+                JsonNode slaField = rt.path("fields").path(fieldId);
+                Map<String, Object> slaInfo = extractSla(slaField);
+                if (Boolean.TRUE.equals(slaInfo.get("breached"))) {
+                    tickets.add(rt);
+                }
+            }
+        } catch (Exception e) {
+            // Non-fatal — open tickets still shown even if resolved query fails
+            log.warn("[SLA] Could not fetch resolved tickets: {}", e.getMessage());
+        }
 
         // Discover severity field key once outside the loop (cached after first call)
         String sevKey = jiraClient.discoverSeverityFieldKey();
@@ -257,6 +273,8 @@ public class SlaController {
             info.put("remainingMillis", 0L);
             info.put("completedAt",     last.path("stopTime").path("friendly").asText(""));
             info.put("goal",            last.path("goalDuration").path("friendly").asText(""));
+            // breachTime is available on completed cycles too — used for breach attribution
+            info.put("breachEpoch",     last.path("breachTime").path("epochMillis").asLong(0));
             return info;
         }
 
