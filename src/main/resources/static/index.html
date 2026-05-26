@@ -1955,10 +1955,11 @@ async function submitBreachReason(issueKey, btnEl) {
     });
     const data = await res.json();
     if (res.ok) {
-      statusEl.textContent  = '✓ Comment added';
-      statusEl.style.color  = '#006644';
-      selectEl.disabled     = true;  // prevent re-submit
-      othersInput.disabled  = true;
+      statusEl.textContent       = '✓ Comment added';
+      statusEl.style.color       = '#006644';
+      selectEl.disabled          = true;  // prevent re-submit
+      othersInput.disabled       = true;
+      othersInput.style.display  = isOthers ? 'inline-block' : 'none'; // keep visible if Others was used
     } else {
       statusEl.textContent = '✗ ' + (data.error || 'Failed');
       statusEl.style.color = '#bf2600';
