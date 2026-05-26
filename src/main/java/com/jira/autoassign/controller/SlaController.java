@@ -5,6 +5,8 @@ import com.jira.autoassign.client.JiraClient;
 import com.jira.autoassign.entity.Team;
 import com.jira.autoassign.repository.TeamRepository;
 import com.jira.autoassign.service.JiraConfigService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,6 +24,8 @@ import java.util.*;
 @RestController
 @RequestMapping("/api")
 public class SlaController {
+
+    private static final Logger log = LoggerFactory.getLogger(SlaController.class);
 
     private final JiraClient        jiraClient;
     private final TeamRepository    teamRepository;
