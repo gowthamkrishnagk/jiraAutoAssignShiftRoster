@@ -175,9 +175,14 @@ public class JiraClient {
      */
     public List<JsonNode> getOpenSlaTickets(String baseJql, String slaFieldId) {
         String base = baseJql
+            // Remove assignee-empty filter — we want ASSIGNED tickets
             .replaceAll("(?i)\\s+AND\\s+Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
             .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)\\s+AND\\s+", "")
             .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
+            // Remove escalation-path filter — we want ALL tickets regardless of escalation
+            .replaceAll("(?i)\\s+AND\\s+\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY", "")
+            .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY\\s+AND\\s+", "")
+            .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY", "")
             .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
 
         // Keep the original status filter — only add assignee is not EMPTY
@@ -201,6 +206,9 @@ public class JiraClient {
             .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
             .replaceAll("(?i)\\s+AND\\s+status\\s+in\\s*\\([^)]+\\)", "")
             .replaceAll("(?i)status\\s+in\\s*\\([^)]+\\)\\s+AND\\s+", "")
+            .replaceAll("(?i)\\s+AND\\s+\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY", "")
+            .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY\\s+AND\\s+", "")
+            .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY", "")
             .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
 
         String dateFilter = switch (period == null ? "all" : period) {
