@@ -221,7 +221,7 @@ public class JiraClient {
         String dateFilter = switch (period == null ? "all" : period) {
             case "weekly"  -> " AND updated >= -7d";
             case "monthly" -> " AND updated >= -30d";
-            default        -> " AND updated >= -90d";    // 3 months for "all"
+            default        -> " AND updated >= -60d";    // 2 months for "all"
         };
 
         // cf[X] = breached() — Jira owns the breach detection, not us.
