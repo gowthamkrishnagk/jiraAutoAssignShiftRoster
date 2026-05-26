@@ -211,10 +211,13 @@ public class JiraClient {
             .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY", "")
             .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
 
+        // Use `updated` (not `resolved`) as the date gate — every ticket has an updated timestamp
+        // even tickets transitioned directly to CLOSED without a resolutiondate set.
+        // `resolved >= -Xd` misses those CLOSED tickets, causing them to be invisible here.
         String dateFilter = switch (period == null ? "all" : period) {
-            case "weekly"  -> " AND resolved >= -7d";
-            case "monthly" -> " AND resolved >= -30d";
-            default        -> " AND resolved >= -90d";
+            case "weekly"  -> " AND updated >= -7d";
+            case "monthly" -> " AND updated >= -30d";
+            default        -> " AND updated >= -180d";   // 6 months for "all"
         };
 
         String jql = base
