@@ -545,7 +545,7 @@
 
     /* Metric cards */
     .sla-metrics {
-      display: grid; grid-template-columns: repeat(4, 1fr);
+      display: grid; grid-template-columns: repeat(2, minmax(0, 260px));
       gap: 16px; padding: 20px 24px;
       background: #f4f5f7; border-bottom: 1px solid #e0e3e8;
     }
@@ -557,8 +557,6 @@
     .sla-metric-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.1); transform: translateY(-1px); }
     .sla-metric-open     { border-left-color: #de350b; }
     .sla-metric-resolved { border-left-color: #ff8b00; }
-    .sla-metric-person   { border-left-color: #0052cc; }
-    .sla-metric-worst    { border-left-color: #6554c0; }
     .sla-metric-val {
       font-size: 1.65rem; font-weight: 800; color: #172b4d;
       line-height: 1.1; margin-bottom: 5px;
@@ -679,8 +677,8 @@
 
     @media (max-width: 768px) {
       .sla-metrics { grid-template-columns: repeat(2,1fr); padding: 12px; }
-      #sla-main { padding: 0 12px; }
-      .sla-topbar { padding: 0 12px; }
+      #sla-main    { padding: 0 12px; }
+      .sla-topbar  { padding: 0 12px; }
     }
   </style>
   <!-- SheetJS — client-side Excel (.xlsx) generation -->
@@ -826,14 +824,6 @@
     <div class="sla-metric-card sla-metric-resolved">
       <div class="sla-metric-val" id="metric-resolved-count">—</div>
       <div class="sla-metric-lbl">Resolved Breached</div>
-    </div>
-    <div class="sla-metric-card sla-metric-person">
-      <div class="sla-metric-val" id="metric-top-person" style="font-size:1.05rem;">—</div>
-      <div class="sla-metric-lbl">Most Breaches</div>
-    </div>
-    <div class="sla-metric-card sla-metric-worst">
-      <div class="sla-metric-val" id="metric-worst-breach" style="font-size:1.15rem;">—</div>
-      <div class="sla-metric-lbl">Worst Breach</div>
     </div>
   </div>
 
@@ -1938,38 +1928,6 @@ function updateMetricCards(data) {
   document.getElementById('sla-open-badge').textContent     = openCount     || '0';
   document.getElementById('sla-resolved-badge').textContent = resolvedCount || '0';
 
-  // Most breaches — combine both lists, pick person with highest count
-  const allAssignees = [...openList, ...resolvedList];
-  const countMap = {};
-  allAssignees.forEach(a => {
-    const key  = a.email || a.name || '?';
-    const name = a.name  || a.email || '?';
-    const cnt  = (a.tickets||[]).filter(t=>isBreached(t.sla)).length;
-    if (!countMap[key]) countMap[key] = { name, cnt: 0 };
-    countMap[key].cnt += cnt;
-  });
-  const topEntry = Object.values(countMap).sort((a,b) => b.cnt - a.cnt)[0];
-  const topEl = document.getElementById('metric-top-person');
-  if (topEntry && topEntry.cnt > 0) {
-    topEl.textContent = topEntry.name;
-    topEl.title       = topEntry.cnt + ' breached ticket' + (topEntry.cnt !== 1 ? 's' : '');
-  } else {
-    topEl.textContent = '—';
-  }
-
-  // Worst breach — most negative remainingMillis (open) or longest elapsed past goal (resolved)
-  let worstMs = 0;
-  let worstLabel = '—';
-  allAssignees.forEach(a => {
-    (a.tickets||[]).forEach(t => {
-      const sla = t.sla || {};
-      if (!isBreached(sla)) return;
-      // For open: remainingMillis is negative → more negative = worse breach
-      const ms = sla.remainingMillis || 0;
-      if (ms < worstMs) { worstMs = ms; worstLabel = t.key; }
-    });
-  });
-  document.getElementById('metric-worst-breach').textContent = worstLabel;
 }
 
 async function loadSla() {
