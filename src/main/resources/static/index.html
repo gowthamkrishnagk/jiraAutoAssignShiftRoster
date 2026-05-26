@@ -474,144 +474,213 @@
 
     /* ---- SLA mode button (in tab bar) ---- */
     .sla-mode-btn {
-      padding: 6px 14px;
-      font-size: .8rem;
-      font-weight: 600;
-      color: #0052cc;
-      border: 1.5px solid #0052cc;
-      border-radius: 4px;
-      background: none;
-      cursor: pointer;
-      transition: background .15s, color .15s;
+      padding: 6px 14px; font-size: .8rem; font-weight: 600;
+      color: #0052cc; border: 1.5px solid #0052cc; border-radius: 4px;
+      background: none; cursor: pointer; transition: background .15s, color .15s;
       white-space: nowrap;
     }
     .sla-mode-btn:hover  { background: #e9f0ff; }
     .sla-mode-btn.active { background: #0052cc; color: #fff; }
 
-    /* ---- SLA view ---- */
+    /* ================================================================
+       SLA DASHBOARD
+    ================================================================ */
     #sla-view-content { display: none; }
 
-    .sla-config-bar {
-      background: #fff;
-      border-bottom: 1px solid #dfe1e6;
-      padding: 10px 24px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
+    /* Top bar: tabs + controls */
+    .sla-topbar {
+      background: #fff; border-bottom: 2px solid #eaecf0;
+      padding: 0 24px; display: flex; align-items: stretch; flex-wrap: wrap;
     }
-    .sla-hint {
-      font-size: .72rem; color: #97a0af;
-      margin-left: auto; white-space: nowrap;
+    .sla-tabs { display: flex; align-items: flex-end; }
+    .sla-tab {
+      display: flex; align-items: center; gap: 8px;
+      padding: 14px 22px 11px; font-size: .9rem; font-weight: 600;
+      color: #5e6c84; background: none; border: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer; transition: all .15s; white-space: nowrap;
+      margin-bottom: -2px;
     }
-
-    /* Period + assignee filter bar */
-    .sla-filter-bar {
-      background: #f8f9fa; border-bottom: 1px solid #dfe1e6;
-      padding: 10px 24px; display: flex; align-items: center;
-      gap: 16px; flex-wrap: wrap;
-    }
-    .sla-filter-label { font-size: .75rem; font-weight: 700; color: #5e6c84; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
-    .sla-period-btns  { display: flex; gap: 4px; }
-    .sla-period-btn {
-      padding: 4px 14px; font-size: .78rem; font-weight: 600;
-      border: 1.5px solid #dfe1e6; border-radius: 20px;
-      background: #fff; color: #5e6c84; cursor: pointer;
+    .sla-tab:hover { color: #0052cc; background: #f4f7ff; }
+    .sla-tab-open.active    { color: #bf2600; border-bottom-color: #de350b; }
+    .sla-tab-resolved.active { color: #974F0C; border-bottom-color: #ff8b00; }
+    .sla-tab-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 22px; height: 20px; padding: 0 6px; border-radius: 10px;
+      font-size: .72rem; font-weight: 700; background: #dfe1e6; color: #42526e;
       transition: all .15s;
+    }
+    .sla-tab-open.active    .sla-tab-badge { background: #de350b; color: #fff; }
+    .sla-tab-resolved.active .sla-tab-badge { background: #ff8b00; color: #fff; }
+
+    /* Right controls */
+    .sla-topbar-right {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      margin-left: auto; padding: 10px 0;
+    }
+    .sla-period-btns { display: flex; gap: 3px; }
+    .sla-period-btn {
+      padding: 5px 12px; font-size: .78rem; font-weight: 600;
+      border: 1.5px solid #dfe1e6; border-radius: 20px;
+      background: #fff; color: #5e6c84; cursor: pointer; transition: all .15s;
     }
     .sla-period-btn:hover  { border-color: #0052cc; color: #0052cc; }
     .sla-period-btn.active { background: #0052cc; color: #fff; border-color: #0052cc; }
     .sla-assignee-filter {
-      border: 1.5px solid #dfe1e6; border-radius: 4px;
-      padding: 4px 10px; font-size: .82rem; color: #172b4d;
-      background: #fff; outline: none; cursor: pointer; min-width: 180px;
+      border: 1.5px solid #dfe1e6; border-radius: 6px;
+      padding: 5px 10px; font-size: .82rem; color: #172b4d;
+      background: #fff; outline: none; cursor: pointer; min-width: 150px;
     }
     .sla-assignee-filter:focus { border-color: #0052cc; }
+    .sla-action-btn {
+      padding: 5px 14px; font-size: .78rem; font-weight: 600;
+      border-radius: 6px; border: 1.5px solid #dfe1e6;
+      background: #fff; color: #42526e; cursor: pointer;
+      transition: all .15s; white-space: nowrap;
+    }
+    .sla-action-btn:hover    { background: #f4f5f7; }
+    .sla-download-btn        { background: #e3fcef; color: #006644; border-color: #57d9a3; }
+    .sla-download-btn:hover  { background: #57d9a3; color: #fff; border-color: #57d9a3; }
+    .sla-hint { font-size: .71rem; color: #97a0af; white-space: nowrap; }
 
-    /* SLA main area */
+    /* Metric cards */
+    .sla-metrics {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 16px; padding: 20px 24px;
+      background: #f4f5f7; border-bottom: 1px solid #e0e3e8;
+    }
+    .sla-metric-card {
+      background: #fff; border-radius: 10px; padding: 18px 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.07); border-left: 4px solid #dfe1e6;
+      transition: box-shadow .15s, transform .15s;
+    }
+    .sla-metric-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.1); transform: translateY(-1px); }
+    .sla-metric-open     { border-left-color: #de350b; }
+    .sla-metric-resolved { border-left-color: #ff8b00; }
+    .sla-metric-person   { border-left-color: #0052cc; }
+    .sla-metric-worst    { border-left-color: #6554c0; }
+    .sla-metric-val {
+      font-size: 1.65rem; font-weight: 800; color: #172b4d;
+      line-height: 1.1; margin-bottom: 5px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .sla-metric-lbl {
+      font-size: .71rem; color: #5e6c84;
+      text-transform: uppercase; letter-spacing: .5px; font-weight: 600;
+    }
+
+    /* Main content area */
     #sla-main {
-      max-width: 960px;
-      margin: 24px auto;
-      padding: 0 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
+      max-width: 1100px; margin: 24px auto;
+      padding: 0 24px; display: flex; flex-direction: column; gap: 12px;
     }
 
-    /* Assignee section */
-    .sla-assignee-block {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,.1);
-      overflow: hidden;
+    /* Person card */
+    .sla-person-card {
+      background: #fff; border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.07);
+      overflow: hidden; border: 1px solid #eaecf0; transition: box-shadow .15s;
     }
-    .sla-assignee-header {
-      display: flex; align-items: center; gap: 10px;
-      padding: 12px 16px;
-      background: #f4f5f7;
-      border-bottom: 1px solid #dfe1e6;
+    .sla-person-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,.1); }
+    .sla-person-header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 18px; cursor: pointer; user-select: none;
+      background: #fafbfc; border-bottom: 1px solid #eaecf0; transition: background .12s;
     }
-    .sla-assignee-name  { font-size: .92rem; font-weight: 700; color: #172b4d; flex: 1; }
-    .sla-ticket-count   { font-size: .75rem; color: #5e6c84; background: #dfe1e6; border-radius: 10px; padding: 2px 9px; }
-    .sla-breached-count { font-size: .75rem; font-weight: 700; color: #bf2600; background: #ffebe6; border: 1px solid #ff8f73; border-radius: 10px; padding: 2px 9px; }
+    .sla-person-header:hover { background: #f0f4ff; }
+    .sla-avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .9rem; font-weight: 800; flex-shrink: 0; color: #fff;
+    }
+    .sla-person-info { flex: 1; min-width: 0; }
+    .sla-person-name {
+      font-size: .95rem; font-weight: 700; color: #172b4d;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .sla-person-email { font-size: .73rem; color: #5e6c84; margin-top: 2px; }
+    .sla-breach-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 13px; border-radius: 20px; font-size: .78rem; font-weight: 700;
+      background: #ffebe6; color: #bf2600; border: 1px solid #ff8f73; white-space: nowrap;
+    }
+    .sla-collapse-chevron {
+      width: 24px; height: 24px; flex-shrink: 0; color: #97a0af;
+      display: flex; align-items: center; justify-content: center;
+      font-style: normal; transition: transform .2s; font-size: 1rem;
+    }
+    .sla-collapse-chevron.open { transform: rotate(180deg); }
 
-    /* Ticket table inside assignee block */
-    .sla-ticket-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
-    .sla-ticket-table th {
-      background: #f8f9fa; padding: 8px 12px; text-align: left;
-      font-size: .72rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: .4px; color: #5e6c84; border-bottom: 1px solid #dfe1e6;
+    /* Ticket table */
+    .sla-ticket-list { width: 100%; border-collapse: collapse; }
+    .sla-ticket-list th {
+      background: #f8f9fa; padding: 8px 14px; text-align: left;
+      font-size: .71rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .4px; color: #5e6c84; border-bottom: 1px solid #eaecf0;
     }
-    .sla-ticket-table td { padding: 9px 12px; border-bottom: 1px solid #f4f5f7; vertical-align: middle; }
-    .sla-ticket-table tr:last-child td { border-bottom: none; }
-    .sla-ticket-table tr:hover td { background: #f8f9fa; }
+    .sla-ticket-list td { padding: 10px 14px; border-bottom: 1px solid #f4f5f7; vertical-align: top; }
+    .sla-ticket-list tr:last-child td { border-bottom: none; }
+    .sla-ticket-list tr:hover td { background: #fafbff; }
 
-    .sla-key { font-family: monospace; font-size: .82rem; font-weight: 600; white-space: nowrap; }
+    .sla-key { font-family: monospace; font-size: .82rem; font-weight: 700; white-space: nowrap; }
     .sla-key a { color: #0052cc; text-decoration: none; }
     .sla-key a:hover { text-decoration: underline; color: #003d99; }
-    .sla-summary { color: #172b4d; word-break: break-word; }
-    .sla-jira-status { font-size: .75rem; color: #5e6c84; background: #f4f5f7; border-radius: 3px; padding: 2px 7px; white-space: nowrap; }
+    .sla-summary { color: #172b4d; word-break: break-word; font-size: .84rem; line-height: 1.4; }
+    .sla-reassign-badge {
+      display: inline-block; margin-top: 4px; font-size: .71rem;
+      color: #974F0C; background: #fff4e5; border: 1px solid #ffbe33;
+      border-radius: 4px; padding: 2px 7px;
+    }
+    .sla-jira-status {
+      display: inline-block; font-size: .75rem; color: #42526e;
+      background: #f4f5f7; border-radius: 4px; padding: 2px 8px;
+      white-space: nowrap; border: 1px solid #dfe1e6;
+    }
 
     /* SLA status badges */
     .sla-badge { display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:.78rem;font-weight:700;white-space:nowrap; }
     .sla-b-breached         { background:#ffebe6;color:#bf2600;border:1px solid #ff8f73; }
-    .sla-b-critical         { background:#fff0cc;color:#974F0C;border:1px solid #ffe380; }  /* < 30m */
-    .sla-b-warning          { background:#fffae6;color:#974F0C;border:1px solid #ffe8a0; }  /* < 1h  */
+    .sla-b-critical         { background:#fff0cc;color:#974F0C;border:1px solid #ffe380; }
+    .sla-b-warning          { background:#fffae6;color:#974F0C;border:1px solid #ffe8a0; }
     .sla-b-healthy          { background:#e3fcef;color:#006644;border:1px solid #57d9a3; }
     .sla-b-paused           { background:#f4f5f7;color:#5e6c84;border:1px solid #c1c7d0; }
     .sla-b-completed        { background:#e3fcef;color:#006644;border:1px solid #57d9a3; }
     .sla-b-completed-breach { background:#ffebe6;color:#bf2600;border:1px solid #ff8f73; }
     .sla-b-na               { background:#f4f5f7;color:#97a0af;border:1px solid #dfe1e6; }
 
-    .sla-empty-state {
-      text-align: center; padding: 48px 24px;
-      color: #5e6c84; font-size: .9rem; line-height: 1.6;
-    }
-    .sla-empty-state strong { display:block;font-size:1rem;color:#172b4d;margin-bottom:6px; }
-
-    /* Breach reason dropdown + submit */
+    /* Breach reason */
     .breach-reason-select {
-      border: 1.5px solid #dfe1e6; border-radius: 4px;
-      padding: 4px 8px; font-size: .78rem; outline: none;
-      color: #172b4d; background: #fff; cursor: pointer;
-      transition: border-color .15s; max-width: 200px;
+      border: 1.5px solid #dfe1e6; border-radius: 4px; padding: 4px 8px;
+      font-size: .78rem; outline: none; color: #172b4d; background: #fff;
+      cursor: pointer; transition: border-color .15s; max-width: 180px;
     }
     .breach-reason-select:focus { border-color: #0052cc; }
     .breach-submit-btn {
       padding: 4px 12px; font-size: .78rem; font-weight: 600;
       border-radius: 4px; border: none; cursor: pointer;
-      background: #0052cc; color: #fff; transition: background .15s;
-      white-space: nowrap;
+      background: #0052cc; color: #fff; transition: background .15s; white-space: nowrap;
     }
     .breach-submit-btn:disabled { background: #97a0af; cursor: not-allowed; }
     .breach-submit-btn:not(:disabled):hover { background: #0041a8; }
     .breach-status-msg { font-size: .75rem; white-space: nowrap; }
 
-    /* Severity badge — base style only; colours applied inline from real Jira data */
+    /* Severity badge */
     .sla-severity-tag {
-      display: inline-block; border-radius: 3px; padding: 2px 8px;
+      display: inline-block; border-radius: 4px; padding: 2px 8px;
       font-size: .75rem; font-weight: 700; white-space: nowrap;
       background: #f4f5f7; color: #42526e; border: 1px solid #dfe1e6;
+    }
+
+    .sla-empty-state {
+      text-align: center; padding: 64px 24px;
+      color: #5e6c84; font-size: .9rem; line-height: 1.8;
+    }
+    .sla-empty-state strong { display:block; font-size:1.1rem; color:#172b4d; margin-bottom:8px; }
+
+    @media (max-width: 768px) {
+      .sla-metrics { grid-template-columns: repeat(2,1fr); padding: 12px; }
+      #sla-main { padding: 0 12px; }
+      .sla-topbar { padding: 0 12px; }
     }
   </style>
   <!-- SheetJS — client-side Excel (.xlsx) generation -->
@@ -717,34 +786,58 @@
 </div>
 
 <!-- ============================================================ -->
-<!-- SLA TRACKER VIEW (hidden until SLA mode is toggled)       -->
+<!-- SLA DASHBOARD (hidden until SLA mode is toggled)          -->
 <!-- ============================================================ -->
 <div id="sla-view-content">
 
-  <!-- Refresh toolbar -->
-  <div class="sla-config-bar">
-    <button class="btn" onclick="loadSla()" style="padding:7px 16px;font-size:.82rem;">🔄 Refresh</button>
-    <button class="btn" onclick="downloadBreachReport()" id="sla-download-btn"
-            style="padding:7px 16px;font-size:.82rem;background:#0a6640;border-color:#0a6640;"
-            title="Download breach report as Excel">⬇ Download Report</button>
-    <span id="sla-fetch-time" class="sla-hint"></span>
-  </div>
-
-  <!-- Period + Assignee filters -->
-  <div class="sla-filter-bar">
-    <span class="sla-filter-label">Period</span>
-    <div class="sla-period-btns">
-      <button class="sla-period-btn active" data-period="all"     onclick="setSLAPeriod(this)">All</button>
-      <button class="sla-period-btn"        data-period="weekly"  onclick="setSLAPeriod(this)">This Week</button>
-      <button class="sla-period-btn"        data-period="monthly" onclick="setSLAPeriod(this)">This Month</button>
+  <!-- Top bar: tabs left, controls right -->
+  <div class="sla-topbar">
+    <div class="sla-tabs">
+      <button class="sla-tab sla-tab-open active" onclick="switchSlaTab('open')">
+        🔴 Open <span class="sla-tab-badge" id="sla-open-badge">—</span>
+      </button>
+      <button class="sla-tab sla-tab-resolved" onclick="switchSlaTab('resolved')">
+        ❌ Resolved <span class="sla-tab-badge" id="sla-resolved-badge">—</span>
+      </button>
     </div>
-    <span class="sla-filter-label" style="margin-left:12px;">Assignee</span>
-    <select class="sla-assignee-filter" id="sla-assignee-filter" onchange="filterSlaByAssignee()">
-      <option value="">All Assignees</option>
-    </select>
+
+    <div class="sla-topbar-right">
+      <!-- Period — only visible on Resolved tab -->
+      <div class="sla-period-btns" id="sla-period-wrap" style="display:none;">
+        <button class="sla-period-btn active" data-period="all"     onclick="setSLAPeriod(this)">All</button>
+        <button class="sla-period-btn"        data-period="weekly"  onclick="setSLAPeriod(this)">Week</button>
+        <button class="sla-period-btn"        data-period="monthly" onclick="setSLAPeriod(this)">Month</button>
+      </div>
+      <select class="sla-assignee-filter" id="sla-assignee-filter" onchange="filterSlaByAssignee()">
+        <option value="">All People</option>
+      </select>
+      <button class="sla-action-btn" onclick="loadSla()">🔄 Refresh</button>
+      <button class="sla-action-btn sla-download-btn" id="sla-download-btn" onclick="downloadBreachReport()">⬇ Excel</button>
+      <span id="sla-fetch-time" class="sla-hint"></span>
+    </div>
   </div>
 
-  <!-- SLA dashboard -->
+  <!-- Summary metric cards -->
+  <div class="sla-metrics">
+    <div class="sla-metric-card sla-metric-open">
+      <div class="sla-metric-val" id="metric-open-count">—</div>
+      <div class="sla-metric-lbl">Open Breached</div>
+    </div>
+    <div class="sla-metric-card sla-metric-resolved">
+      <div class="sla-metric-val" id="metric-resolved-count">—</div>
+      <div class="sla-metric-lbl">Resolved Breached</div>
+    </div>
+    <div class="sla-metric-card sla-metric-person">
+      <div class="sla-metric-val" id="metric-top-person" style="font-size:1.05rem;">—</div>
+      <div class="sla-metric-lbl">Most Breaches</div>
+    </div>
+    <div class="sla-metric-card sla-metric-worst">
+      <div class="sla-metric-val" id="metric-worst-breach" style="font-size:1.15rem;">—</div>
+      <div class="sla-metric-lbl">Worst Breach</div>
+    </div>
+  </div>
+
+  <!-- Tab content -->
   <div id="sla-main">
     <div class="sla-empty-state">
       <strong>SLA Tracker</strong>
@@ -1629,9 +1722,10 @@ setInterval(loadStatus, 60000);
 // ================================================================
 // SLA TRACKER
 // ================================================================
-let slaMode    = false;
-let slaPeriod  = 'all';   // 'all' | 'weekly' | 'monthly'
-let slaAllData = [];      // full dataset from last fetch — used for client-side assignee filter
+let slaMode      = false;
+let slaPeriod    = 'all';   // 'all' | 'weekly' | 'monthly'
+let slaActiveTab = 'open';  // 'open' | 'resolved'
+let slaAllData   = { open: [], resolved: [] }; // full dataset from last fetch
 
 // Severity colour map built from real Jira data: { "Critical": {bg,color,border}, ... }
 // Populated once via /api/sla/severity-options; empty = use default grey
@@ -1808,8 +1902,77 @@ async function saveSlaFieldId() {
   }
 }
 
+// ---- Tab switching ----
+function switchSlaTab(tab) {
+  slaActiveTab = tab;
+  document.querySelectorAll('.sla-tab').forEach(b => b.classList.remove('active'));
+  document.querySelector('.sla-tab-' + tab).classList.add('active');
+
+  // Show period filter only on Resolved tab
+  const periodWrap = document.getElementById('sla-period-wrap');
+  if (periodWrap) periodWrap.style.display = (tab === 'resolved') ? 'flex' : 'none';
+
+  // Re-render current cached data for this tab
+  const sel = document.getElementById('sla-assignee-filter');
+  const selected = sel ? sel.value : '';
+  const filtered = selected
+    ? { open: slaAllData.open.filter(a => (a.email||a.name)===selected),
+        resolved: slaAllData.resolved.filter(a => (a.email||a.name)===selected) }
+    : slaAllData;
+  renderSlaTabContent(filtered);
+}
+
+// ---- Metric cards ----
+function updateMetricCards(data) {
+  const openList     = data.open     || [];
+  const resolvedList = data.resolved || [];
+
+  // Count total breached tickets
+  const openCount     = openList.reduce((s,a)     => s + (a.tickets||[]).filter(t=>isBreached(t.sla)).length, 0);
+  const resolvedCount = resolvedList.reduce((s,a) => s + (a.tickets||[]).filter(t=>isBreached(t.sla)).length, 0);
+
+  document.getElementById('metric-open-count').textContent     = openCount     || '0';
+  document.getElementById('metric-resolved-count').textContent = resolvedCount || '0';
+
+  // Tab badges
+  document.getElementById('sla-open-badge').textContent     = openCount     || '0';
+  document.getElementById('sla-resolved-badge').textContent = resolvedCount || '0';
+
+  // Most breaches — combine both lists, pick person with highest count
+  const allAssignees = [...openList, ...resolvedList];
+  const countMap = {};
+  allAssignees.forEach(a => {
+    const key  = a.email || a.name || '?';
+    const name = a.name  || a.email || '?';
+    const cnt  = (a.tickets||[]).filter(t=>isBreached(t.sla)).length;
+    if (!countMap[key]) countMap[key] = { name, cnt: 0 };
+    countMap[key].cnt += cnt;
+  });
+  const topEntry = Object.values(countMap).sort((a,b) => b.cnt - a.cnt)[0];
+  const topEl = document.getElementById('metric-top-person');
+  if (topEntry && topEntry.cnt > 0) {
+    topEl.textContent = topEntry.name;
+    topEl.title       = topEntry.cnt + ' breached ticket' + (topEntry.cnt !== 1 ? 's' : '');
+  } else {
+    topEl.textContent = '—';
+  }
+
+  // Worst breach — most negative remainingMillis (open) or longest elapsed past goal (resolved)
+  let worstMs = 0;
+  let worstLabel = '—';
+  allAssignees.forEach(a => {
+    (a.tickets||[]).forEach(t => {
+      const sla = t.sla || {};
+      if (!isBreached(sla)) return;
+      // For open: remainingMillis is negative → more negative = worse breach
+      const ms = sla.remainingMillis || 0;
+      if (ms < worstMs) { worstMs = ms; worstLabel = t.key; }
+    });
+  });
+  document.getElementById('metric-worst-breach').textContent = worstLabel;
+}
+
 async function loadSla() {
-  // Ensure breach reasons are loaded (needed to populate dropdown in results)
   if (!breachReasons.length) await loadBreachReasons();
 
   const mainEl = document.getElementById('sla-main');
@@ -1819,19 +1982,22 @@ async function loadSla() {
     return;
   }
 
-  mainEl.innerHTML = `<div style="text-align:center;padding:40px;"><div class="spin" style="margin:0 auto;"></div><p style="margin-top:12px;color:#5e6c84;font-size:.85rem;">Fetching SLA data from Jira…</p></div>`;
+  mainEl.innerHTML = `<div style="text-align:center;padding:48px;">
+    <div class="spin" style="margin:0 auto;width:28px;height:28px;border-width:3px;"></div>
+    <p style="margin-top:16px;color:#5e6c84;font-size:.88rem;">Fetching SLA data from Jira…</p>
+  </div>`;
 
   try {
     const url = `/api/sla?team=${encodeURIComponent(activeTeam)}&period=${slaPeriod}`;
     const res = await fetch(url);
     const data = await res.json();
 
-    // Backend returns { error: "sla_not_configured" } when field ID hasn't been saved yet
     if (data && data.error === 'sla_not_configured') {
       mainEl.innerHTML = `<div class="sla-empty-state">
         <strong>SLA field ID not configured</strong>
-        Please go to the <strong>⚙ Admin</strong> tab → <em>SLA Configuration</em> and enter the
-        Jira custom field ID for <em>Time to Resolution</em> (e.g. <code style="background:#f4f5f7;padding:1px 5px;border-radius:3px;">customfield_10020</code>).
+        Go to <strong>⚙ Admin</strong> → <em>SLA Configuration</em> and enter the
+        Jira custom field ID for <em>Time to Resolution</em>
+        (e.g. <code style="background:#f4f5f7;padding:1px 5px;border-radius:3px;">customfield_10020</code>).
       </div>`;
       return;
     }
@@ -1845,21 +2011,191 @@ async function loadSla() {
 
     const team = teams.find(t => t.id === activeTeam);
     document.getElementById('sla-fetch-time').textContent =
-      'Last fetched: ' + new Date().toLocaleTimeString() +
-      (team ? '  ·  ' + team.name : '');
+      'Fetched ' + new Date().toLocaleTimeString() + (team ? '  ·  ' + team.name : '');
 
-    // New response shape: { open: [...], resolved: [...] }
     slaAllData = {
       open:     Array.isArray(data.open)     ? data.open     : [],
       resolved: Array.isArray(data.resolved) ? data.resolved : []
     };
+
+    updateMetricCards(slaAllData);
     populateAssigneeFilter([...slaAllData.open, ...slaAllData.resolved]);
-    renderSlaPage(slaAllData, mainEl);
+    renderSlaTabContent(slaAllData);
+
   } catch (e) {
     mainEl.innerHTML = `<div class="sla-empty-state" style="color:#bf2600;">
       <strong>Network error</strong>${esc(e.message)}
     </div>`;
   }
+}
+
+// ---- Period filter ----
+function setSLAPeriod(btn) {
+  slaPeriod = btn.dataset.period;
+  document.querySelectorAll('.sla-period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('sla-assignee-filter').value = '';
+  loadSla();
+}
+
+// ---- Assignee filter (client-side) ----
+function populateAssigneeFilter(assignees) {
+  const sel  = document.getElementById('sla-assignee-filter');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">All People</option>';
+  const seen = new Set();
+  assignees.forEach(a => {
+    const key = a.email || a.name;
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    const opt = document.createElement('option');
+    opt.value = key; opt.textContent = a.name || a.email;
+    sel.appendChild(opt);
+  });
+  if (prev) sel.value = prev;
+}
+
+function filterSlaByAssignee() {
+  const sel      = document.getElementById('sla-assignee-filter');
+  const selected = sel.value;
+  const filtered = selected
+    ? { open:     slaAllData.open.filter(a     => (a.email||a.name) === selected),
+        resolved: slaAllData.resolved.filter(a => (a.email||a.name) === selected) }
+    : slaAllData;
+  updateMetricCards(filtered);
+  renderSlaTabContent(filtered);
+}
+
+// ---- Tab content renderer ----
+function renderSlaTabContent(data) {
+  const mainEl  = document.getElementById('sla-main');
+  const tabData = slaActiveTab === 'open' ? (data.open || []) : (data.resolved || []);
+
+  const breachedAssignees = tabData
+    .map(a => ({ ...a, tickets: (a.tickets||[]).filter(t => isBreached(t.sla)) }))
+    .filter(a => a.tickets.length > 0);
+
+  if (!breachedAssignees.length) {
+    const isOpen = slaActiveTab === 'open';
+    mainEl.innerHTML = `<div class="sla-empty-state">
+      <strong style="color:#006644;">✅ No ${isOpen ? 'open' : 'resolved'} SLA breaches</strong>
+      ${isOpen
+        ? 'All active tickets are within their SLA targets.'
+        : 'No resolved / closed tickets found with breached SLA for the selected period.'}
+    </div>`;
+    return;
+  }
+
+  mainEl.innerHTML = '';
+  const reasonOptions = breachReasons
+    .map(r => `<option value="${esc(r.label)}">${esc(r.label)}</option>`)
+    .join('') + `<option value="__others__">Others…</option>`;
+
+  breachedAssignees.forEach(a => {
+    const name    = a.name  || a.email || 'Unknown';
+    const email   = a.email || '';
+    const count   = a.tickets.length;
+    const initials = avatarInitials(name);
+    const bgColor  = avatarColor(name);
+    const showEmail = name !== email && email && email !== '__unassigned__';
+
+    const card = document.createElement('div');
+    card.className = 'sla-person-card';
+
+    // Person header (clickable to collapse)
+    const header = document.createElement('div');
+    header.className = 'sla-person-header';
+    header.innerHTML = `
+      <div class="sla-avatar" style="background:${bgColor};">${esc(initials)}</div>
+      <div class="sla-person-info">
+        <div class="sla-person-name">${esc(name)}</div>
+        ${showEmail ? `<div class="sla-person-email">${esc(email)}</div>` : ''}
+      </div>
+      <span class="sla-breach-pill">⚠ ${count} breach${count !== 1 ? 'es' : ''}</span>
+      <i class="sla-collapse-chevron open">▾</i>`;
+    header.addEventListener('click', () => {
+      const body    = card.querySelector('.sla-card-body');
+      const chevron = header.querySelector('.sla-collapse-chevron');
+      const isOpen  = chevron.classList.contains('open');
+      body.style.display    = isOpen ? 'none' : '';
+      chevron.classList.toggle('open', !isOpen);
+    });
+    card.appendChild(header);
+
+    // Ticket table
+    const body = document.createElement('div');
+    body.className = 'sla-card-body';
+    body.innerHTML = `
+      <table class="sla-ticket-list">
+        <thead><tr>
+          <th style="width:110px;">Ticket</th>
+          <th>Summary</th>
+          <th style="width:100px;">Status</th>
+          <th style="width:90px;">Severity</th>
+          <th style="width:130px;">SLA</th>
+          <th>Breach Reason</th>
+        </tr></thead>
+        <tbody>
+          ${a.tickets.map(t => {
+            const keyHtml = jiraBaseUrl
+              ? `<a href="${jiraBaseUrl}/browse/${esc(t.key)}" target="_blank" rel="noopener">${esc(t.key)}</a>`
+              : esc(t.key);
+            const reassignBadge = t.reassignedTo
+              ? `<div class="sla-reassign-badge">→ Now: ${esc(t.reassignedTo)}</div>` : '';
+            const sevHtml = t.severity ? severityTag(t.severity) : '<span style="color:#97a0af;">—</span>';
+            return `<tr>
+              <td><span class="sla-key">${keyHtml}</span></td>
+              <td>
+                <div class="sla-summary">${esc(t.summary)}</div>
+                ${reassignBadge}
+              </td>
+              <td><span class="sla-jira-status">${esc(t.status)}</span></td>
+              <td>${sevHtml}</td>
+              <td>${slaBadge(t.sla)}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                  <select class="breach-reason-select" onchange="onReasonChange(this)">
+                    <option value="">Select…</option>
+                    ${reasonOptions}
+                  </select>
+                  <input type="text" class="breach-others-input"
+                         placeholder="Type reason…"
+                         style="display:none;border:1.5px solid #dfe1e6;border-radius:4px;padding:4px 8px;
+                                font-size:.78rem;outline:none;color:#172b4d;min-width:140px;"
+                         oninput="onOthersInput(this)"
+                         onfocus="this.style.borderColor='#0052cc'"
+                         onblur="this.style.borderColor='#dfe1e6'" />
+                  <button class="breach-submit-btn" disabled
+                          onclick="submitBreachReason('${esc(t.key)}', this)">Comment</button>
+                  <span class="breach-status-msg"></span>
+                </div>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+    card.appendChild(body);
+    mainEl.appendChild(card);
+  });
+}
+
+// ---- Avatar helpers ----
+function avatarInitials(name) {
+  if (!name || name === 'Unassigned') return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length-1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
+const AVATAR_COLORS = [
+  '#0052cc','#00875a','#bf2600','#6554c0','#008da6',
+  '#344563','#974F0C','#403294','#006644','#de350b'
+];
+function avatarColor(name) {
+  if (!name) return '#97a0af';
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
 // ---- Excel download ----
@@ -1940,50 +2276,6 @@ function styleSheet(ws, colCount) {
   ws['!cols'] = widths.slice(0, colCount).map(w => ({ wch: w }));
 }
 
-// ---- Period filter ----
-function setSLAPeriod(btn) {
-  slaPeriod = btn.dataset.period;
-  document.querySelectorAll('.sla-period-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  // Reset assignee filter and re-fetch from backend
-  document.getElementById('sla-assignee-filter').value = '';
-  loadSla();
-}
-
-// ---- Assignee filter (client-side, no re-fetch) ----
-function populateAssigneeFilter(assignees) {
-  const sel = document.getElementById('sla-assignee-filter');
-  const prev = sel.value;
-  sel.innerHTML = '<option value="">All Assignees</option>';
-  // Deduplicate by key (email or name)
-  const seen = new Set();
-  assignees.forEach(a => {
-    const key = a.email || a.name;
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    const opt = document.createElement('option');
-    opt.value       = key;
-    opt.textContent = a.name || a.email;
-    sel.appendChild(opt);
-  });
-  if (prev) sel.value = prev;
-}
-
-function filterSlaByAssignee() {
-  const sel      = document.getElementById('sla-assignee-filter');
-  const selected = sel.value;
-  const mainEl   = document.getElementById('sla-main');
-
-  if (!selected) {
-    renderSlaPage(slaAllData, mainEl);
-  } else {
-    const filtered = {
-      open:     slaAllData.open.filter(a     => (a.email || a.name) === selected),
-      resolved: slaAllData.resolved.filter(a => (a.email || a.name) === selected)
-    };
-    renderSlaPage(filtered, mainEl);
-  }
-}
 
 // Breach reasons — loaded from DB via /api/breach-reasons, not hardcoded
 let breachReasons = []; // [{ id, label }, ...]
@@ -2002,132 +2294,6 @@ function isBreached(sla) {
       || (sla.status === 'ongoing' && sla.remainingMillis <= 0);
 }
 
-// Top-level renderer — splits into Open and Resolved sections
-function renderSlaPage(data, container) {
-  const openAssignees     = (data.open     || []);
-  const resolvedAssignees = (data.resolved || []);
-
-  // Check if anything to show at all
-  const hasOpen     = openAssignees.some(a     => (a.tickets || []).some(t => isBreached(t.sla)));
-  const hasResolved = resolvedAssignees.some(a => (a.tickets || []).some(t => isBreached(t.sla)));
-
-  if (!hasOpen && !hasResolved) {
-    container.innerHTML = `<div class="sla-empty-state">
-      <strong style="color:#006644;">✅ No SLA breaches</strong>
-      All assigned tickets are currently within their SLA targets.
-    </div>`;
-    return;
-  }
-
-  container.innerHTML = '';
-
-  // --- Open breached section ---
-  if (hasOpen) {
-    const openHeader = document.createElement('div');
-    openHeader.innerHTML = `<div style="padding:16px 0 8px;font-size:.88rem;font-weight:700;color:#bf2600;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #ff8f73;margin-bottom:16px;">
-      🔴 Open Breached Tickets
-    </div>`;
-    container.appendChild(openHeader);
-    const openDiv = document.createElement('div');
-    container.appendChild(openDiv);
-    renderSla(openAssignees, openDiv);
-  }
-
-  // --- Resolved breached section ---
-  if (hasResolved) {
-    const resolvedHeader = document.createElement('div');
-    resolvedHeader.innerHTML = `<div style="padding:24px 0 8px;font-size:.88rem;font-weight:700;color:#5e4c00;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #ffbe33;margin-bottom:16px;">
-      ❌ Resolved / Closed — Breached Before Resolution
-    </div>`;
-    container.appendChild(resolvedHeader);
-    const resolvedDiv = document.createElement('div');
-    container.appendChild(resolvedDiv);
-    renderSla(resolvedAssignees, resolvedDiv);
-  }
-}
-
-function renderSla(assignees, container) {
-  if (!assignees || assignees.length === 0) {
-    container.innerHTML = '';
-    return;
-  }
-
-  // Keep only assignees who have at least one breached ticket
-  const breachedAssignees = assignees
-    .map(a => ({ ...a, tickets: (a.tickets || []).filter(t => isBreached(t.sla)) }))
-    .filter(a => a.tickets.length > 0);
-
-  if (!breachedAssignees.length) {
-    container.innerHTML = '';
-    return;
-  }
-
-  const reasonOptions = breachReasons
-    .map(r => `<option value="${esc(r.label)}">${esc(r.label)}</option>`)
-    .join('') + `<option value="__others__">Others…</option>`;
-
-  let html = '';
-  breachedAssignees.forEach(a => {
-    const count = a.tickets.length;
-    html += `<div class="sla-assignee-block">
-      <div class="sla-assignee-header">
-        <div class="sla-assignee-name">${esc(a.name || a.email)}</div>
-        ${a.name && a.name !== a.email
-          ? `<div style="font-size:.75rem;color:#5e6c84;">${esc(a.email)}</div>` : ''}
-        <span class="sla-breached-count">⚠ ${count} breached ticket${count !== 1 ? 's' : ''}</span>
-      </div>
-      <table class="sla-ticket-table">
-        <thead>
-          <tr>
-            <th>Ticket</th>
-            <th>Summary</th>
-            <th>Severity</th>
-            <th>SLA Status</th>
-            <th>Breach Reason</th>
-          </tr>
-        </thead>
-        <tbody>`;
-
-    a.tickets.forEach(t => {
-      const sevHtml = t.severity ? severityTag(t.severity) : '<span style="color:#97a0af;">—</span>';
-      const keyHtml = jiraBaseUrl
-        ? `<a href="${jiraBaseUrl}/browse/${esc(t.key)}" target="_blank" rel="noopener">${esc(t.key)}</a>`
-        : esc(t.key);
-      const reassignBadge = t.reassignedTo
-        ? `<div style="margin-top:3px;font-size:.72rem;color:#974F0C;background:#fff4e5;border:1px solid #ffbe33;border-radius:3px;padding:1px 6px;display:inline-block;">→ Now with: ${esc(t.reassignedTo)}</div>`
-        : '';
-      html += `<tr>
-        <td><span class="sla-key">${keyHtml}</span></td>
-        <td><div class="sla-summary">${esc(t.summary)}${reassignBadge}</div></td>
-        <td>${sevHtml}</td>
-        <td>${slaBadge(t.sla)}</td>
-        <td>
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            <select class="breach-reason-select" onchange="onReasonChange(this)">
-              <option value="">Select reason…</option>
-              ${reasonOptions}
-            </select>
-            <input type="text" class="breach-others-input"
-                   placeholder="Type reason…"
-                   style="display:none;border:1.5px solid #dfe1e6;border-radius:4px;padding:4px 8px;font-size:.78rem;outline:none;color:#172b4d;min-width:160px;"
-                   oninput="onOthersInput(this)"
-                   onfocus="this.style.borderColor='#0052cc'"
-                   onblur="this.style.borderColor='#dfe1e6'" />
-            <button class="breach-submit-btn" disabled
-                    onclick="submitBreachReason('${esc(t.key)}', this)">
-              Add Comment
-            </button>
-            <span class="breach-status-msg"></span>
-          </div>
-        </td>
-      </tr>`;
-    });
-
-    html += `</tbody></table></div>`;
-  });
-
-  container.innerHTML = html;
-}
 
 function onReasonChange(selectEl) {
   const cell      = selectEl.parentElement;
