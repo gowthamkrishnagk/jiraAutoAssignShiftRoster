@@ -185,8 +185,12 @@ public class JiraClient {
             .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY", "")
             .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
 
-        // Keep the original status filter — include both assigned AND unassigned tickets
-        String jql = base + " ORDER BY created DESC";
+        // Let Jira detect the breach — cf[X] = breached() is far more accurate than
+        // parsing completedCycles.breached in Java (Jira sometimes sets that flag wrong).
+        String cfNum    = (slaFieldId != null) ? slaFieldId.replace("customfield_", "") : "";
+        String slaBreachFilter = cfNum.isEmpty() ? "" : " AND cf[" + cfNum + "] = breached()";
+
+        String jql = base + slaBreachFilter + " ORDER BY created DESC";
         log.info("[SLA] Open tickets query: {}", jql);
 
         String sevKey = discoverSeverityFieldKey();
@@ -220,10 +224,17 @@ public class JiraClient {
             default        -> " AND updated >= -180d";   // 6 months for "all"
         };
 
+        // cf[X] = breached() — Jira owns the breach detection, not us.
+        // This is the same function as "Time to resolution" = breached() but uses the
+        // configured field ID so it works regardless of the field's display name.
+        String cfNum    = (slaFieldId != null) ? slaFieldId.replace("customfield_", "") : "";
+        String slaBreachFilter = cfNum.isEmpty() ? "" : " AND cf[" + cfNum + "] = breached()";
+
         String jql = base
             + " AND status in (\"Resolved\",\"Closed\",\"Cancelled\")"
+            + slaBreachFilter
             + dateFilter
-            + " ORDER BY resolved DESC";
+            + " ORDER BY updated DESC";
         log.info("[SLA] Resolved tickets query (period={}): {}", period, jql);
 
         String sevKey = discoverSeverityFieldKey();

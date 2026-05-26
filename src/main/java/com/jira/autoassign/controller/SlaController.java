@@ -134,8 +134,10 @@ public class SlaController {
             period, openAll.size(), openBreached.size(), resolvedAll.size(), resolvedBreached.size());
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("open",     groupByBreachOwner(openBreached,     fieldId, sevKey));
-        result.put("resolved", groupByBreachOwner(resolvedBreached, fieldId, sevKey));
+        // Open: attribute breaches to who had ticket at breach time (changelog lookup)
+        // Resolved: skip attribution — 1000+ changelog calls would time out; use current assignee
+        result.put("open",     groupByBreachOwner(openBreached,     fieldId, sevKey, true));
+        result.put("resolved", groupByBreachOwner(resolvedBreached, fieldId, sevKey, false));
         return ResponseEntity.ok(result);
     }
 
@@ -144,7 +146,7 @@ public class SlaController {
     // -----------------------------------------------------------------------
 
     private List<Map<String, Object>> groupByBreachOwner(
-            List<JsonNode> tickets, String fieldId, String sevKey) {
+            List<JsonNode> tickets, String fieldId, String sevKey, boolean doAttribution) {
 
         Map<String, Map<String, Object>> byAssignee = new LinkedHashMap<>();
 
@@ -172,7 +174,7 @@ public class SlaController {
             String groupName    = currentName;
             String reassignedTo = null;
 
-            if (breached && breachEpoch > 0) {
+            if (doAttribution && breached && breachEpoch > 0) {
                 String ownerAtBreach = jiraClient.getAssigneeAtEpoch(issueKey, breachEpoch);
                 if (ownerAtBreach != null && !ownerAtBreach.equals(currentAccId)) {
                     Map<String, String> ownerInfo = jiraClient.getUserInfo(ownerAtBreach);
@@ -280,6 +282,14 @@ public class SlaController {
         if (completed.isArray() && completed.size() > 0) {
             JsonNode last     = completed.get(completed.size() - 1);
             boolean  breached = last.path("breached").asBoolean(false);
+            // Fallback: Jira occasionally sets breached=false even when elapsed > goal.
+            // cf[X]=breached() in the JQL already confirmed the ticket is breached —
+            // sync our flag with the elapsed-vs-goal check as a safety net.
+            if (!breached) {
+                long elapsed = last.path("elapsedTime").path("millis").asLong(0);
+                long goal    = last.path("goalDuration").path("millis").asLong(0);
+                if (goal > 0 && elapsed >= goal) breached = true;
+            }
 
             info.put("status",          breached ? "completed_breached" : "completed");
             info.put("breached",        breached);
