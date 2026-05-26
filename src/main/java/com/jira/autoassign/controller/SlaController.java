@@ -117,34 +117,21 @@ public class SlaController {
 
         String sevKey = jiraClient.discoverSeverityFieldKey();
 
-        // Single unified query — all statuses, filtered by created date window
-        List<JsonNode> allTickets = jiraClient.getSlaTickets(t.getJql(), fieldId, period);
-
-        // Split into open vs resolved/closed by ticket status
-        List<JsonNode> openTickets     = new ArrayList<>();
-        List<JsonNode> resolvedTickets = new ArrayList<>();
-
-        for (JsonNode ticket : allTickets) {
-            String status = ticket.path("fields").path("status").path("name").asText("").toLowerCase();
-            boolean isResolved = status.equals("resolved") || status.equals("closed");
-            if (isResolved) {
-                resolvedTickets.add(ticket);
-            } else {
-                openTickets.add(ticket);
-            }
-        }
-
-        // Filter each group to breached-only
-        List<JsonNode> openBreached = openTickets.stream()
+        // Open tickets — use original team JQL status filter, no date limit
+        // (a ticket breached 60 days ago that is still open must still show)
+        List<JsonNode> openAll = jiraClient.getOpenSlaTickets(t.getJql(), fieldId);
+        List<JsonNode> openBreached = openAll.stream()
             .filter(tk -> Boolean.TRUE.equals(extractSla(tk.path("fields").path(fieldId)).get("breached")))
             .collect(java.util.stream.Collectors.toList());
 
-        List<JsonNode> resolvedBreached = resolvedTickets.stream()
+        // Resolved/Closed tickets — filtered by resolved date window (period)
+        List<JsonNode> resolvedAll = jiraClient.getResolvedSlaTickets(t.getJql(), fieldId, period);
+        List<JsonNode> resolvedBreached = resolvedAll.stream()
             .filter(tk -> Boolean.TRUE.equals(extractSla(tk.path("fields").path(fieldId)).get("breached")))
             .collect(java.util.stream.Collectors.toList());
 
-        log.info("[SLA] period={} total={} openBreached={} resolvedBreached={}",
-            period, allTickets.size(), openBreached.size(), resolvedBreached.size());
+        log.info("[SLA] period={} openTotal={} openBreached={} resolvedTotal={} resolvedBreached={}",
+            period, openAll.size(), openBreached.size(), resolvedAll.size(), resolvedBreached.size());
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("open",     groupByBreachOwner(openBreached,     fieldId, sevKey));
