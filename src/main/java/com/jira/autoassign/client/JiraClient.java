@@ -118,25 +118,48 @@ public class JiraClient {
         return searchTicketsWithFields(jql, "summary,assignee,status,issuetype,labels");
     }
 
+    /**
+     * Fetches ALL matching tickets using Jira pagination.
+     * Jira Cloud caps each page at 100; this loops until every page is fetched.
+     */
     private List<JsonNode> searchTicketsWithFields(String jql, String fields) {
-        URI uri = UriComponentsBuilder
-            .fromHttpUrl(baseUrl() + "/rest/api/3/search/jql")
-            .queryParam("jql",        "{jql}")
-            .queryParam("maxResults", 500)
-            .queryParam("fields",     fields)
-            .build()
-            .expand(jql)
-            .encode()
-            .toUri();
+        List<JsonNode> all = new ArrayList<>();
+        final int PAGE_SIZE = 100;
+        int startAt = 0;
 
-        ResponseEntity<JsonNode> response = restTemplate.exchange(
-            uri, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+        while (true) {
+            URI uri = UriComponentsBuilder
+                .fromHttpUrl(baseUrl() + "/rest/api/3/search/jql")
+                .queryParam("jql",        "{jql}")
+                .queryParam("maxResults", PAGE_SIZE)
+                .queryParam("startAt",    startAt)
+                .queryParam("fields",     fields)
+                .build()
+                .expand(jql)
+                .encode()
+                .toUri();
 
-        List<JsonNode> tickets = new ArrayList<>();
-        if (response.getBody() != null && response.getBody().has("issues")) {
-            response.getBody().get("issues").forEach(tickets::add);
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                uri, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+
+            JsonNode body = response.getBody();
+            if (body == null || !body.has("issues")) break;
+
+            int fetched = 0;
+            for (JsonNode issue : body.get("issues")) {
+                all.add(issue);
+                fetched++;
+            }
+
+            int total = body.path("total").asInt(0);
+            startAt += fetched;
+            log.debug("[JQL] Fetched {}/{} tickets (startAt={})", startAt, total, startAt - fetched);
+
+            // Stop if we've fetched everything or got an empty page
+            if (fetched == 0 || startAt >= total) break;
         }
-        return tickets;
+
+        return all;
     }
 
     /**
