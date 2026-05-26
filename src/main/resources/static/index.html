@@ -1853,7 +1853,7 @@ function renderSla(assignees, container) {
 
   const reasonOptions = breachReasons
     .map(r => `<option value="${esc(r.label)}">${esc(r.label)}</option>`)
-    .join('');
+    .join('') + `<option value="__others__">Others…</option>`;
 
   let html = '';
   breachedAssignees.forEach(a => {
@@ -1893,6 +1893,12 @@ function renderSla(assignees, container) {
               <option value="">Select reason…</option>
               ${reasonOptions}
             </select>
+            <input type="text" class="breach-others-input"
+                   placeholder="Type reason…"
+                   style="display:none;border:1.5px solid #dfe1e6;border-radius:4px;padding:4px 8px;font-size:.78rem;outline:none;color:#172b4d;min-width:160px;"
+                   oninput="onOthersInput(this)"
+                   onfocus="this.style.borderColor='#0052cc'"
+                   onblur="this.style.borderColor='#dfe1e6'" />
             <button class="breach-submit-btn" disabled
                     onclick="submitBreachReason('${esc(t.key)}', this)">
               Add Comment
@@ -1910,16 +1916,31 @@ function renderSla(assignees, container) {
 }
 
 function onReasonChange(selectEl) {
-  // Enable/disable the submit button in the same cell
-  const btn = selectEl.parentElement.querySelector('.breach-submit-btn');
-  if (btn) btn.disabled = !selectEl.value;
+  const cell      = selectEl.parentElement;
+  const btn       = cell.querySelector('.breach-submit-btn');
+  const othersInput = cell.querySelector('.breach-others-input');
+  const isOthers  = selectEl.value === '__others__';
+
+  // Show/hide free-text input
+  othersInput.style.display = isOthers ? 'inline-block' : 'none';
+  if (!isOthers) othersInput.value = '';
+
+  // Enable button: normal reason selected, OR others with non-empty text
+  if (btn) btn.disabled = !selectEl.value || (isOthers && !othersInput.value.trim());
+}
+
+function onOthersInput(inputEl) {
+  const btn = inputEl.parentElement.querySelector('.breach-submit-btn');
+  if (btn) btn.disabled = !inputEl.value.trim();
 }
 
 async function submitBreachReason(issueKey, btnEl) {
-  const cell     = btnEl.parentElement;
-  const selectEl = cell.querySelector('.breach-reason-select');
-  const statusEl = cell.querySelector('.breach-status-msg');
-  const reason   = selectEl.value;
+  const cell        = btnEl.parentElement;
+  const selectEl    = cell.querySelector('.breach-reason-select');
+  const othersInput = cell.querySelector('.breach-others-input');
+  const statusEl    = cell.querySelector('.breach-status-msg');
+  const isOthers    = selectEl.value === '__others__';
+  const reason      = isOthers ? othersInput.value.trim() : selectEl.value;
   if (!reason) return;
 
   btnEl.disabled    = true;
@@ -1934,9 +1955,10 @@ async function submitBreachReason(issueKey, btnEl) {
     });
     const data = await res.json();
     if (res.ok) {
-      statusEl.textContent = '✓ Comment added';
-      statusEl.style.color = '#006644';
-      selectEl.disabled    = true;  // prevent re-submit
+      statusEl.textContent  = '✓ Comment added';
+      statusEl.style.color  = '#006644';
+      selectEl.disabled     = true;  // prevent re-submit
+      othersInput.disabled  = true;
     } else {
       statusEl.textContent = '✗ ' + (data.error || 'Failed');
       statusEl.style.color = '#bf2600';
