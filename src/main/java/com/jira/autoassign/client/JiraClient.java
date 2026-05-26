@@ -11,6 +11,8 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.Collections;
 
@@ -200,10 +202,13 @@ public class JiraClient {
     }
 
     /**
-     * Fetches RESOLVED/CLOSED tickets filtered by resolved date window (period).
-     * Weekly = resolved in last 7 days, Monthly = last 30 days, All = last 90 days.
+     * Fetches RESOLVED/CLOSED/CANCELLED tickets that breached SLA on a specific date.
+     *
+     * @param date  "YYYY-MM-DD" for a specific day, or null/"today" for today.
+     *              Uses Jira's startOfDay()/endOfDay() for today so the project timezone
+     *              is respected. For other dates, uses an inclusive day range filter.
      */
-    public List<JsonNode> getResolvedSlaTickets(String baseJql, String slaFieldId, String period) {
+    public List<JsonNode> getResolvedSlaTickets(String baseJql, String slaFieldId, String date) {
         String base = baseJql
             .replaceAll("(?i)\\s+AND\\s+Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
             .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)\\s+AND\\s+", "")
@@ -215,19 +220,26 @@ public class JiraClient {
             .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY", "")
             .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
 
-        // Use `updated` (not `resolved`) as the date gate — every ticket has an updated timestamp
-        // even tickets transitioned directly to CLOSED without a resolutiondate set.
-        // `resolved >= -Xd` misses those CLOSED tickets, causing them to be invisible here.
-        String dateFilter = switch (period == null ? "all" : period) {
-            case "weekly"  -> " AND updated >= -7d";
-            case "monthly" -> " AND updated >= -30d";
-            default        -> " AND updated >= -60d";    // 2 months for "all"
-        };
+        // Build the date filter — scope to one calendar day only.
+        // Use `updated` so CLOSED tickets without a resolutiondate are included.
+        String dateFilter;
+        boolean isToday = (date == null || date.isBlank() || date.equalsIgnoreCase("today"));
+        if (isToday) {
+            // Jira built-in functions respect the project/user timezone
+            dateFilter = " AND updated >= startOfDay() AND updated <= endOfDay()";
+        } else {
+            try {
+                LocalDate d    = LocalDate.parse(date);          // expects "YYYY-MM-DD"
+                LocalDate next = d.plusDays(1);
+                dateFilter = " AND updated >= \"" + d + "\" AND updated < \"" + next + "\"";
+            } catch (DateTimeParseException e) {
+                log.warn("[SLA] Invalid date '{}', falling back to today", date);
+                dateFilter = " AND updated >= startOfDay() AND updated <= endOfDay()";
+            }
+        }
 
-        // cf[X] = breached() — Jira owns the breach detection, not us.
-        // This is the same function as "Time to resolution" = breached() but uses the
-        // configured field ID so it works regardless of the field's display name.
-        String cfNum    = (slaFieldId != null) ? slaFieldId.replace("customfield_", "") : "";
+        // cf[X] = breached() — Jira is the source of truth for breach detection.
+        String cfNum           = (slaFieldId != null) ? slaFieldId.replace("customfield_", "") : "";
         String slaBreachFilter = cfNum.isEmpty() ? "" : " AND cf[" + cfNum + "] = breached()";
 
         String jql = base
@@ -235,7 +247,7 @@ public class JiraClient {
             + slaBreachFilter
             + dateFilter
             + " ORDER BY updated DESC";
-        log.info("[SLA] Resolved tickets query (period={}): {}", period, jql);
+        log.info("[SLA] Resolved tickets query (date={}): {}", isToday ? "today" : date, jql);
 
         String sevKey = discoverSeverityFieldKey();
         String fields = "summary,assignee,status," + slaFieldId

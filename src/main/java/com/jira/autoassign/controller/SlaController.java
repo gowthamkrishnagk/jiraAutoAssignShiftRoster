@@ -106,7 +106,7 @@ public class SlaController {
 
     @GetMapping("/sla")
     public ResponseEntity<?> getSla(@RequestParam String team,
-                                    @RequestParam(defaultValue = "all") String period) {
+                                    @RequestParam(required = false) String date) {
 
         Team t = teamRepository.findById(team).orElse(null);
         if (t == null) return ResponseEntity.notFound().build();
@@ -119,11 +119,12 @@ public class SlaController {
 
         // Both queries use cf[X]=breached() — Jira is the source of truth for breach detection.
         // No Java-side re-filtering: every ticket returned is already confirmed breached by Jira.
+        // Resolved query is scoped to the selected calendar date (default = today).
         List<JsonNode> openBreached     = jiraClient.getOpenSlaTickets(t.getJql(), fieldId);
-        List<JsonNode> resolvedBreached = jiraClient.getResolvedSlaTickets(t.getJql(), fieldId, period);
+        List<JsonNode> resolvedBreached = jiraClient.getResolvedSlaTickets(t.getJql(), fieldId, date);
 
-        log.info("[SLA] period={} openBreached={} resolvedBreached={}",
-            period, openBreached.size(), resolvedBreached.size());
+        log.info("[SLA] date={} openBreached={} resolvedBreached={}",
+            date == null ? "today" : date, openBreached.size(), resolvedBreached.size());
 
         Map<String, Object> result = new LinkedHashMap<>();
         // Open: attribute breaches to who had ticket at breach time (changelog lookup)
