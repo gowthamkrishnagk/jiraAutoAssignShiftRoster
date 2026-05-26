@@ -188,10 +188,12 @@ public class SlaController {
             String mapKey = groupEmail.isEmpty() ? groupAccId : groupEmail;
             if (mapKey.isEmpty()) mapKey = "unknown";
 
+            final String finalEmail = groupEmail;
+            final String finalName  = groupName;
             Map<String, Object> entry = byAssignee.computeIfAbsent(mapKey, k -> {
                 Map<String, Object> m = new LinkedHashMap<>();
-                m.put("email",   groupEmail);
-                m.put("name",    groupName);
+                m.put("email",   finalEmail);
+                m.put("name",    finalName);
                 m.put("tickets", new ArrayList<>());
                 return m;
             });
