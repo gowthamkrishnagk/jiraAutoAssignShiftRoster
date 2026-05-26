@@ -564,22 +564,138 @@
     .sla-period-btn:hover  { color: #1d4ed8; }
     .sla-period-btn.active { background: #fff; color: #1d4ed8; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 
-    /* Date picker for Resolved tab */
-    .sla-date-input {
-      border: 1.5px solid #e5e7eb;
-      border-radius: 7px;
-      padding: 5px 10px;
-      font-size: .82rem;
-      color: #374151;
-      background: #fff;
-      outline: none;
-      cursor: pointer;
-      font-family: inherit;
-      transition: border-color .15s, box-shadow .15s;
+    /* ── Inline Calendar (Resolved tab) ── */
+    #sla-calendar-section {
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 16px 24px;
     }
-    .sla-date-input:focus {
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+    .sla-cal-section-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+    }
+    .sla-cal {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 1px 3px rgba(0,0,0,.07);
+      padding: 14px 16px;
+      flex-shrink: 0;
+      width: 258px;
+    }
+    .sla-cal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .sla-cal-nav {
+      width: 28px; height: 28px;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1rem;
+      color: #374151;
+      display: flex; align-items: center; justify-content: center;
+      transition: all .15s;
+      font-family: inherit;
+      line-height: 1;
+    }
+    .sla-cal-nav:hover:not(:disabled) { background: #e5e7eb; color: #111827; }
+    .sla-cal-nav:disabled { opacity: .3; cursor: not-allowed; }
+    .sla-cal-title {
+      font-size: .88rem;
+      font-weight: 700;
+      color: #111827;
+      min-width: 120px;
+      text-align: center;
+    }
+    .sla-cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 1px;
+    }
+    .sla-cal-dow {
+      text-align: center;
+      font-size: .65rem;
+      font-weight: 700;
+      color: #9ca3af;
+      text-transform: uppercase;
+      padding: 3px 0 6px;
+    }
+    .sla-cal-day {
+      position: relative;
+      text-align: center;
+      font-size: .8rem;
+      font-weight: 500;
+      color: #374151;
+      padding: 6px 2px;
+      border-radius: 7px;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      transition: background .1s, color .1s;
+      font-family: inherit;
+      line-height: 1.2;
+    }
+    .sla-cal-day:hover:not([disabled]):not(.sla-cal-selected) {
+      background: #eff6ff;
+      color: #2563eb;
+    }
+    .sla-cal-day.sla-cal-today:not(.sla-cal-selected) {
+      color: #2563eb;
+      font-weight: 800;
+    }
+    .sla-cal-day.sla-cal-today::after {
+      content: '';
+      position: absolute;
+      bottom: 2px; left: 50%;
+      transform: translateX(-50%);
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      background: #3b82f6;
+    }
+    .sla-cal-day.sla-cal-selected {
+      background: #2563eb !important;
+      color: #fff !important;
+      font-weight: 700;
+    }
+    .sla-cal-day.sla-cal-selected.sla-cal-today::after { background: rgba(255,255,255,.7); }
+    .sla-cal-day[disabled] { color: #d1d5db; cursor: not-allowed; }
+    .sla-cal-day.sla-cal-other { color: #e5e7eb; }
+
+    /* Info panel next to calendar */
+    .sla-cal-info {
+      flex: 1;
+      padding: 6px 0 0 4px;
+    }
+    .sla-cal-info-date {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: #111827;
+      margin-bottom: 5px;
+    }
+    .sla-cal-info-sub {
+      font-size: .78rem;
+      color: #6b7280;
+      line-height: 1.6;
+    }
+    .sla-cal-info-hint {
+      margin-top: 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: .74rem;
+      color: #9ca3af;
+    }
+
+    @media (max-width: 640px) {
+      .sla-cal-section-inner { flex-direction: column; }
+      #sla-calendar-section  { padding: 12px; }
     }
     .sla-assignee-filter {
       border: 1.5px solid #e5e7eb;
@@ -1066,11 +1182,6 @@
     </div>
 
     <div class="sla-topbar-right">
-      <!-- Date picker — only visible on Resolved tab -->
-      <div id="sla-date-wrap" style="display:none;align-items:center;gap:6px;">
-        <label for="sla-date-picker" style="font-size:.78rem;font-weight:600;color:#6b7280;white-space:nowrap;">Date</label>
-        <input type="date" id="sla-date-picker" class="sla-date-input" onchange="onSlaDateChange()" />
-      </div>
       <select class="sla-assignee-filter" id="sla-assignee-filter" onchange="filterSlaByAssignee()">
         <option value="">All People</option>
       </select>
@@ -1117,6 +1228,35 @@
           </svg>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Inline calendar — shown only on Resolved tab -->
+  <div id="sla-calendar-section" style="display:none;">
+    <div class="sla-cal-section-inner">
+
+      <!-- Month grid -->
+      <div class="sla-cal">
+        <div class="sla-cal-header">
+          <button class="sla-cal-nav" id="sla-cal-prev" onclick="slaCalPrev()">&#8249;</button>
+          <span class="sla-cal-title" id="sla-cal-title"></span>
+          <button class="sla-cal-nav" id="sla-cal-next" onclick="slaCalNext()">&#8250;</button>
+        </div>
+        <div class="sla-cal-grid" id="sla-cal-grid"></div>
+      </div>
+
+      <!-- Info panel -->
+      <div class="sla-cal-info" id="sla-cal-info">
+        <div class="sla-cal-info-date" id="sla-cal-date-label">Today</div>
+        <div class="sla-cal-info-sub" id="sla-cal-date-sub">Showing resolved SLA breaches for today</div>
+        <div class="sla-cal-info-hint">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" style="flex-shrink:0;">
+            <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 1.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11zM7.25 5.5a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0zM7.5 7.5h1v4h-1z"/>
+          </svg>
+          Click any date to fetch that day's resolved breaches
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -2052,7 +2192,7 @@ function toggleSlaMode() {
   document.getElementById('admin-view-content').style.display = 'none';
 
   if (slaMode) {
-    initSlaDatePicker();   // set date picker to today, cap max at today
+    initSlaCalendar();     // render calendar defaulted to today
     loadSlaConfig().then(() => loadSeverityOptions()).then(() => loadSla());
   }
 }
@@ -2192,9 +2332,9 @@ function switchSlaTab(tab) {
   document.querySelectorAll('.sla-tab').forEach(b => b.classList.remove('active'));
   document.querySelector('.sla-tab-' + tab).classList.add('active');
 
-  // Show date picker only on Resolved tab
-  const dateWrap = document.getElementById('sla-date-wrap');
-  if (dateWrap) dateWrap.style.display = (tab === 'resolved') ? 'flex' : 'none';
+  // Show inline calendar only on Resolved tab
+  const calSection = document.getElementById('sla-calendar-section');
+  if (calSection) calSection.style.display = (tab === 'resolved') ? 'block' : 'none';
 
   // Re-render current cached data for this tab (no new fetch — just re-render)
   const sel = document.getElementById('sla-assignee-filter');
@@ -2281,32 +2421,128 @@ async function loadSla() {
   }
 }
 
-// ---- Date picker helpers ----
+// ---- Inline calendar helpers ----
+let slaCalYear  = new Date().getFullYear();
+let slaCalMonth = new Date().getMonth(); // 0-indexed
+
 function todayISO() {
-  // Returns local date as YYYY-MM-DD (matching what <input type="date"> expects)
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 }
 
-function initSlaDatePicker() {
-  const input = document.getElementById('sla-date-picker');
-  if (!input) return;
-  const today = todayISO();
-  input.value = today;
-  input.max   = today;   // cannot pick a future date
-  slaDate = null;        // null → backend defaults to today
+function initSlaCalendar() {
+  const now   = new Date();
+  slaCalYear  = now.getFullYear();
+  slaCalMonth = now.getMonth();
+  slaDate     = null;   // default = today
+  renderSlaCalendar();
 }
 
-function onSlaDateChange() {
-  const input = document.getElementById('sla-date-picker');
-  if (!input) return;
-  const chosen = input.value;          // 'YYYY-MM-DD' or ''
-  const today  = todayISO();
-  // Treat today's date (or blank) as null → backend uses startOfDay()/endOfDay()
-  slaDate = (!chosen || chosen === today) ? null : chosen;
+function renderSlaCalendar() {
+  const grid    = document.getElementById('sla-cal-grid');
+  const titleEl = document.getElementById('sla-cal-title');
+  const nextBtn = document.getElementById('sla-cal-next');
+  const prevBtn = document.getElementById('sla-cal-prev');
+  const lblEl   = document.getElementById('sla-cal-date-label');
+  const subEl   = document.getElementById('sla-cal-date-sub');
+  if (!grid) return;
+
+  const now   = new Date(); now.setHours(0,0,0,0);
+  const MONTHS = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+
+  titleEl.textContent = MONTHS[slaCalMonth] + ' ' + slaCalYear;
+
+  // Disable next-month nav when already at current month
+  if (nextBtn) {
+    nextBtn.disabled = (slaCalYear === now.getFullYear() && slaCalMonth >= now.getMonth());
+  }
+  // Disable prev if more than 12 months back (reasonable limit)
+  if (prevBtn) {
+    const earliest = new Date(now); earliest.setMonth(now.getMonth() - 12);
+    prevBtn.disabled = (slaCalYear < earliest.getFullYear() ||
+      (slaCalYear === earliest.getFullYear() && slaCalMonth <= earliest.getMonth()));
+  }
+
+  const pad        = n => String(n).padStart(2,'0');
+  const todayStr   = todayISO();
+  const selStr     = slaDate || todayStr;   // null slaDate ↔ today
+
+  // Build grid
+  grid.innerHTML = '';
+  // Day-of-week headers
+  ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'sla-cal-dow';
+    el.textContent = d;
+    grid.appendChild(el);
+  });
+
+  // First cell = Sunday of the week containing the 1st
+  const firstOfMonth = new Date(slaCalYear, slaCalMonth, 1);
+  const cur = new Date(firstOfMonth);
+  cur.setDate(firstOfMonth.getDate() - firstOfMonth.getDay());
+
+  for (let i = 0; i < 42; i++) {
+    const ds         = `${cur.getFullYear()}-${pad(cur.getMonth()+1)}-${pad(cur.getDate())}`;
+    const isToday    = ds === todayStr;
+    const isFuture   = cur > now;
+    const isOtherMon = cur.getMonth() !== slaCalMonth;
+    const isSelected = ds === selStr && !isOtherMon;
+
+    const btn = document.createElement('button');
+    btn.className = 'sla-cal-day';
+    btn.textContent = cur.getDate();
+    if (isToday)    btn.classList.add('sla-cal-today');
+    if (isSelected) btn.classList.add('sla-cal-selected');
+    if (isOtherMon) { btn.classList.add('sla-cal-other'); btn.disabled = true; }
+    else if (isFuture) { btn.disabled = true; }
+    else {
+      const captured = ds;
+      btn.addEventListener('click', () => selectSlaCalDate(captured));
+    }
+    grid.appendChild(btn);
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  // Update info panel
+  if (lblEl && subEl) {
+    if (!slaDate || slaDate === todayStr) {
+      lblEl.textContent = 'Today';
+      subEl.textContent = 'Showing resolved SLA breaches for today';
+    } else {
+      // Parse without timezone shift
+      const [y,m,d] = slaDate.split('-').map(Number);
+      const parsed  = new Date(y, m-1, d);
+      lblEl.textContent = parsed.toLocaleDateString(undefined,
+        { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+      subEl.textContent = 'Showing resolved SLA breaches for this date';
+    }
+  }
+}
+
+function selectSlaCalDate(dateStr) {
+  const today = todayISO();
+  slaDate = (dateStr === today) ? null : dateStr;
+  renderSlaCalendar();
   document.getElementById('sla-assignee-filter').value = '';
   loadSla();
+}
+
+function slaCalPrev() {
+  slaCalMonth--;
+  if (slaCalMonth < 0) { slaCalMonth = 11; slaCalYear--; }
+  renderSlaCalendar();
+}
+
+function slaCalNext() {
+  const now = new Date();
+  if (slaCalYear > now.getFullYear() ||
+     (slaCalYear === now.getFullYear() && slaCalMonth >= now.getMonth())) return;
+  slaCalMonth++;
+  if (slaCalMonth > 11) { slaCalMonth = 0; slaCalYear++; }
+  renderSlaCalendar();
 }
 
 // ---- Assignee filter (client-side) ----
