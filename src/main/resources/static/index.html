@@ -2324,22 +2324,17 @@ function switchSlaTab(tab) {
   renderSlaTabContent(filtered);
 }
 
-// ---- Metric cards ----
+// ---- Metric cards (tab badges only — metric cards removed) ----
 function updateMetricCards(data) {
   const openList     = data.open     || [];
   const resolvedList = data.resolved || [];
 
-  // Count total breached tickets
   const openCount     = openList.reduce((s,a)     => s + (a.tickets||[]).filter(t=>isBreached(t.sla)).length, 0);
   const resolvedCount = resolvedList.reduce((s,a) => s + (a.tickets||[]).filter(t=>isBreached(t.sla)).length, 0);
 
-  document.getElementById('metric-open-count').textContent     = openCount     || '0';
-  document.getElementById('metric-resolved-count').textContent = resolvedCount || '0';
-
-  // Tab badges
+  // Update tab badges
   document.getElementById('sla-open-badge').textContent     = openCount     || '0';
   document.getElementById('sla-resolved-badge').textContent = resolvedCount || '0';
-
 }
 
 async function loadSla() {
