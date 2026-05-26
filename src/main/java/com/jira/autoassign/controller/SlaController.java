@@ -2,7 +2,9 @@ package com.jira.autoassign.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jira.autoassign.client.JiraClient;
+import com.jira.autoassign.entity.BreachComment;
 import com.jira.autoassign.entity.Team;
+import com.jira.autoassign.repository.BreachCommentRepository;
 import com.jira.autoassign.repository.TeamRepository;
 import com.jira.autoassign.service.JiraConfigService;
 import org.slf4j.Logger;
@@ -27,16 +29,19 @@ public class SlaController {
 
     private static final Logger log = LoggerFactory.getLogger(SlaController.class);
 
-    private final JiraClient        jiraClient;
-    private final TeamRepository    teamRepository;
-    private final JiraConfigService configService;
+    private final JiraClient              jiraClient;
+    private final TeamRepository          teamRepository;
+    private final JiraConfigService       configService;
+    private final BreachCommentRepository commentRepo;
 
     public SlaController(JiraClient jiraClient,
                          TeamRepository teamRepository,
-                         JiraConfigService configService) {
+                         JiraConfigService configService,
+                         BreachCommentRepository commentRepo) {
         this.jiraClient    = jiraClient;
         this.teamRepository = teamRepository;
         this.configService  = configService;
+        this.commentRepo    = commentRepo;
     }
 
     /**
@@ -87,7 +92,16 @@ public class SlaController {
         String comment = "SLA Breached. Reason: " + reason;
         boolean ok = jiraClient.postComment(issueKey, comment);
 
-        if (ok) return ResponseEntity.ok(Map.of("message", "Comment added to " + issueKey));
+        if (ok) {
+            // Persist to DB so the UI shows "already commented" after refresh.
+            // If the same ticket is re-commented, update the reason.
+            BreachComment bc = commentRepo.findByIssueKey(issueKey)
+                                          .orElse(new BreachComment(issueKey, reason));
+            bc.setReason(reason);
+            bc.setCommentedAt(java.time.LocalDateTime.now());
+            commentRepo.save(bc);
+            return ResponseEntity.ok(Map.of("message", "Comment added to " + issueKey));
+        }
         return ResponseEntity.internalServerError()
                              .body(Map.of("error", "Failed to post comment on " + issueKey));
     }
@@ -126,11 +140,17 @@ public class SlaController {
         log.info("[SLA] date={} openBreached={} resolvedBreached={}",
             date == null ? "today" : date, openBreached.size(), resolvedBreached.size());
 
+        // Build commentedTickets map from DB — { "SAC-123": "Aria Escalation", ... }
+        // Frontend uses this to show already-commented state after refresh.
+        Map<String, String> commentedTickets = new LinkedHashMap<>();
+        commentRepo.findAll().forEach(bc -> commentedTickets.put(bc.getIssueKey(), bc.getReason()));
+
         Map<String, Object> result = new LinkedHashMap<>();
         // Open: attribute breaches to who had ticket at breach time (changelog lookup)
         // Resolved: skip attribution — too many tickets; use current assignee
-        result.put("open",     groupByBreachOwner(openBreached,     fieldId, sevKey, true));
-        result.put("resolved", groupByBreachOwner(resolvedBreached, fieldId, sevKey, false));
+        result.put("open",             groupByBreachOwner(openBreached,     fieldId, sevKey, true));
+        result.put("resolved",         groupByBreachOwner(resolvedBreached, fieldId, sevKey, false));
+        result.put("commentedTickets", commentedTickets);
         return ResponseEntity.ok(result);
     }
 

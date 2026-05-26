@@ -2126,7 +2126,8 @@ setInterval(loadStatus, 60000);
 let slaMode      = false;
 let slaDate      = null;    // null = today; 'YYYY-MM-DD' = specific date
 let slaActiveTab = 'open';  // 'open' | 'resolved'
-let slaAllData   = { open: [], resolved: [] }; // full dataset from last fetch
+let slaAllData        = { open: [], resolved: [] }; // full dataset from last fetch
+let commentedTickets  = {};  // { "SAC-123": "Aria Escalation" } — from DB, persists across refresh
 
 // Severity colour map built from real Jira data: { "Critical": {bg,color,border}, ... }
 // Populated once via /api/sla/severity-options; empty = use default grey
@@ -2382,6 +2383,8 @@ async function loadSla() {
       open:     Array.isArray(data.open)     ? data.open     : [],
       resolved: Array.isArray(data.resolved) ? data.resolved : []
     };
+    commentedTickets = (data.commentedTickets && typeof data.commentedTickets === 'object')
+                       ? data.commentedTickets : {};
 
     updateMetricCards(slaAllData);
     populateAssigneeFilter([...slaAllData.open, ...slaAllData.resolved]);
@@ -2632,22 +2635,33 @@ function renderSlaTabContent(data) {
               <td>${sevHtml}</td>
               <td>${slaBadge(t.sla)}</td>
               <td>
-                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                  <select class="breach-reason-select" onchange="onReasonChange(this)">
-                    <option value="">Select…</option>
-                    ${reasonOptions}
-                  </select>
-                  <input type="text" class="breach-others-input"
-                         placeholder="Type reason…"
-                         style="display:none;border:1.5px solid #dfe1e6;border-radius:4px;padding:4px 8px;
-                                font-size:.78rem;outline:none;color:#172b4d;min-width:140px;"
-                         oninput="onOthersInput(this)"
-                         onfocus="this.style.borderColor='#0052cc'"
-                         onblur="this.style.borderColor='#dfe1e6'" />
-                  <button class="breach-submit-btn" disabled
-                          onclick="submitBreachReason('${esc(t.key)}', this)">Comment</button>
-                  <span class="breach-status-msg"></span>
-                </div>
+                ${commentedTickets[t.key]
+                  ? `<div style="display:inline-flex;align-items:center;gap:6px;
+                                 background:#f0fdf4;border:1.5px solid #86efac;
+                                 border-radius:6px;padding:4px 12px;font-size:.78rem;
+                                 font-weight:600;color:#15803d;">
+                       <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+                         <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm3.03 4.72a.75.75 0 0 1 0 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-1.5-1.5a.75.75 0 0 1 1.06-1.06L7 8.69l2.97-2.97a.75.75 0 0 1 1.06 0z"/>
+                       </svg>
+                       ${esc(commentedTickets[t.key])}
+                     </div>`
+                  : `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                       <select class="breach-reason-select" onchange="onReasonChange(this)">
+                         <option value="">Select…</option>
+                         ${reasonOptions}
+                       </select>
+                       <input type="text" class="breach-others-input"
+                              placeholder="Type reason…"
+                              style="display:none;border:1.5px solid #dfe1e6;border-radius:4px;padding:4px 8px;
+                                     font-size:.78rem;outline:none;color:#172b4d;min-width:140px;"
+                              oninput="onOthersInput(this)"
+                              onfocus="this.style.borderColor='#0052cc'"
+                              onblur="this.style.borderColor='#dfe1e6'" />
+                       <button class="breach-submit-btn" disabled
+                               onclick="submitBreachReason('${esc(t.key)}', this)">Comment</button>
+                       <span class="breach-status-msg"></span>
+                     </div>`
+                }
               </td>
             </tr>`;
           }).join('')}
@@ -2813,11 +2827,19 @@ async function submitBreachReason(issueKey, btnEl) {
     });
     const data = await res.json();
     if (res.ok) {
-      statusEl.textContent       = '✓ Comment added';
-      statusEl.style.color       = '#006644';
-      selectEl.disabled          = true;  // prevent re-submit
-      othersInput.disabled       = true;
-      othersInput.style.display  = isOthers ? 'inline-block' : 'none'; // keep visible if Others was used
+      // Update local state immediately — re-render will show green "already commented" badge
+      commentedTickets[issueKey] = reason;
+      // Replace the entire cell content with the green badge right away (no full re-render needed)
+      const td = btnEl.closest('td');
+      td.innerHTML = `<div style="display:inline-flex;align-items:center;gap:6px;
+                                   background:#f0fdf4;border:1.5px solid #86efac;
+                                   border-radius:6px;padding:4px 12px;font-size:.78rem;
+                                   font-weight:600;color:#15803d;">
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+                          <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm3.03 4.72a.75.75 0 0 1 0 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-1.5-1.5a.75.75 0 0 1 1.06-1.06L7 8.69l2.97-2.97a.75.75 0 0 1 1.06 0z"/>
+                        </svg>
+                        ${esc(reason)}
+                      </div>`;
     } else {
       statusEl.textContent = '✗ ' + (data.error || 'Failed');
       statusEl.style.color = '#bf2600';
