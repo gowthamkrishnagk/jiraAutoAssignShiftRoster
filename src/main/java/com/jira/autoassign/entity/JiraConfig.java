@@ -18,9 +18,14 @@ public class JiraConfig {
     @Column(name = "api_token")
     private String apiToken;
 
-    public Long getId()                  { return id; }
-    public String getJiraEmail()         { return jiraEmail; }
-    public void   setJiraEmail(String v) { this.jiraEmail = v; }
-    public String getApiToken()          { return apiToken; }
-    public void   setApiToken(String v)  { this.apiToken = v; }
+    @Column(name = "sla_field_id")
+    private String slaFieldId;
+
+    public Long getId()                    { return id; }
+    public String getJiraEmail()           { return jiraEmail; }
+    public void   setJiraEmail(String v)   { this.jiraEmail = v; }
+    public String getApiToken()            { return apiToken; }
+    public void   setApiToken(String v)    { this.apiToken = v; }
+    public String getSlaFieldId()          { return slaFieldId; }
+    public void   setSlaFieldId(String v)  { this.slaFieldId = v; }
 }

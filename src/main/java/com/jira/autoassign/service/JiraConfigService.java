@@ -19,6 +19,7 @@ public class JiraConfigService {
     // Live in-memory values — updated whenever user saves from UI
     private volatile String email;
     private volatile String apiToken;
+    private volatile String slaFieldId;
 
     public JiraConfigService(JiraConfigRepository repo, JiraProperties props) {
         this.repo  = repo;
@@ -36,11 +37,14 @@ public class JiraConfigService {
             email    = props.getEmail();
             apiToken = props.getApiToken();
         }
+        slaFieldId = (saved != null && saved.getSlaFieldId() != null)
+                     ? saved.getSlaFieldId() : "";
     }
 
-    public String getUrl()      { return props.getUrl(); } // always from application.properties
-    public String getEmail()    { return email; }
-    public String getApiToken() { return apiToken; }
+    public String getUrl()        { return props.getUrl(); } // always from application.properties
+    public String getEmail()      { return email; }
+    public String getApiToken()   { return apiToken; }
+    public String getSlaFieldId() { return slaFieldId != null ? slaFieldId : ""; }
 
     public boolean isConfigured() {
         return email != null && !email.isBlank()
@@ -56,5 +60,12 @@ public class JiraConfigService {
         // Update live values immediately — no restart needed
         this.email    = jiraEmail.trim();
         this.apiToken = token.trim();
+    }
+
+    public void saveSlaFieldId(String fieldId) {
+        JiraConfig cfg = repo.findById(1L).orElse(new JiraConfig());
+        cfg.setSlaFieldId(fieldId.trim());
+        repo.save(cfg);
+        this.slaFieldId = fieldId.trim();
     }
 }

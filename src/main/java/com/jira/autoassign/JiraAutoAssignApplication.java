@@ -12,7 +12,7 @@ import java.util.TimeZone;
 @SpringBootApplication
 @EnableConfigurationProperties
 @EnableScheduling
-public class JiraAutoAssignApplication {
+public class    JiraAutoAssignApplication {
 
     private static final Logger log = LoggerFactory.getLogger(JiraAutoAssignApplication.class);
 

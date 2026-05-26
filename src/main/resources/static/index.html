@@ -471,6 +471,125 @@
       animation: spin .7s linear infinite; margin: 16px auto;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---- SLA mode button (in tab bar) ---- */
+    .sla-mode-btn {
+      padding: 6px 14px;
+      font-size: .8rem;
+      font-weight: 600;
+      color: #0052cc;
+      border: 1.5px solid #0052cc;
+      border-radius: 4px;
+      background: none;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+      white-space: nowrap;
+    }
+    .sla-mode-btn:hover  { background: #e9f0ff; }
+    .sla-mode-btn.active { background: #0052cc; color: #fff; }
+
+    /* ---- SLA view ---- */
+    #sla-view-content { display: none; }
+
+    .sla-config-bar {
+      background: #fff;
+      border-bottom: 1px solid #dfe1e6;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .sla-hint {
+      font-size: .72rem; color: #97a0af;
+      margin-left: auto; white-space: nowrap;
+    }
+
+    /* SLA main area */
+    #sla-main {
+      max-width: 960px;
+      margin: 24px auto;
+      padding: 0 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Assignee section */
+    .sla-assignee-block {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.1);
+      overflow: hidden;
+    }
+    .sla-assignee-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px;
+      background: #f4f5f7;
+      border-bottom: 1px solid #dfe1e6;
+    }
+    .sla-assignee-name  { font-size: .92rem; font-weight: 700; color: #172b4d; flex: 1; }
+    .sla-ticket-count   { font-size: .75rem; color: #5e6c84; background: #dfe1e6; border-radius: 10px; padding: 2px 9px; }
+    .sla-breached-count { font-size: .75rem; font-weight: 700; color: #bf2600; background: #ffebe6; border: 1px solid #ff8f73; border-radius: 10px; padding: 2px 9px; }
+
+    /* Ticket table inside assignee block */
+    .sla-ticket-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+    .sla-ticket-table th {
+      background: #f8f9fa; padding: 8px 12px; text-align: left;
+      font-size: .72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .4px; color: #5e6c84; border-bottom: 1px solid #dfe1e6;
+    }
+    .sla-ticket-table td { padding: 9px 12px; border-bottom: 1px solid #f4f5f7; vertical-align: middle; }
+    .sla-ticket-table tr:last-child td { border-bottom: none; }
+    .sla-ticket-table tr:hover td { background: #f8f9fa; }
+
+    .sla-key { font-family: monospace; font-size: .82rem; font-weight: 600; white-space: nowrap; }
+    .sla-key a { color: #0052cc; text-decoration: none; }
+    .sla-key a:hover { text-decoration: underline; color: #003d99; }
+    .sla-summary { color: #172b4d; word-break: break-word; }
+    .sla-jira-status { font-size: .75rem; color: #5e6c84; background: #f4f5f7; border-radius: 3px; padding: 2px 7px; white-space: nowrap; }
+
+    /* SLA status badges */
+    .sla-badge { display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:.78rem;font-weight:700;white-space:nowrap; }
+    .sla-b-breached         { background:#ffebe6;color:#bf2600;border:1px solid #ff8f73; }
+    .sla-b-critical         { background:#fff0cc;color:#974F0C;border:1px solid #ffe380; }  /* < 30m */
+    .sla-b-warning          { background:#fffae6;color:#974F0C;border:1px solid #ffe8a0; }  /* < 1h  */
+    .sla-b-healthy          { background:#e3fcef;color:#006644;border:1px solid #57d9a3; }
+    .sla-b-paused           { background:#f4f5f7;color:#5e6c84;border:1px solid #c1c7d0; }
+    .sla-b-completed        { background:#e3fcef;color:#006644;border:1px solid #57d9a3; }
+    .sla-b-completed-breach { background:#ffebe6;color:#bf2600;border:1px solid #ff8f73; }
+    .sla-b-na               { background:#f4f5f7;color:#97a0af;border:1px solid #dfe1e6; }
+
+    .sla-empty-state {
+      text-align: center; padding: 48px 24px;
+      color: #5e6c84; font-size: .9rem; line-height: 1.6;
+    }
+    .sla-empty-state strong { display:block;font-size:1rem;color:#172b4d;margin-bottom:6px; }
+
+    /* Breach reason dropdown + submit */
+    .breach-reason-select {
+      border: 1.5px solid #dfe1e6; border-radius: 4px;
+      padding: 4px 8px; font-size: .78rem; outline: none;
+      color: #172b4d; background: #fff; cursor: pointer;
+      transition: border-color .15s; max-width: 200px;
+    }
+    .breach-reason-select:focus { border-color: #0052cc; }
+    .breach-submit-btn {
+      padding: 4px 12px; font-size: .78rem; font-weight: 600;
+      border-radius: 4px; border: none; cursor: pointer;
+      background: #0052cc; color: #fff; transition: background .15s;
+      white-space: nowrap;
+    }
+    .breach-submit-btn:disabled { background: #97a0af; cursor: not-allowed; }
+    .breach-submit-btn:not(:disabled):hover { background: #0041a8; }
+    .breach-status-msg { font-size: .75rem; white-space: nowrap; }
+
+    /* Severity badge — base style only; colours applied inline from real Jira data */
+    .sla-severity-tag {
+      display: inline-block; border-radius: 3px; padding: 2px 8px;
+      font-size: .75rem; font-weight: 700; white-space: nowrap;
+      background: #f4f5f7; color: #42526e; border: 1px solid #dfe1e6;
+    }
   </style>
 </head>
 <body>
@@ -502,6 +621,8 @@
 <div class="team-bar">
   <div id="team-tabs" style="display:flex;align-items:center;"></div>
   <div style="display:flex;align-items:center;gap:8px;margin-left:auto;padding-right:4px;">
+    <button class="sla-mode-btn" id="sla-mode-btn"   onclick="toggleSlaMode()">📊 SLA Tracker</button>
+    <button class="sla-mode-btn" id="admin-mode-btn" onclick="toggleAdminMode()">⚙ Admin</button>
     <button class="team-tab-add" onclick="openAddTeam()">+ Add Team</button>
   </div>
 </div>
@@ -570,6 +691,87 @@
   </div>
 </div>
 
+<!-- ============================================================ -->
+<!-- SLA TRACKER VIEW (hidden until SLA mode is toggled)       -->
+<!-- ============================================================ -->
+<div id="sla-view-content">
+
+  <!-- Refresh toolbar -->
+  <div class="sla-config-bar">
+    <button class="btn" onclick="loadSla()" style="padding:7px 16px;font-size:.82rem;">🔄 Refresh</button>
+    <span id="sla-fetch-time" class="sla-hint"></span>
+  </div>
+
+  <!-- SLA dashboard -->
+  <div id="sla-main">
+    <div class="sla-empty-state">
+      <strong>SLA Tracker</strong>
+      Loading SLA data…
+    </div>
+  </div>
+
+</div>
+
+<!-- ============================================================ -->
+<!-- ADMIN VIEW                                                  -->
+<!-- ============================================================ -->
+<div id="admin-view-content" style="display:none;">
+  <div style="max-width:640px;margin:24px auto;padding:0 16px;display:flex;flex-direction:column;gap:18px;">
+
+    <div class="card">
+      <div class="card-title">Breach Reason Options</div>
+      <p style="font-size:.82rem;color:#5e6c84;margin-bottom:16px;line-height:1.5;">
+        These are the options shown in the <strong>Breach Reason</strong> dropdown on the SLA Tracker.
+        Add or remove reasons here — changes take effect immediately for all teams.
+      </p>
+
+      <div id="breach-reasons-list"><div class="spin"></div></div>
+
+      <!-- Add new reason -->
+      <div style="display:flex;gap:8px;margin-top:16px;align-items:center;">
+        <input id="new-reason-input" type="text" placeholder="e.g. Customer Escalation"
+               style="flex:1;border:1.5px solid #dfe1e6;border-radius:4px;padding:8px 10px;
+                      font-size:.88rem;outline:none;transition:border-color .15s;font-family:inherit;"
+               onfocus="this.style.borderColor='#0052cc'"
+               onblur="this.style.borderColor='#dfe1e6'"
+               onkeydown="if(event.key==='Enter')addBreachReason()" />
+        <button class="btn" onclick="addBreachReason()" style="white-space:nowrap;">+ Add</button>
+      </div>
+      <div id="reason-add-alert"
+           style="display:none;margin-top:8px;padding:7px 12px;border-radius:4px;font-size:.82rem;"></div>
+    </div>
+
+    <!-- SLA Configuration -->
+    <div class="card">
+      <div class="card-title">SLA Configuration</div>
+      <p style="font-size:.82rem;color:#5e6c84;margin-bottom:16px;line-height:1.5;">
+        Set the Jira custom field ID for <strong>Time to Resolution</strong> once.
+        The SLA Tracker will use it automatically — no per-session input needed.<br>
+        <span style="font-size:.78rem;color:#97a0af;">
+          To find the field ID: call <code style="background:#f4f5f7;padding:1px 5px;border-radius:3px;">/rest/api/3/field</code>
+          and search for "Time to resolution". It looks like <code style="background:#f4f5f7;padding:1px 5px;border-radius:3px;">customfield_XXXXX</code>.
+        </span>
+      </p>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input id="sla-field-id-input" type="text" placeholder="e.g. customfield_10020"
+               style="flex:1;border:1.5px solid #dfe1e6;border-radius:4px;padding:8px 10px;
+                      font-size:.88rem;font-family:monospace;outline:none;transition:border-color .15s;"
+               onfocus="this.style.borderColor='#0052cc'"
+               onblur="this.style.borderColor='#dfe1e6'"
+               onkeydown="if(event.key==='Enter')saveSlaFieldId()" />
+        <button class="btn" onclick="saveSlaFieldId()" style="white-space:nowrap;">Save</button>
+      </div>
+      <div id="sla-field-save-alert"
+           style="display:none;margin-top:8px;padding:7px 12px;border-radius:4px;font-size:.82rem;"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- NORMAL TEAM VIEW                                            -->
+<!-- ============================================================ -->
+<div id="team-view-content">
 <main>
 
   <!-- Inline JQL card -->
@@ -793,13 +995,15 @@
 
 
 </main>
+</div><!-- /#team-view-content -->
 
 <script>
 // ================================================================
 // TEAM STATE
 // ================================================================
-let teams      = [];
-let activeTeam = null;
+let teams        = [];
+let activeTeam   = null;
+let jiraBaseUrl  = '';   // populated from /api/sla/config; used to build browse links
 
 async function initTeams() {
   try {
@@ -848,11 +1052,16 @@ function switchToTeam(teamId) {
     mainEl.classList.add('team-switch');
   }
 
-  resetUpload();
-  loadDryRun();
-  loadJql();
-  loadStatus();
-  loadSchedule();
+  if (slaMode) {
+    // Stay in SLA mode but reload for the newly selected team
+    loadSla();
+  } else {
+    resetUpload();
+    loadDryRun();
+    loadJql();
+    loadStatus();
+    loadSchedule();
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => { initTeams(); loadSettingsStatus(); });
@@ -1374,6 +1583,413 @@ function applyDryRunState(enabled, message) {
 }
 
 setInterval(loadStatus, 60000);
+
+// ================================================================
+// SLA TRACKER
+// ================================================================
+let slaMode = false;
+
+// Severity colour map built from real Jira data: { "Critical": {bg,color,border}, ... }
+// Populated once via /api/sla/severity-options; empty = use default grey
+let severityColorMap = {};
+
+// Gradient from most severe (red) to least severe (green) — N slots
+const SEV_PALETTE = [
+  { bg: '#ffebe6', color: '#bf2600', border: '#ff8f73' },  // most severe
+  { bg: '#fff4e5', color: '#974F0C', border: '#ffbe33' },
+  { bg: '#fffae6', color: '#7A5B00', border: '#ffe380' },
+  { bg: '#deebff', color: '#0747a6', border: '#4c9aff' },
+  { bg: '#e3fcef', color: '#006644', border: '#57d9a3' },  // least severe
+];
+
+async function loadSeverityOptions() {
+  try {
+    const res = await fetch('/api/sla/severity-options');
+    if (!res.ok) return;
+    const options = await res.json(); // string[] in Jira's defined order
+    severityColorMap = {};
+    const total = options.length;
+    options.forEach((val, i) => {
+      // Spread index across the palette evenly regardless of how many options Jira has
+      const paletteIdx = total === 1 ? 2
+        : Math.round(i * (SEV_PALETTE.length - 1) / (total - 1));
+      severityColorMap[val.toLowerCase()] = SEV_PALETTE[paletteIdx];
+    });
+  } catch { /* non-fatal — severity tags just show grey */ }
+}
+
+let adminMode = false;
+
+function toggleSlaMode() {
+  slaMode = !slaMode;
+  if (slaMode) adminMode = false;  // mutually exclusive
+
+  document.getElementById('sla-mode-btn').classList.toggle('active', slaMode);
+  document.getElementById('admin-mode-btn').classList.remove('active');
+  document.getElementById('team-view-content').style.display  = (slaMode || adminMode) ? 'none' : '';
+  document.getElementById('sla-view-content').style.display   = slaMode   ? 'block' : 'none';
+  document.getElementById('admin-view-content').style.display = 'none';
+
+  if (slaMode) {
+    loadSlaConfig().then(() => loadSeverityOptions()).then(() => loadSla());
+  }
+}
+
+function toggleAdminMode() {
+  adminMode = !adminMode;
+  if (adminMode) slaMode = false;  // mutually exclusive
+
+  document.getElementById('admin-mode-btn').classList.toggle('active', adminMode);
+  document.getElementById('sla-mode-btn').classList.remove('active');
+  document.getElementById('team-view-content').style.display  = adminMode ? 'none' : '';
+  document.getElementById('sla-view-content').style.display   = 'none';
+  document.getElementById('admin-view-content').style.display = adminMode ? 'block' : 'none';
+
+  if (adminMode) {
+    loadAndRenderAdmin();
+    loadSlaConfig();     // pre-fill the SLA field ID input
+  }
+}
+
+async function loadAndRenderAdmin() {
+  await loadBreachReasons();
+  renderBreachReasonAdmin();
+}
+
+function renderBreachReasonAdmin() {
+  const list = document.getElementById('breach-reasons-list');
+  if (!breachReasons.length) {
+    list.innerHTML = '<p style="color:#5e6c84;font-size:.85rem;padding:8px 0;">No reasons configured yet.</p>';
+    return;
+  }
+  list.innerHTML = breachReasons.map(r => `
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f4f5f7;">
+      <span style="flex:1;font-size:.88rem;color:#172b4d;">${esc(r.label)}</span>
+      <button class="btn-sm btn-remove" onclick="deleteBreachReason(${r.id}, this)">✕ Remove</button>
+    </div>`).join('');
+}
+
+async function addBreachReason() {
+  const input   = document.getElementById('new-reason-input');
+  const alertEl = document.getElementById('reason-add-alert');
+  const label   = input.value.trim();
+  alertEl.style.display = 'none';
+
+  if (!label) {
+    alertEl.textContent = 'Please enter a reason label.';
+    alertEl.style.cssText = 'display:block;color:#bf2600;padding:7px 12px;border-radius:4px;font-size:.82rem;background:#ffebe6;border:1px solid #ff8f73;';
+    return;
+  }
+
+  try {
+    const res  = await fetch('/api/breach-reasons', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ label })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alertEl.textContent = data.error || 'Failed to add';
+      alertEl.style.cssText = 'display:block;color:#bf2600;padding:7px 12px;border-radius:4px;font-size:.82rem;background:#ffebe6;border:1px solid #ff8f73;';
+      return;
+    }
+    breachReasons.push(data);
+    input.value = '';
+    renderBreachReasonAdmin();
+    alertEl.textContent = `"${esc(label)}" added.`;
+    alertEl.style.cssText = 'display:block;color:#006644;padding:7px 12px;border-radius:4px;font-size:.82rem;background:#e3fcef;border:1px solid #57d9a3;';
+    setTimeout(() => { alertEl.style.display = 'none'; }, 2500);
+  } catch (e) {
+    alertEl.textContent = 'Network error: ' + e.message;
+    alertEl.style.cssText = 'display:block;color:#bf2600;padding:7px 12px;border-radius:4px;font-size:.82rem;';
+  }
+}
+
+async function deleteBreachReason(id, btnEl) {
+  btnEl.disabled = true;
+  try {
+    const res = await fetch('/api/breach-reasons/' + id, { method: 'DELETE' });
+    if (res.ok) {
+      breachReasons = breachReasons.filter(r => r.id !== id);
+      renderBreachReasonAdmin();
+    } else {
+      btnEl.disabled = false;
+    }
+  } catch {
+    btnEl.disabled = false;
+  }
+}
+
+async function loadSlaConfig() {
+  try {
+    const res = await fetch('/api/sla/config');
+    if (!res.ok) return;
+    const data = await res.json();
+    const input = document.getElementById('sla-field-id-input');
+    if (input && data.slaFieldId) input.value = data.slaFieldId;
+    if (data.jiraUrl) jiraBaseUrl = data.jiraUrl.replace(/\/$/, ''); // strip trailing slash
+  } catch { /* non-fatal */ }
+}
+
+async function saveSlaFieldId() {
+  const input   = document.getElementById('sla-field-id-input');
+  const alertEl = document.getElementById('sla-field-save-alert');
+  const fieldId = (input.value || '').trim();
+  alertEl.style.display = 'none';
+
+  if (!fieldId) {
+    alertEl.textContent = 'Please enter a field ID (e.g. customfield_10020).';
+    alertEl.style.cssText = 'display:block;color:#bf2600;padding:7px 12px;border-radius:4px;font-size:.82rem;background:#ffebe6;border:1px solid #ff8f73;';
+    return;
+  }
+
+  try {
+    const res  = await fetch('/api/sla/config', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ slaFieldId: fieldId })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alertEl.textContent = data.error || 'Save failed';
+      alertEl.style.cssText = 'display:block;color:#bf2600;padding:7px 12px;border-radius:4px;font-size:.82rem;background:#ffebe6;border:1px solid #ff8f73;';
+      return;
+    }
+    alertEl.textContent = 'SLA field ID saved.';
+    alertEl.style.cssText = 'display:block;color:#006644;padding:7px 12px;border-radius:4px;font-size:.82rem;background:#e3fcef;border:1px solid #57d9a3;';
+    setTimeout(() => { alertEl.style.display = 'none'; }, 2500);
+  } catch (e) {
+    alertEl.textContent = 'Network error: ' + e.message;
+    alertEl.style.cssText = 'display:block;color:#bf2600;padding:7px 12px;border-radius:4px;font-size:.82rem;';
+  }
+}
+
+async function loadSla() {
+  // Ensure breach reasons are loaded (needed to populate dropdown in results)
+  if (!breachReasons.length) await loadBreachReasons();
+
+  const mainEl = document.getElementById('sla-main');
+
+  if (!activeTeam) {
+    mainEl.innerHTML = `<div class="sla-empty-state"><strong>No team selected</strong>Click a team tab above.</div>`;
+    return;
+  }
+
+  mainEl.innerHTML = `<div style="text-align:center;padding:40px;"><div class="spin" style="margin:0 auto;"></div><p style="margin-top:12px;color:#5e6c84;font-size:.85rem;">Fetching SLA data from Jira…</p></div>`;
+
+  try {
+    const url = `/api/sla?team=${encodeURIComponent(activeTeam)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    // Backend returns { error: "sla_not_configured" } when field ID hasn't been saved yet
+    if (data && data.error === 'sla_not_configured') {
+      mainEl.innerHTML = `<div class="sla-empty-state">
+        <strong>SLA field ID not configured</strong>
+        Please go to the <strong>⚙ Admin</strong> tab → <em>SLA Configuration</em> and enter the
+        Jira custom field ID for <em>Time to Resolution</em> (e.g. <code style="background:#f4f5f7;padding:1px 5px;border-radius:3px;">customfield_10020</code>).
+      </div>`;
+      return;
+    }
+
+    if (!res.ok) {
+      mainEl.innerHTML = `<div class="sla-empty-state" style="color:#bf2600;">
+        <strong>Error loading SLA data</strong>${esc(data.error || res.statusText)}
+      </div>`;
+      return;
+    }
+
+    const team = teams.find(t => t.id === activeTeam);
+    document.getElementById('sla-fetch-time').textContent =
+      'Last fetched: ' + new Date().toLocaleTimeString() +
+      (team ? '  ·  ' + team.name : '');
+
+    renderSla(data, mainEl);
+  } catch (e) {
+    mainEl.innerHTML = `<div class="sla-empty-state" style="color:#bf2600;">
+      <strong>Network error</strong>${esc(e.message)}
+    </div>`;
+  }
+}
+
+// Breach reasons — loaded from DB via /api/breach-reasons, not hardcoded
+let breachReasons = []; // [{ id, label }, ...]
+
+async function loadBreachReasons() {
+  try {
+    const res = await fetch('/api/breach-reasons');
+    if (res.ok) breachReasons = await res.json();
+  } catch { /* non-fatal */ }
+}
+
+function isBreached(sla) {
+  if (!sla || !sla.available) return false;
+  return sla.status === 'breached'
+      || sla.status === 'completed_breached'
+      || (sla.status === 'ongoing' && sla.remainingMillis <= 0);
+}
+
+function renderSla(assignees, container) {
+  if (!assignees || assignees.length === 0) {
+    container.innerHTML = `<div class="sla-empty-state">
+      <strong>No assigned tickets found</strong>
+      No tickets with assignees match this team's JQL right now.
+    </div>`;
+    return;
+  }
+
+  // Keep only assignees who have at least one breached ticket
+  const breachedAssignees = assignees
+    .map(a => ({ ...a, tickets: (a.tickets || []).filter(t => isBreached(t.sla)) }))
+    .filter(a => a.tickets.length > 0);
+
+  if (!breachedAssignees.length) {
+    container.innerHTML = `<div class="sla-empty-state">
+      <strong style="color:#006644;">✅ No SLA breaches</strong>
+      All assigned tickets are currently within their SLA targets.
+    </div>`;
+    return;
+  }
+
+  const reasonOptions = breachReasons
+    .map(r => `<option value="${esc(r.label)}">${esc(r.label)}</option>`)
+    .join('');
+
+  let html = '';
+  breachedAssignees.forEach(a => {
+    const count = a.tickets.length;
+    html += `<div class="sla-assignee-block">
+      <div class="sla-assignee-header">
+        <div class="sla-assignee-name">${esc(a.name || a.email)}</div>
+        ${a.name && a.name !== a.email
+          ? `<div style="font-size:.75rem;color:#5e6c84;">${esc(a.email)}</div>` : ''}
+        <span class="sla-breached-count">⚠ ${count} breached ticket${count !== 1 ? 's' : ''}</span>
+      </div>
+      <table class="sla-ticket-table">
+        <thead>
+          <tr>
+            <th>Ticket</th>
+            <th>Summary</th>
+            <th>Severity</th>
+            <th>SLA Status</th>
+            <th>Breach Reason</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+    a.tickets.forEach(t => {
+      const sevHtml = t.severity ? severityTag(t.severity) : '<span style="color:#97a0af;">—</span>';
+      const keyHtml = jiraBaseUrl
+        ? `<a href="${jiraBaseUrl}/browse/${esc(t.key)}" target="_blank" rel="noopener">${esc(t.key)}</a>`
+        : esc(t.key);
+      html += `<tr>
+        <td><span class="sla-key">${keyHtml}</span></td>
+        <td><div class="sla-summary">${esc(t.summary)}</div></td>
+        <td>${sevHtml}</td>
+        <td>${slaBadge(t.sla)}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <select class="breach-reason-select" onchange="onReasonChange(this)">
+              <option value="">Select reason…</option>
+              ${reasonOptions}
+            </select>
+            <button class="breach-submit-btn" disabled
+                    onclick="submitBreachReason('${esc(t.key)}', this)">
+              Add Comment
+            </button>
+            <span class="breach-status-msg"></span>
+          </div>
+        </td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+function onReasonChange(selectEl) {
+  // Enable/disable the submit button in the same cell
+  const btn = selectEl.parentElement.querySelector('.breach-submit-btn');
+  if (btn) btn.disabled = !selectEl.value;
+}
+
+async function submitBreachReason(issueKey, btnEl) {
+  const cell     = btnEl.parentElement;
+  const selectEl = cell.querySelector('.breach-reason-select');
+  const statusEl = cell.querySelector('.breach-status-msg');
+  const reason   = selectEl.value;
+  if (!reason) return;
+
+  btnEl.disabled    = true;
+  statusEl.textContent = 'Posting…';
+  statusEl.style.color = '#5e6c84';
+
+  try {
+    const res  = await fetch('/api/sla/comment', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ issueKey, reason })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      statusEl.textContent = '✓ Comment added';
+      statusEl.style.color = '#006644';
+      selectEl.disabled    = true;  // prevent re-submit
+    } else {
+      statusEl.textContent = '✗ ' + (data.error || 'Failed');
+      statusEl.style.color = '#bf2600';
+      btnEl.disabled = false;       // allow retry
+    }
+  } catch (e) {
+    statusEl.textContent = '✗ Network error';
+    statusEl.style.color = '#bf2600';
+    btnEl.disabled = false;
+  }
+}
+
+function slaBadge(sla) {
+  if (!sla || !sla.available) return `<span class="sla-badge sla-b-na">— N/A</span>`;
+
+  const s = sla.status;
+  if (s === 'breached')          return `<span class="sla-badge sla-b-breached">🔴 BREACHED</span>`;
+  if (s === 'paused')            return `<span class="sla-badge sla-b-paused">⏸ Paused${sla.remaining ? ' · ' + esc(sla.remaining) : ''}</span>`;
+  if (s === 'completed')         return `<span class="sla-badge sla-b-completed">✅ Met</span>`;
+  if (s === 'completed_breached')return `<span class="sla-badge sla-b-completed-breach">❌ Breached</span>`;
+  if (s === 'not_started' || s === 'unavailable') return `<span class="sla-badge sla-b-na">— N/A</span>`;
+
+  // ongoing — colour by % of goal remaining so thresholds are relative to each ticket's SLA target
+  // e.g. a P1 ticket with 1h goal at 8 min left = 13% → critical
+  //      a P3 ticket with 8h goal at 8 min left =  2% → also critical
+  const ms   = sla.remainingMillis || 0;
+  const goal = sla.goalMillis      || 0;
+  const label = sla.remaining || '';
+
+  if (ms <= 0) return `<span class="sla-badge sla-b-breached">🔴 BREACHED</span>`;
+
+  if (goal > 0) {
+    const pct = ms / goal;
+    if (pct < 0.10) return `<span class="sla-badge sla-b-critical">🟠 ${esc(label)}</span>`;  // < 10 % left
+    if (pct < 0.25) return `<span class="sla-badge sla-b-warning">🟡 ${esc(label)}</span>`;   // < 25 % left
+    return `<span class="sla-badge sla-b-healthy">🟢 ${esc(label)}</span>`;
+  }
+
+  // goal unknown — fall back to absolute thresholds
+  if (ms < 30 * 60 * 1000) return `<span class="sla-badge sla-b-critical">🟠 ${esc(label)}</span>`;
+  if (ms < 60 * 60 * 1000) return `<span class="sla-badge sla-b-warning">🟡 ${esc(label)}</span>`;
+  return `<span class="sla-badge sla-b-healthy">🟢 ${esc(label)}</span>`;
+}
+
+// Builds a severity tag with colours fetched from Jira — no hardcoded names
+function severityTag(value) {
+  if (!value) return '<span style="color:#97a0af;">—</span>';
+  const c = severityColorMap[value.toLowerCase()];
+  const style = c
+    ? `background:${c.bg};color:${c.color};border:1px solid ${c.border};`
+    : 'background:#f4f5f7;color:#42526e;border:1px solid #dfe1e6;';
+  return `<span class="sla-severity-tag" style="${style}">${esc(value)}</span>`;
+}
 </script>
 </body>
 </html>

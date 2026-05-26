@@ -250,9 +250,12 @@ public class ShiftAssignService {
         }
 
         // --- Step 3: reassign off-shift people's tickets to active shift ---
+        // Paused people are excluded: they are still on shift, just temporarily paused —
+        // don't reassign their tickets while they are paused.
         List<String> allRosterEmails = repository.findAllEmailsInRange(teamId, today, yesterday);
         List<String> offShiftEmails  = allRosterEmails.stream()
             .filter(e -> !activeEmails.contains(e))
+            .filter(e -> !paused.contains(e))
             .collect(Collectors.toList());
 
         log.info("[{}] Off-shift sweep — people to check: {}",

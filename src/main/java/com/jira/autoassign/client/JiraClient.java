@@ -12,6 +12,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.util.*;
+import java.util.Collections;
 
 @Component
 public class JiraClient {
@@ -22,10 +23,41 @@ public class JiraClient {
     private final JiraProperties props;
     private final JiraConfigService configService;
 
+    /** Cached after first successful discovery — avoids repeated /rest/api/3/field calls. */
+    private volatile String severityFieldKey = null;
+
     public JiraClient(RestTemplate restTemplate, JiraProperties props, JiraConfigService configService) {
         this.restTemplate  = restTemplate;
         this.props         = props;
         this.configService = configService;
+    }
+
+    /**
+     * Returns the Jira field key for the Severity dropdown (e.g. "customfield_10051").
+     * Discovers it once via /rest/api/3/field and caches for the lifetime of the app.
+     */
+    public String discoverSeverityFieldKey() {
+        if (severityFieldKey != null) return severityFieldKey;
+        try {
+            ResponseEntity<JsonNode> resp = restTemplate.exchange(
+                baseUrl() + "/rest/api/3/field",
+                HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+            if (resp.getBody() != null) {
+                for (JsonNode f : resp.getBody()) {
+                    String name = f.path("name").asText("").toLowerCase();
+                    String id   = f.path("id").asText("");
+                    if (name.equals("severity") || name.equals("severity[dropdown]")
+                            || id.equalsIgnoreCase("severity")) {
+                        severityFieldKey = id;
+                        log.info("[SLA] Discovered severity field key: {}", id);
+                        return severityFieldKey;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[SLA] Could not discover severity field key: {}", e.getMessage());
+        }
+        return null;
     }
 
     // -----------------------------------------------------------------------
@@ -83,11 +115,15 @@ public class JiraClient {
     }
 
     private List<JsonNode> searchTickets(String jql) {
+        return searchTicketsWithFields(jql, "summary,assignee,status,issuetype,labels");
+    }
+
+    private List<JsonNode> searchTicketsWithFields(String jql, String fields) {
         URI uri = UriComponentsBuilder
             .fromHttpUrl(baseUrl() + "/rest/api/3/search/jql")
             .queryParam("jql",        "{jql}")
             .queryParam("maxResults", 100)
-            .queryParam("fields",     "summary,assignee,status,issuetype,labels")
+            .queryParam("fields",     fields)
             .build()
             .expand(jql)
             .encode()
@@ -101,6 +137,26 @@ public class JiraClient {
             response.getBody().get("issues").forEach(tickets::add);
         }
         return tickets;
+    }
+
+    /**
+     * Returns all tickets with an assignee that match the team's base JQL,
+     * fetching the given SLA field alongside the standard fields.
+     * Used by the SLA Tracker — strips "Assignee in (EMPTY)" and flips to
+     * "assignee is not EMPTY" so we see every person's current load.
+     */
+    public List<JsonNode> getSlaTickets(String baseJql, String slaFieldId) {
+        String base = baseJql
+            .replaceAll("(?i)\\s+AND\\s+Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
+            .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)\\s+AND\\s+", "")
+            .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
+            .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
+        String jql = base + " AND assignee is not EMPTY ORDER BY assignee ASC";
+        log.debug("[SLA] Fetching tickets: {}", jql);
+        String sevKey = discoverSeverityFieldKey();
+        String fields = "summary,assignee,status," + slaFieldId
+                        + (sevKey != null ? "," + sevKey : "");
+        return searchTicketsWithFields(jql, fields);
     }
 
     private String buildUnassignedJql() {
@@ -390,6 +446,118 @@ public class JiraClient {
 
         } catch (Exception e) {
             log.warn("[{}] Could not transition to '{}': {}", issueKey, targetStatus, e.getMessage());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Severity field options — fetched live from Jira, no hardcoding
+    // -----------------------------------------------------------------------
+
+    /**
+     * Looks up the "severity" field in Jira and returns its allowed option values
+     * in the order Jira defines them (typically most severe first).
+     *
+     * Steps:
+     *  1. GET /rest/api/3/field           — find the field whose name == "Severity"
+     *                                        or id == "severity"
+     *  2. GET /rest/api/3/field/{id}/context          — get its first context
+     *  3. GET /rest/api/3/field/{id}/context/{cid}/option — get the ordered options
+     *
+     * Returns an empty list if the field cannot be found or options cannot be fetched.
+     */
+    public List<String> getSeverityOptions() {
+        // Step 1 — reuse the cached severity field key
+        String fieldId = discoverSeverityFieldKey();
+
+        if (fieldId == null) {
+            log.warn("[SLA] Severity field not found in Jira field list");
+            return Collections.emptyList();
+        }
+
+        // Step 2 — get contexts for the field
+        String contextId = null;
+        try {
+            String ctxUrl = baseUrl() + "/rest/api/3/field/" + fieldId + "/context";
+            ResponseEntity<JsonNode> ctxResp = restTemplate.exchange(
+                ctxUrl, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+
+            JsonNode ctxBody = ctxResp.getBody();
+            if (ctxBody != null && ctxBody.has("values") && ctxBody.get("values").size() > 0) {
+                contextId = ctxBody.get("values").get(0).path("id").asText();
+            }
+        } catch (Exception e) {
+            log.warn("[SLA] Could not fetch severity field contexts: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+
+        if (contextId == null) {
+            log.warn("[SLA] No context found for severity field '{}'", fieldId);
+            return Collections.emptyList();
+        }
+
+        // Step 3 — get options for the context
+        try {
+            String optUrl = baseUrl() + "/rest/api/3/field/" + fieldId
+                          + "/context/" + contextId + "/option";
+            ResponseEntity<JsonNode> optResp = restTemplate.exchange(
+                optUrl, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+
+            List<String> values = new ArrayList<>();
+            JsonNode optBody = optResp.getBody();
+            if (optBody != null && optBody.has("values")) {
+                for (JsonNode opt : optBody.get("values")) {
+                    if (!opt.path("disabled").asBoolean(false)) {
+                        values.add(opt.path("value").asText());
+                    }
+                }
+            }
+            log.info("[SLA] Severity options fetched: {}", values);
+            return values;
+
+        } catch (Exception e) {
+            log.warn("[SLA] Could not fetch severity options: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Comment
+    // -----------------------------------------------------------------------
+
+    /**
+     * Posts a plain-text comment on a Jira ticket.
+     * Jira Cloud v3 requires Atlassian Document Format (ADF) — plain text
+     * is wrapped in a minimal doc → paragraph → text node.
+     */
+    public boolean postComment(String issueKey, String commentText) {
+        String url = baseUrl() + "/rest/api/3/issue/" + issueKey + "/comment";
+
+        // Build ADF body
+        Map<String, Object> textNode = new LinkedHashMap<>();
+        textNode.put("type", "text");
+        textNode.put("text", commentText);
+
+        Map<String, Object> paragraph = new LinkedHashMap<>();
+        paragraph.put("type", "paragraph");
+        paragraph.put("content", List.of(textNode));
+
+        Map<String, Object> doc = new LinkedHashMap<>();
+        doc.put("type",    "doc");
+        doc.put("version", 1);
+        doc.put("content", List.of(paragraph));
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("body", doc);
+
+        try {
+            ResponseEntity<Void> resp = restTemplate.exchange(
+                url, HttpMethod.POST,
+                new HttpEntity<>(payload, authHeaders()),
+                Void.class);
+            return resp.getStatusCode().is2xxSuccessful();
+        } catch (Exception e) {
+            log.error("[{}] Failed to post comment: {}", issueKey, e.getMessage());
+            return false;
         }
     }
 
