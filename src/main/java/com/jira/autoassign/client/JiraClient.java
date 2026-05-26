@@ -358,6 +358,77 @@ public class JiraClient {
         return null;
     }
 
+    /**
+     * Returns the accountId of whoever was assigned to the ticket AT the given epoch time.
+     * Walks the changelog (chronological order) and returns the last assignment
+     * that occurred at or before epochMs.
+     * Returns null if changelog cannot be fetched or no assignment history exists.
+     */
+    public String getAssigneeAtEpoch(String issueKey, long epochMs) {
+        String url = baseUrl() + "/rest/api/3/issue/" + issueKey + "/changelog";
+        try {
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                url, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+            JsonNode body = response.getBody();
+            if (body == null || !body.has("values")) return null;
+
+            String result = null;
+            for (JsonNode entry : body.get("values")) {
+                String createdStr = entry.path("created").asText("");
+                if (createdStr.isEmpty()) continue;
+                long entryMs;
+                try {
+                    entryMs = java.time.OffsetDateTime.parse(createdStr)
+                                  .toInstant().toEpochMilli();
+                } catch (Exception ex) { continue; }
+
+                if (entryMs > epochMs) break; // past breach time — stop
+
+                for (JsonNode item : entry.path("items")) {
+                    if ("assignee".equals(item.path("field").asText())) {
+                        String toId = item.path("to").asText(null);
+                        if (toId != null && !toId.isBlank()) result = toId;
+                    }
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("[{}] Could not fetch changelog for breach attribution: {}", issueKey, e.getMessage());
+            return null;
+        }
+    }
+
+    /** In-memory cache: accountId → { email, displayName }. Avoids repeated /user calls. */
+    private final java.util.concurrent.ConcurrentHashMap<String, Map<String,String>> userInfoCache
+        = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Returns { "email": "...", "displayName": "..." } for the given accountId.
+     * Result is cached for the lifetime of the app.
+     */
+    public Map<String, String> getUserInfo(String accountId) {
+        return userInfoCache.computeIfAbsent(accountId, id -> {
+            String url = UriComponentsBuilder
+                .fromHttpUrl(baseUrl() + "/rest/api/3/user")
+                .queryParam("accountId", id)
+                .toUriString();
+            try {
+                ResponseEntity<JsonNode> resp = restTemplate.exchange(
+                    url, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+                JsonNode user = resp.getBody();
+                if (user != null) {
+                    Map<String, String> info = new LinkedHashMap<>();
+                    info.put("email",       user.path("emailAddress").asText(""));
+                    info.put("displayName", user.path("displayName").asText(""));
+                    return info;
+                }
+            } catch (Exception e) {
+                log.warn("Could not fetch user info for {}: {}", id, e.getMessage());
+            }
+            return Map.of("email", "", "displayName", accountId);
+        });
+    }
+
     /** Reverse-lookup: accountId → email address. Returns accountId as fallback. */
     public String getUserEmail(String accountId) {
         String url = UriComponentsBuilder

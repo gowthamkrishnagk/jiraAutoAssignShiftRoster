@@ -1962,9 +1962,12 @@ function renderSla(assignees, container) {
       const keyHtml = jiraBaseUrl
         ? `<a href="${jiraBaseUrl}/browse/${esc(t.key)}" target="_blank" rel="noopener">${esc(t.key)}</a>`
         : esc(t.key);
+      const reassignBadge = t.reassignedTo
+        ? `<div style="margin-top:3px;font-size:.72rem;color:#974F0C;background:#fff4e5;border:1px solid #ffbe33;border-radius:3px;padding:1px 6px;display:inline-block;">→ Now with: ${esc(t.reassignedTo)}</div>`
+        : '';
       html += `<tr>
         <td><span class="sla-key">${keyHtml}</span></td>
-        <td><div class="sla-summary">${esc(t.summary)}</div></td>
+        <td><div class="sla-summary">${esc(t.summary)}${reassignBadge}</div></td>
         <td>${sevHtml}</td>
         <td>${slaBadge(t.sla)}</td>
         <td>
