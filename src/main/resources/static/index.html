@@ -614,6 +614,8 @@
       background: #f4f5f7; color: #42526e; border: 1px solid #dfe1e6;
     }
   </style>
+  <!-- SheetJS — client-side Excel (.xlsx) generation -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -722,6 +724,9 @@
   <!-- Refresh toolbar -->
   <div class="sla-config-bar">
     <button class="btn" onclick="loadSla()" style="padding:7px 16px;font-size:.82rem;">🔄 Refresh</button>
+    <button class="btn" onclick="downloadBreachReport()" id="sla-download-btn"
+            style="padding:7px 16px;font-size:.82rem;background:#0a6640;border-color:#0a6640;"
+            title="Download breach report as Excel">⬇ Download Report</button>
     <span id="sla-fetch-time" class="sla-hint"></span>
   </div>
 
@@ -1855,6 +1860,84 @@ async function loadSla() {
       <strong>Network error</strong>${esc(e.message)}
     </div>`;
   }
+}
+
+// ---- Excel download ----
+function downloadBreachReport() {
+  if (!slaAllData || (!slaAllData.open.length && !slaAllData.resolved.length)) {
+    alert('No data to download. Please load the SLA report first.');
+    return;
+  }
+
+  const COLS = ['Assignee', 'Email', 'Ticket', 'Summary', 'Ticket Status',
+                'Severity', 'SLA Status', 'Remaining / Completed At',
+                'Breach Time', 'Reassigned To'];
+
+  function slaStatusLabel(sla) {
+    if (!sla || !sla.available) return 'N/A';
+    switch (sla.status) {
+      case 'breached':           return 'Breached (Open)';
+      case 'completed_breached': return 'Breached (Resolved)';
+      case 'paused':             return 'Paused';
+      case 'ongoing':            return 'Ongoing';
+      case 'completed':          return 'Met';
+      default:                   return sla.status || 'N/A';
+    }
+  }
+
+  function toRows(assignees) {
+    const rows = [COLS];
+    (assignees || []).forEach(a => {
+      (a.tickets || []).forEach(t => {
+        const sla = t.sla || {};
+        const timeCol = sla.remaining    ? sla.remaining
+                      : sla.completedAt  ? sla.completedAt
+                      : '';
+        const breachCol = sla.breachTime || '';
+        rows.push([
+          a.name  || '',
+          a.email || '',
+          t.key        || '',
+          t.summary    || '',
+          t.status     || '',
+          t.severity   || '',
+          slaStatusLabel(sla),
+          timeCol,
+          breachCol,
+          t.reassignedTo || ''
+        ]);
+      });
+    });
+    return rows;
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1 — Open breached
+  const openRows = toRows(slaAllData.open);
+  const ws1 = XLSX.utils.aoa_to_sheet(openRows);
+  styleSheet(ws1, openRows[0].length);
+  XLSX.utils.book_append_sheet(wb, ws1, 'Open Breached');
+
+  // Sheet 2 — Resolved breached
+  const resolvedRows = toRows(slaAllData.resolved);
+  const ws2 = XLSX.utils.aoa_to_sheet(resolvedRows);
+  styleSheet(ws2, resolvedRows[0].length);
+  XLSX.utils.book_append_sheet(wb, ws2, 'Resolved Breached');
+
+  // File name: BreachReport_TeamName_Period_Date.xlsx
+  const team    = (activeTeam ? (teams.find(t => t.id === activeTeam) || {}).name || activeTeam : 'All');
+  const period  = slaPeriod === 'all' ? 'AllTime' : slaPeriod === 'weekly' ? 'Weekly' : 'Monthly';
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const fileName = `BreachReport_${team}_${period}_${dateStr}.xlsx`;
+
+  XLSX.writeFile(wb, fileName);
+}
+
+// Set column widths for readability
+function styleSheet(ws, colCount) {
+  const widths = [20, 28, 14, 50, 16, 12, 22, 20, 20, 20];
+  ws['!cols'] = widths.slice(0, colCount).map(w => ({ wch: w }));
 }
 
 // ---- Period filter ----
