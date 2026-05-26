@@ -568,37 +568,36 @@
     #sla-calendar-section {
       background: #f9fafb;
       border-bottom: 1px solid #e5e7eb;
-      padding: 16px 24px;
+      padding: 28px 24px 24px;
     }
     .sla-cal-section-inner {
-      max-width: 1100px;
-      margin: 0 auto;
       display: flex;
-      gap: 24px;
-      align-items: flex-start;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
     }
     .sla-cal {
       background: #fff;
-      border-radius: 14px;
+      border-radius: 16px;
       border: 1px solid #e5e7eb;
-      box-shadow: 0 2px 8px rgba(0,0,0,.08);
-      padding: 20px 20px 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08);
+      padding: 24px 28px 20px;
       flex-shrink: 0;
-      width: 390px;
+      width: 560px;
     }
     .sla-cal-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 14px;
+      margin-bottom: 18px;
     }
     .sla-cal-nav {
-      width: 34px; height: 34px;
+      width: 40px; height: 40px;
       border: 1px solid #e5e7eb;
       background: #f9fafb;
-      border-radius: 8px;
+      border-radius: 10px;
       cursor: pointer;
-      font-size: 1.2rem;
+      font-size: 1.4rem;
       color: #374151;
       display: flex; align-items: center; justify-content: center;
       transition: all .15s;
@@ -608,33 +607,34 @@
     .sla-cal-nav:hover:not(:disabled) { background: #e5e7eb; color: #111827; }
     .sla-cal-nav:disabled { opacity: .3; cursor: not-allowed; }
     .sla-cal-title {
-      font-size: 1.05rem;
+      font-size: 1.25rem;
       font-weight: 800;
       color: #111827;
-      min-width: 150px;
+      min-width: 180px;
       text-align: center;
     }
     .sla-cal-grid {
       display: grid;
       grid-template-columns: repeat(7, 1fr);
-      gap: 2px;
+      gap: 4px;
     }
     .sla-cal-dow {
       text-align: center;
-      font-size: .72rem;
+      font-size: .78rem;
       font-weight: 700;
       color: #9ca3af;
       text-transform: uppercase;
-      padding: 4px 0 8px;
+      padding: 6px 0 10px;
+      letter-spacing: .04em;
     }
     .sla-cal-day {
       position: relative;
       text-align: center;
-      font-size: .95rem;
+      font-size: 1rem;
       font-weight: 500;
       color: #374151;
-      padding: 9px 4px;
-      border-radius: 8px;
+      padding: 12px 4px;
+      border-radius: 10px;
       cursor: pointer;
       border: none;
       background: transparent;
@@ -653,7 +653,7 @@
     .sla-cal-day.sla-cal-today::after {
       content: '';
       position: absolute;
-      bottom: 3px; left: 50%;
+      bottom: 4px; left: 50%;
       transform: translateX(-50%);
       width: 5px; height: 5px;
       border-radius: 50%;
@@ -668,34 +668,40 @@
     .sla-cal-day[disabled] { color: #d1d5db; cursor: not-allowed; }
     .sla-cal-day.sla-cal-other { color: #e5e7eb; }
 
-    /* Info panel next to calendar */
+    /* Info strip below calendar */
     .sla-cal-info {
-      flex: 1;
-      padding: 6px 0 0 4px;
+      width: 560px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 12px 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
     }
+    .sla-cal-info-left { display: flex; flex-direction: column; gap: 2px; }
     .sla-cal-info-date {
-      font-size: 1.1rem;
-      font-weight: 800;
+      font-size: .95rem;
+      font-weight: 700;
       color: #111827;
-      margin-bottom: 5px;
     }
     .sla-cal-info-sub {
-      font-size: .78rem;
+      font-size: .76rem;
       color: #6b7280;
-      line-height: 1.6;
     }
     .sla-cal-info-hint {
-      margin-top: 10px;
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      font-size: .74rem;
+      font-size: .73rem;
       color: #9ca3af;
     }
 
     @media (max-width: 640px) {
-      .sla-cal-section-inner { flex-direction: column; }
-      #sla-calendar-section  { padding: 12px; }
+      .sla-cal { width: 100% !important; }
+      .sla-cal-info { width: 100%; flex-direction: column; align-items: flex-start; gap: 8px; }
+      #sla-calendar-section { padding: 16px 12px; }
     }
     .sla-assignee-filter {
       border: 1.5px solid #e5e7eb;
@@ -1201,18 +1207,6 @@
     </div>
   </div>
 
-  <!-- Summary metric cards -->
-  <div class="sla-metrics">
-    <div class="sla-metric-card sla-metric-open">
-      <div class="sla-metric-val" id="metric-open-count">—</div>
-      <div class="sla-metric-lbl">Open Breached</div>
-    </div>
-    <div class="sla-metric-card sla-metric-resolved">
-      <div class="sla-metric-val" id="metric-resolved-count">—</div>
-      <div class="sla-metric-lbl">Resolved Breached</div>
-    </div>
-  </div>
-
   <!-- Inline calendar — shown only on Resolved tab -->
   <div id="sla-calendar-section" style="display:none;">
     <div class="sla-cal-section-inner">
@@ -1227,15 +1221,17 @@
         <div class="sla-cal-grid" id="sla-cal-grid"></div>
       </div>
 
-      <!-- Info panel -->
+      <!-- Info strip below calendar -->
       <div class="sla-cal-info" id="sla-cal-info">
-        <div class="sla-cal-info-date" id="sla-cal-date-label">Today</div>
-        <div class="sla-cal-info-sub" id="sla-cal-date-sub">Showing resolved SLA breaches for today</div>
+        <div class="sla-cal-info-left">
+          <div class="sla-cal-info-date" id="sla-cal-date-label">Today</div>
+          <div class="sla-cal-info-sub" id="sla-cal-date-sub">Showing resolved SLA breaches for today</div>
+        </div>
         <div class="sla-cal-info-hint">
           <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" style="flex-shrink:0;">
             <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 1.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11zM7.25 5.5a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0zM7.5 7.5h1v4h-1z"/>
           </svg>
-          Click any date to fetch that day's resolved breaches
+          Click any date to load
         </div>
       </div>
 
@@ -2488,17 +2484,16 @@ function renderSlaCalendar() {
     cur.setDate(cur.getDate() + 1);
   }
 
-  // Update info panel
+  // Update info strip below calendar
   if (lblEl && subEl) {
     if (!slaDate || slaDate === todayStr) {
       lblEl.textContent = 'Today';
       subEl.textContent = 'Showing resolved SLA breaches for today';
     } else {
-      // Parse without timezone shift
       const [y,m,d] = slaDate.split('-').map(Number);
-      const parsed  = new Date(y, m-1, d);
+      const parsed  = new Date(y, m - 1, d);
       lblEl.textContent = parsed.toLocaleDateString(undefined,
-        { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+        { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       subEl.textContent = 'Showing resolved SLA breaches for this date';
     }
   }
