@@ -101,7 +101,8 @@ public class SlaController {
     }
 
     @GetMapping("/sla")
-    public ResponseEntity<?> getSla(@RequestParam String team) {
+    public ResponseEntity<?> getSla(@RequestParam String team,
+                                    @RequestParam(defaultValue = "all") String period) {
 
         Team t = teamRepository.findById(team).orElse(null);
         if (t == null) return ResponseEntity.notFound().build();
@@ -110,7 +111,7 @@ public class SlaController {
         if (fieldId == null || fieldId.isBlank())
             return ResponseEntity.ok(Map.of("error", "sla_not_configured"));
 
-        List<JsonNode> tickets = jiraClient.getSlaTickets(t.getJql(), fieldId);
+        List<JsonNode> tickets = jiraClient.getSlaTickets(t.getJql(), fieldId, period);
 
         // Group by assignee (keyed by email or accountId as fallback)
         Map<String, Map<String, Object>> byAssignee = new LinkedHashMap<>();

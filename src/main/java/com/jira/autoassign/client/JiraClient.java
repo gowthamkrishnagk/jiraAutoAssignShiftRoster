@@ -145,14 +145,22 @@ public class JiraClient {
      * Used by the SLA Tracker — strips "Assignee in (EMPTY)" and flips to
      * "assignee is not EMPTY" so we see every person's current load.
      */
-    public List<JsonNode> getSlaTickets(String baseJql, String slaFieldId) {
+    public List<JsonNode> getSlaTickets(String baseJql, String slaFieldId, String period) {
         String base = baseJql
             .replaceAll("(?i)\\s+AND\\s+Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
             .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)\\s+AND\\s+", "")
             .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
             .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
-        String jql = base + " AND assignee is not EMPTY ORDER BY assignee ASC";
-        log.debug("[SLA] Fetching tickets: {}", jql);
+
+        // Date filter — Jira JQL relative dates
+        String dateFilter = switch (period == null ? "all" : period) {
+            case "weekly"  -> " AND created >= -7d";
+            case "monthly" -> " AND created >= -30d";
+            default        -> "";   // "all" — no date restriction
+        };
+
+        String jql = base + " AND assignee is not EMPTY" + dateFilter + " ORDER BY assignee ASC";
+        log.debug("[SLA] Fetching tickets (period={}): {}", period, jql);
         String sevKey = discoverSeverityFieldKey();
         String fields = "summary,assignee,status," + slaFieldId
                         + (sevKey != null ? "," + sevKey : "");

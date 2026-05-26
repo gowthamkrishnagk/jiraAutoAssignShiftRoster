@@ -505,6 +505,29 @@
       margin-left: auto; white-space: nowrap;
     }
 
+    /* Period + assignee filter bar */
+    .sla-filter-bar {
+      background: #f8f9fa; border-bottom: 1px solid #dfe1e6;
+      padding: 10px 24px; display: flex; align-items: center;
+      gap: 16px; flex-wrap: wrap;
+    }
+    .sla-filter-label { font-size: .75rem; font-weight: 700; color: #5e6c84; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+    .sla-period-btns  { display: flex; gap: 4px; }
+    .sla-period-btn {
+      padding: 4px 14px; font-size: .78rem; font-weight: 600;
+      border: 1.5px solid #dfe1e6; border-radius: 20px;
+      background: #fff; color: #5e6c84; cursor: pointer;
+      transition: all .15s;
+    }
+    .sla-period-btn:hover  { border-color: #0052cc; color: #0052cc; }
+    .sla-period-btn.active { background: #0052cc; color: #fff; border-color: #0052cc; }
+    .sla-assignee-filter {
+      border: 1.5px solid #dfe1e6; border-radius: 4px;
+      padding: 4px 10px; font-size: .82rem; color: #172b4d;
+      background: #fff; outline: none; cursor: pointer; min-width: 180px;
+    }
+    .sla-assignee-filter:focus { border-color: #0052cc; }
+
     /* SLA main area */
     #sla-main {
       max-width: 960px;
@@ -700,6 +723,20 @@
   <div class="sla-config-bar">
     <button class="btn" onclick="loadSla()" style="padding:7px 16px;font-size:.82rem;">🔄 Refresh</button>
     <span id="sla-fetch-time" class="sla-hint"></span>
+  </div>
+
+  <!-- Period + Assignee filters -->
+  <div class="sla-filter-bar">
+    <span class="sla-filter-label">Period</span>
+    <div class="sla-period-btns">
+      <button class="sla-period-btn active" data-period="all"     onclick="setSLAPeriod(this)">All</button>
+      <button class="sla-period-btn"        data-period="weekly"  onclick="setSLAPeriod(this)">This Week</button>
+      <button class="sla-period-btn"        data-period="monthly" onclick="setSLAPeriod(this)">This Month</button>
+    </div>
+    <span class="sla-filter-label" style="margin-left:12px;">Assignee</span>
+    <select class="sla-assignee-filter" id="sla-assignee-filter" onchange="filterSlaByAssignee()">
+      <option value="">All Assignees</option>
+    </select>
   </div>
 
   <!-- SLA dashboard -->
@@ -1587,7 +1624,9 @@ setInterval(loadStatus, 60000);
 // ================================================================
 // SLA TRACKER
 // ================================================================
-let slaMode = false;
+let slaMode    = false;
+let slaPeriod  = 'all';   // 'all' | 'weekly' | 'monthly'
+let slaAllData = [];      // full dataset from last fetch — used for client-side assignee filter
 
 // Severity colour map built from real Jira data: { "Critical": {bg,color,border}, ... }
 // Populated once via /api/sla/severity-options; empty = use default grey
@@ -1778,7 +1817,7 @@ async function loadSla() {
   mainEl.innerHTML = `<div style="text-align:center;padding:40px;"><div class="spin" style="margin:0 auto;"></div><p style="margin-top:12px;color:#5e6c84;font-size:.85rem;">Fetching SLA data from Jira…</p></div>`;
 
   try {
-    const url = `/api/sla?team=${encodeURIComponent(activeTeam)}`;
+    const url = `/api/sla?team=${encodeURIComponent(activeTeam)}&period=${slaPeriod}`;
     const res = await fetch(url);
     const data = await res.json();
 
@@ -1804,11 +1843,52 @@ async function loadSla() {
       'Last fetched: ' + new Date().toLocaleTimeString() +
       (team ? '  ·  ' + team.name : '');
 
-    renderSla(data, mainEl);
+    // Store full data for client-side assignee filter
+    slaAllData = Array.isArray(data) ? data : [];
+    populateAssigneeFilter(slaAllData);
+    renderSla(slaAllData, mainEl);
   } catch (e) {
     mainEl.innerHTML = `<div class="sla-empty-state" style="color:#bf2600;">
       <strong>Network error</strong>${esc(e.message)}
     </div>`;
+  }
+}
+
+// ---- Period filter ----
+function setSLAPeriod(btn) {
+  slaPeriod = btn.dataset.period;
+  document.querySelectorAll('.sla-period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  // Reset assignee filter and re-fetch from backend
+  document.getElementById('sla-assignee-filter').value = '';
+  loadSla();
+}
+
+// ---- Assignee filter (client-side, no re-fetch) ----
+function populateAssigneeFilter(assignees) {
+  const sel = document.getElementById('sla-assignee-filter');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">All Assignees</option>';
+  assignees.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value       = a.email || a.name;
+    opt.textContent = a.name || a.email;
+    sel.appendChild(opt);
+  });
+  // Restore previous selection if still present
+  if (prev) sel.value = prev;
+}
+
+function filterSlaByAssignee() {
+  const sel      = document.getElementById('sla-assignee-filter');
+  const selected = sel.value;
+  const mainEl   = document.getElementById('sla-main');
+
+  if (!selected) {
+    renderSla(slaAllData, mainEl);
+  } else {
+    const filtered = slaAllData.filter(a => (a.email || a.name) === selected);
+    renderSla(filtered, mainEl);
   }
 }
 
