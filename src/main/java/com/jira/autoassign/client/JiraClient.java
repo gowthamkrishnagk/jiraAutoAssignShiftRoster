@@ -185,8 +185,8 @@ public class JiraClient {
             .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY", "")
             .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
 
-        // Keep the original status filter — only add assignee is not EMPTY
-        String jql = base + " AND assignee is not EMPTY ORDER BY created DESC";
+        // Keep the original status filter — include both assigned AND unassigned tickets
+        String jql = base + " ORDER BY created DESC";
         log.info("[SLA] Open tickets query: {}", jql);
 
         String sevKey = discoverSeverityFieldKey();
@@ -218,8 +218,7 @@ public class JiraClient {
         };
 
         String jql = base
-            + " AND status in (\"Resolved\",\"Closed\")"
-            + " AND assignee is not EMPTY"
+            + " AND status in (\"Resolved\",\"Closed\",\"Cancelled\")"
             + dateFilter
             + " ORDER BY resolved DESC";
         log.info("[SLA] Resolved tickets query (period={}): {}", period, jql);

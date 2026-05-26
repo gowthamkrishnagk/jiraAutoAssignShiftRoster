@@ -150,11 +150,11 @@ public class SlaController {
 
         for (JsonNode ticket : tickets) {
             JsonNode assigneeNode = ticket.path("fields").path("assignee");
-            if (assigneeNode.isNull() || assigneeNode.isMissingNode()) continue;
+            boolean unassigned = assigneeNode.isNull() || assigneeNode.isMissingNode();
 
-            String currentAccId = assigneeNode.path("accountId").asText("");
-            String currentEmail = assigneeNode.path("emailAddress").asText("");
-            String currentName  = assigneeNode.path("displayName").asText(currentEmail);
+            String currentAccId = unassigned ? "" : assigneeNode.path("accountId").asText("");
+            String currentEmail = unassigned ? "" : assigneeNode.path("emailAddress").asText("");
+            String currentName  = unassigned ? "" : assigneeNode.path("displayName").asText(currentEmail);
 
             JsonNode slaField        = ticket.path("fields").path(fieldId);
             Map<String, Object> slaInfo = extractSla(slaField);
@@ -180,8 +180,16 @@ public class SlaController {
                     groupEmail   = ownerInfo.getOrDefault("email", "");
                     groupName    = ownerInfo.getOrDefault("displayName",
                                        groupEmail.isEmpty() ? ownerAtBreach : groupEmail);
-                    reassignedTo = currentName.isEmpty() ? currentEmail : currentName;
+                    // For unassigned tickets, show "Now: Unassigned" badge
+                    reassignedTo = unassigned ? "Unassigned"
+                                 : (currentName.isEmpty() ? currentEmail : currentName);
                 }
+            }
+
+            // If still no group info (unassigned and no breach-owner found), group under "Unassigned"
+            if (groupAccId.isEmpty() && groupEmail.isEmpty()) {
+                groupName  = "Unassigned";
+                groupEmail = "__unassigned__";
             }
 
             String mapKey = groupEmail.isEmpty() ? groupAccId : groupEmail;
