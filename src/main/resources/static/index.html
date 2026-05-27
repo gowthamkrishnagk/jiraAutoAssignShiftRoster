@@ -2060,6 +2060,10 @@ function renderTodayShift(rows) {
     return s;
   };
 
+  // Shift Completed (top) — read-only, no buttons
+  html += section('Shift Completed', groups.done, 'ts-dot-done', 'ts-done', 'ts-badge-done', 'Completed', true,
+    null, () => '');
+
   // Active: Break always visible — Swap + Remove appear in edit mode
   html += section('Active', groups.active, 'ts-dot-active', 'ts-active', 'ts-badge-active', 'Active', false,
     r => `<button class="ts-btn-break" onclick="takeBreak('${esc(r.email)}')">☕ Break</button>`,
@@ -2080,10 +2084,6 @@ function renderTodayShift(rows) {
     r => `<button class="ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
           <button class="ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
-
-  // Done: read-only, no buttons
-  html += section('Done', groups.done, 'ts-dot-done', 'ts-done', 'ts-badge-done', 'Done', true,
-    null, () => '');
 
   el.innerHTML = html;
 }
