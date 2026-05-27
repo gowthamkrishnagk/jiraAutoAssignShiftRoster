@@ -2458,8 +2458,16 @@ function toggleSlaMode() {
   document.getElementById('admin-view-content').style.display = 'none';
 
   if (slaMode) {
-    initSlaCalendar();     // render calendar defaulted to today
+    initSlaCalendar();
     loadSlaConfig().then(() => loadSeverityOptions()).then(() => loadSla());
+  } else {
+    // Returning to auto-assign — reload for the currently active team
+    // (team-view-content may be stale if team was switched while in SLA mode)
+    resetUpload();
+    loadDryRun();
+    loadJql();
+    loadTodayShift();
+    loadSchedule();
   }
 }
 
@@ -2475,7 +2483,14 @@ function toggleAdminMode() {
 
   if (adminMode) {
     loadAndRenderAdmin();
-    loadSlaConfig();     // pre-fill the SLA field ID input
+    loadSlaConfig();
+  } else {
+    // Returning to auto-assign — reload for the currently active team
+    resetUpload();
+    loadDryRun();
+    loadJql();
+    loadTodayShift();
+    loadSchedule();
   }
 }
 
