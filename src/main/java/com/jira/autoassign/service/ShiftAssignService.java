@@ -272,6 +272,9 @@ public class ShiftAssignService {
                 if (theirTickets.isEmpty()) continue;
                 log.info("[{}] {} has {} ticket(s) to reassign", teamName, offEmail, theirTickets.size());
 
+                // Collect all successful reassignments for a single batched webhook call
+                List<Map<String, String>> reassigned = new ArrayList<>();
+
                 for (JsonNode ticket : theirTickets) {
                     String issueKey = ticket.get("key").asText();
                     String summary  = ticket.get("fields").path("summary").asText("");
@@ -285,12 +288,22 @@ public class ShiftAssignService {
                         log.info("[{}] Reassign [{}] {} -> {}", teamName, issueKey, offEmail, newEmail);
                         if (jiraClient.assignTicket(issueKey, newAccId)) {
                             logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, newEmail));
-                            webhookService.fireReassignment(teamId, teamName, issueKey, summary, offEmail, newEmail);
+                            Map<String, String> t = new LinkedHashMap<>();
+                            t.put("key",          issueKey);
+                            t.put("summary",      summary);
+                            t.put("reassignedTo", newEmail);
+                            reassigned.add(t);
                         }
                     }
                     rrIndex++;
                     jiraClient.pauseBetweenAssignments();
                 }
+
+                // One webhook call per off-shift person — all their tickets in one payload
+                if (!reassigned.isEmpty()) {
+                    webhookService.fireReassignments(teamId, teamName, offEmail, reassigned);
+                }
+
             } catch (Exception e) {
                 log.warn("[{}] Could not sweep off-shift {}: {}", teamName, offEmail, e.getMessage());
             }
