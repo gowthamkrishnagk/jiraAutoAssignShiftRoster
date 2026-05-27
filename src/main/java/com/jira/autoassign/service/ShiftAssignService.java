@@ -34,6 +34,9 @@ public class ShiftAssignService {
 
     private static final Logger log = LoggerFactory.getLogger(ShiftAssignService.class);
 
+    /** Returned by tryAssignRoundRobin — holds result and updated index. */
+    private record AssignResult(String email, String accountId, int nextRrIndex) {}
+
     private final JiraClient jiraClient;
     private final ShiftRosterRepository repository;
     private final AssignmentLogRepository logRepository;
@@ -159,31 +162,31 @@ public class ShiftAssignService {
 
         int assigned = 0, failed = 0;
         for (JsonNode ticket : unassigned) {
-            String issueKey  = ticket.get("key").asText();
-            String summary   = ticket.get("fields").path("summary").asText("");
-            int    idx       = rrIndex % accountIds.size();
-            String accountId = accountIds.get(idx);
-            String email     = resolvedEmails.get(idx);
+            String issueKey = ticket.get("key").asText();
+            String summary  = ticket.get("fields").path("summary").asText("");
 
             if (team.isDryRun()) {
+                String email = resolvedEmails.get(rrIndex % accountIds.size());
                 log.info("[{}][DRY-RUN] Would assign [{}] -> {}", teamName, issueKey, email);
                 assigned++;
+                rrIndex++;
             } else {
-                log.info("[{}] [{}] -> {}", teamName, issueKey, email);
-                if (jiraClient.assignTicket(issueKey, accountId)) {
+                AssignResult res = tryAssignRoundRobin(
+                    teamId, teamName, issueKey, accountIds, resolvedEmails, rrIndex);
+                if (res != null) {
                     assigned++;
-                    logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, email));
-                    // Auto-transition "Waiting for support" → "In Progress"
+                    rrIndex = res.nextRrIndex();
+                    logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, res.email()));
                     String status = ticket.get("fields").path("status").path("name").asText("");
                     if ("Waiting for support".equalsIgnoreCase(status)) {
                         jiraClient.transitionTicket(issueKey, "In Progress");
                     }
                 } else {
                     failed++;
+                    rrIndex++;
                 }
+                jiraClient.pauseBetweenAssignments();
             }
-            rrIndex++;
-            jiraClient.pauseBetweenAssignments();
         }
         log.info("[{}] Done — assigned: {}, failed: {}", teamName, assigned, failed);
 
@@ -234,22 +237,24 @@ public class ShiftAssignService {
         log.info("[{}] Other-path escalated to assign round-robin: {}", teamName, otherEscalated.size());
 
         for (JsonNode ticket : otherEscalated) {
-            String issueKey  = ticket.get("key").asText();
-            String summary   = ticket.get("fields").path("summary").asText("");
-            int    idx       = rrIndex % accountIds.size();
-            String accountId = accountIds.get(idx);
-            String email     = resolvedEmails.get(idx);
+            String issueKey = ticket.get("key").asText();
+            String summary  = ticket.get("fields").path("summary").asText("");
 
             if (team.isDryRun()) {
+                String email = resolvedEmails.get(rrIndex % accountIds.size());
                 log.info("[{}][DRY-RUN] Would assign other-escalated [{}] -> {}", teamName, issueKey, email);
+                rrIndex++;
             } else {
-                log.info("[{}] Assign other-escalated [{}] -> {}", teamName, issueKey, email);
-                if (jiraClient.assignTicket(issueKey, accountId)) {
-                    logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, email));
+                AssignResult res = tryAssignRoundRobin(
+                    teamId, teamName, issueKey, accountIds, resolvedEmails, rrIndex);
+                if (res != null) {
+                    rrIndex = res.nextRrIndex();
+                    logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, res.email()));
+                } else {
+                    rrIndex++;
                 }
+                jiraClient.pauseBetweenAssignments();
             }
-            rrIndex++;
-            jiraClient.pauseBetweenAssignments();
         }
 
         // --- Step 3: reassign off-shift people's tickets to active shift ---
@@ -279,28 +284,30 @@ public class ShiftAssignService {
                 for (JsonNode ticket : theirTickets) {
                     String issueKey = ticket.get("key").asText();
                     String summary  = ticket.get("fields").path("summary").asText("");
-                    int    idx      = rrIndex % accountIds.size();
-                    String newAccId = accountIds.get(idx);
-                    String newEmail = resolvedEmails.get(idx);
 
                     if (team.isDryRun()) {
+                        String newEmail = resolvedEmails.get(rrIndex % accountIds.size());
                         log.info("[{}][DRY-RUN] Would reassign [{}] {} -> {}", teamName, issueKey, offEmail, newEmail);
+                        rrIndex++;
                     } else {
-                        log.info("[{}] Reassign [{}] {} -> {}", teamName, issueKey, offEmail, newEmail);
-                        if (jiraClient.assignTicket(issueKey, newAccId)) {
-                            logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, newEmail));
+                        AssignResult res = tryAssignRoundRobin(
+                            teamId, teamName, issueKey, accountIds, resolvedEmails, rrIndex);
+                        if (res != null) {
+                            rrIndex = res.nextRrIndex();
+                            logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, res.email()));
                             String slaRemaining = jiraClient.extractSlaRemaining(ticket);
                             Map<String, String> t = new LinkedHashMap<>();
                             t.put("key",             issueKey);
                             t.put("summary",         summary);
-                            t.put("slaRemaining",    slaRemaining);  // "" if not configured
-                            t.put("currentAssignee", offEmail);      // who it was taken from
-                            t.put("reassignedTo",    newEmail);      // who is taking over
+                            t.put("slaRemaining",    slaRemaining);
+                            t.put("currentAssignee", offEmail);
+                            t.put("reassignedTo",    res.email());
                             allReassigned.add(t);
+                        } else {
+                            rrIndex++;
                         }
+                        jiraClient.pauseBetweenAssignments();
                     }
-                    rrIndex++;
-                    jiraClient.pauseBetweenAssignments();
                 }
             } catch (Exception e) {
                 log.warn("[{}] Could not sweep off-shift {}: {}", teamName, offEmail, e.getMessage());
@@ -313,6 +320,34 @@ public class ShiftAssignService {
         }
 
         rrIndexByTeam.put(teamId, rrIndex);
+    }
+
+    // -----------------------------------------------------------------------
+    // Round-robin with fallback — skips locked/unavailable accounts
+    // -----------------------------------------------------------------------
+
+    /**
+     * Tries to assign issueKey starting at rrIndex, cycling through all active accounts.
+     * If the first account fails (locked/unavailable), tries the next, then the next, etc.
+     * Returns AssignResult with the winning email and the updated rrIndex,
+     * or null if every account in the rotation failed.
+     */
+    private AssignResult tryAssignRoundRobin(String teamId, String teamName, String issueKey,
+                                              List<String> accountIds, List<String> emails,
+                                              int rrIndex) {
+        int n = accountIds.size();
+        for (int attempt = 0; attempt < n; attempt++) {
+            int    idx       = (rrIndex + attempt) % n;
+            String accountId = accountIds.get(idx);
+            String email     = emails.get(idx);
+            log.info("[{}] [{}] -> {} (attempt {}/{})", teamName, issueKey, email, attempt + 1, n);
+            if (jiraClient.assignTicket(issueKey, accountId)) {
+                return new AssignResult(email, accountId, rrIndex + attempt + 1);
+            }
+            log.warn("[{}] [{}] Assignment to {} failed — trying next account", teamName, issueKey, email);
+        }
+        log.error("[{}] [{}] All {} accounts failed — ticket left unassigned", teamName, issueKey, n);
+        return null;
     }
 
     // -----------------------------------------------------------------------
