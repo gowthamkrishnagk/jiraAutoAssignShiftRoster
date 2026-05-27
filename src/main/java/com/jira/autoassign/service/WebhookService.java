@@ -120,16 +120,16 @@ public class WebhookService {
                    jiraBase + "/browse/SAC-004")
         );
 
-        String cardJson = mapper.writeValueAsString(buildAdaptiveCard("test", "Order Fallout", testTickets));
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("teamName",    "Order Fallout");
-        payload.put("timestamp",   LocalDateTime.now().format(FMT));
-        payload.put("ticketCount", testTickets.size());
-        payload.put("tickets",     testTickets);
-        payload.put("adaptiveCard", cardJson);   // ← plain JSON string, not object
-
         try {
+            String cardJson = mapper.writeValueAsString(buildAdaptiveCard("test", "Order Fallout", testTickets));
+
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("teamName",    "Order Fallout");
+            payload.put("timestamp",   LocalDateTime.now().format(FMT));
+            payload.put("ticketCount", testTickets.size());
+            payload.put("tickets",     testTickets);
+            payload.put("adaptiveCard", cardJson);   // ← plain JSON string, not object
+
             String body = mapper.writeValueAsString(payload);
             HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
