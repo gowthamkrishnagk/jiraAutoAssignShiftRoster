@@ -5,6 +5,7 @@ import com.jira.autoassign.entity.ShiftRoster;
 import com.jira.autoassign.entity.Team;
 import com.jira.autoassign.repository.AssignmentLogRepository;
 import com.jira.autoassign.repository.TeamRepository;
+import com.jira.autoassign.scheduler.AssignScheduler;
 import com.jira.autoassign.service.ExcelService;
 import com.jira.autoassign.service.JiraConfigService;
 import com.jira.autoassign.service.ShiftAssignService;
@@ -13,9 +14,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -29,16 +32,19 @@ public class UploadController {
     private final TeamRepository teamRepository;
     private final JiraConfigService jiraConfigService;
     private final WebhookService webhookService;
+    private final AssignScheduler assignScheduler;
 
     public UploadController(ExcelService excelService, ShiftAssignService shiftAssignService,
                             AssignmentLogRepository logRepository, TeamRepository teamRepository,
-                            JiraConfigService jiraConfigService, WebhookService webhookService) {
+                            JiraConfigService jiraConfigService, WebhookService webhookService,
+                            AssignScheduler assignScheduler) {
         this.excelService       = excelService;
         this.shiftAssignService = shiftAssignService;
         this.logRepository      = logRepository;
         this.teamRepository     = teamRepository;
         this.jiraConfigService  = jiraConfigService;
         this.webhookService     = webhookService;
+        this.assignScheduler    = assignScheduler;
     }
 
     // -----------------------------------------------------------------------
@@ -423,6 +429,31 @@ public class UploadController {
             return ResponseEntity.status(502).body(Map.of("success", false,
                 "httpStatus", status, "error", "Webhook returned non-2xx status: " + status));
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Scheduler status — next trigger time
+    // -----------------------------------------------------------------------
+
+    /**
+     * Returns when the scheduler last fired and when it will next fire.
+     * Cron default is {@code 0 *\/1 * * * *} (every minute at second :00),
+     * so "next run" is always the start of the next minute.
+     */
+    @GetMapping("/scheduler/status")
+    public ResponseEntity<Map<String, Object>> schedulerStatus() {
+        Instant now      = Instant.now();
+        Instant lastRun  = assignScheduler.getLastRunAt();
+
+        // Next :00 mark — i.e. start of the following minute
+        Instant nextRun  = now.truncatedTo(ChronoUnit.MINUTES).plusSeconds(60);
+        long    secsLeft = Math.max(0, ChronoUnit.SECONDS.between(now, nextRun));
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("lastRunAt",        lastRun != null ? lastRun.toString() : null);
+        resp.put("nextRunAt",        nextRun.toString());
+        resp.put("secondsUntilNext", secsLeft);
+        return ResponseEntity.ok(resp);
     }
 
     // -----------------------------------------------------------------------
