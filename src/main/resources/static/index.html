@@ -1976,7 +1976,7 @@ async function fetchAndStartCountdown() {
       secsLeft--;
     }
     tick();
-    whStopCountdown();
+    if (whCountdownTimer) clearInterval(whCountdownTimer);  // clear old timer only, box stays visible
     whCountdownTimer = setInterval(tick, 1000);
   } catch {
     // Silently hide if endpoint unavailable
