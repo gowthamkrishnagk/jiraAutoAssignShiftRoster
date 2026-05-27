@@ -8,6 +8,7 @@ import com.jira.autoassign.repository.TeamRepository;
 import com.jira.autoassign.service.ExcelService;
 import com.jira.autoassign.service.JiraConfigService;
 import com.jira.autoassign.service.ShiftAssignService;
+import com.jira.autoassign.service.WebhookService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,15 +28,17 @@ public class UploadController {
     private final AssignmentLogRepository logRepository;
     private final TeamRepository teamRepository;
     private final JiraConfigService jiraConfigService;
+    private final WebhookService webhookService;
 
     public UploadController(ExcelService excelService, ShiftAssignService shiftAssignService,
                             AssignmentLogRepository logRepository, TeamRepository teamRepository,
-                            JiraConfigService jiraConfigService) {
+                            JiraConfigService jiraConfigService, WebhookService webhookService) {
         this.excelService       = excelService;
         this.shiftAssignService = shiftAssignService;
         this.logRepository      = logRepository;
         this.teamRepository     = teamRepository;
         this.jiraConfigService  = jiraConfigService;
+        this.webhookService     = webhookService;
     }
 
     // -----------------------------------------------------------------------
@@ -377,6 +380,49 @@ public class UploadController {
 
         jiraConfigService.save(jiraEmail, apiToken);
         return ResponseEntity.ok(Map.of("saved", true, "configured", true));
+    }
+
+    // -----------------------------------------------------------------------
+    // Power Automate webhook settings
+    // -----------------------------------------------------------------------
+
+    @GetMapping("/webhook-settings")
+    public ResponseEntity<Map<String, Object>> getWebhookSettings() {
+        String url = jiraConfigService.getWebhookUrl();
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("webhookUrl", url);
+        resp.put("configured", url != null && !url.isBlank());
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/webhook-settings")
+    public ResponseEntity<?> saveWebhookSettings(@RequestBody Map<String, String> body) {
+        String url = body.getOrDefault("webhookUrl", "").trim();
+        jiraConfigService.saveWebhookUrl(url);
+        return ResponseEntity.ok(Map.of("saved", true, "webhookUrl", url,
+                                        "configured", !url.isBlank()));
+    }
+
+    @PostMapping("/webhook-settings/test")
+    public ResponseEntity<?> testWebhook(@RequestBody Map<String, String> body) {
+        String url = body.getOrDefault("webhookUrl", "").trim();
+        if (url.isBlank()) {
+            // Fall back to saved URL if caller sent empty
+            url = jiraConfigService.getWebhookUrl();
+        }
+        if (url == null || url.isBlank())
+            return ResponseEntity.badRequest().body(Map.of("error", "No webhook URL configured"));
+
+        int status = webhookService.testWebhook(url);
+        if (status >= 200 && status < 300) {
+            return ResponseEntity.ok(Map.of("success", true,  "httpStatus", status));
+        } else if (status == -1) {
+            return ResponseEntity.status(502).body(Map.of("success", false,
+                "error", "Could not reach webhook URL (connection failed or timeout)"));
+        } else {
+            return ResponseEntity.status(502).body(Map.of("success", false,
+                "httpStatus", status, "error", "Webhook returned non-2xx status: " + status));
+        }
     }
 
     // -----------------------------------------------------------------------

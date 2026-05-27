@@ -1205,6 +1205,27 @@
         <button class="btn-cancel" onclick="closeSettingsModal()">Cancel</button>
       </div>
     </div>
+
+    <!-- ── Power Automate Webhook ────────────────────────────────── -->
+    <div style="border-top:1px solid #dfe1e6;margin-top:20px;padding-top:18px;">
+      <div style="font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+                  color:#5e6c84;margin-bottom:12px;">Power Automate Webhook</div>
+      <div class="modal-field">
+        <label>Webhook URL</label>
+        <input type="url" id="wh-url" placeholder="https://prod-xx.westus.logic.azure.com/workflows/…" />
+        <div class="modal-hint">
+          Notified on every ticket reassignment (shift handover).<br>
+          Payload: <code>ticketId | ticketSummary | currentAssignee | reassignedTo</code>
+        </div>
+      </div>
+      <div id="wh-msg" style="font-size:.8rem;margin-bottom:10px;display:none;"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn" onclick="saveWebhookUrl()">Save URL</button>
+        <button class="btn" id="wh-test-btn" onclick="testWebhookUrl()"
+                style="background:#0065ff;" title="Send a test payload now">Test</button>
+        <button class="btn-cancel" onclick="closeSettingsModal()">Close</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1741,6 +1762,7 @@ async function openSettingsModal() {
     document.getElementById('settings-edit').style.display = 'block';
   }
   document.getElementById('settings-modal').style.display = 'flex';
+  loadWebhookUrl(); // pre-fill the webhook URL section
 }
 
 function closeSettingsModal() {
@@ -1780,6 +1802,86 @@ async function saveSettings() {
   } catch (e) {
     errEl.textContent = 'Network error: ' + e.message;
     errEl.style.display = 'block';
+  }
+}
+
+// ================================================================
+// POWER AUTOMATE WEBHOOK SETTINGS
+// ================================================================
+
+async function loadWebhookUrl() {
+  try {
+    const data = await (await fetch('/api/webhook-settings')).json();
+    const inp = document.getElementById('wh-url');
+    if (inp) inp.value = data.webhookUrl || '';
+  } catch { /* non-fatal */ }
+}
+
+async function saveWebhookUrl() {
+  const inp   = document.getElementById('wh-url');
+  const msgEl = document.getElementById('wh-msg');
+  const url   = inp ? inp.value.trim() : '';
+  msgEl.style.display = 'none';
+  try {
+    const res  = await fetch('/api/webhook-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl: url })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      msgEl.style.color   = '#36b37e';
+      msgEl.textContent   = url ? '✓ Webhook URL saved.' : '✓ Webhook URL cleared.';
+    } else {
+      msgEl.style.color   = '#ff5630';
+      msgEl.textContent   = data.error || 'Save failed.';
+    }
+    msgEl.style.display = 'block';
+    setTimeout(() => { msgEl.style.display = 'none'; }, 4000);
+  } catch (e) {
+    msgEl.style.color   = '#ff5630';
+    msgEl.textContent   = 'Network error: ' + e.message;
+    msgEl.style.display = 'block';
+  }
+}
+
+async function testWebhookUrl() {
+  const inp     = document.getElementById('wh-url');
+  const msgEl   = document.getElementById('wh-msg');
+  const btn     = document.getElementById('wh-test-btn');
+  const url     = inp ? inp.value.trim() : '';
+  if (!url) {
+    msgEl.style.color   = '#ff5630';
+    msgEl.textContent   = 'Enter a webhook URL first.';
+    msgEl.style.display = 'block';
+    return;
+  }
+  btn.disabled    = true;
+  btn.textContent = 'Testing…';
+  msgEl.style.display = 'none';
+  try {
+    const res  = await fetch('/api/webhook-settings/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl: url })
+    });
+    const data = await res.json();
+    if (data.success) {
+      msgEl.style.color   = '#36b37e';
+      msgEl.textContent   = `✓ Test payload delivered (HTTP ${data.httpStatus}).`;
+    } else {
+      msgEl.style.color   = '#ff5630';
+      msgEl.textContent   = data.error || `✗ Webhook test failed (HTTP ${data.httpStatus || '?'}).`;
+    }
+    msgEl.style.display = 'block';
+    setTimeout(() => { msgEl.style.display = 'none'; }, 5000);
+  } catch (e) {
+    msgEl.style.color   = '#ff5630';
+    msgEl.textContent   = 'Network error: ' + e.message;
+    msgEl.style.display = 'block';
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Test';
   }
 }
 

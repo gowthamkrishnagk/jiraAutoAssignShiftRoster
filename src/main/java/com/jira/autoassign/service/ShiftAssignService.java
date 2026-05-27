@@ -38,6 +38,7 @@ public class ShiftAssignService {
     private final ShiftRosterRepository repository;
     private final AssignmentLogRepository logRepository;
     private final TeamRepository teamRepository;
+    private final WebhookService webhookService;
 
     // Per-team round-robin index (resets on restart — fine)
     private final Map<String, Integer> rrIndexByTeam = new ConcurrentHashMap<>();
@@ -53,11 +54,13 @@ public class ShiftAssignService {
     });
 
     public ShiftAssignService(JiraClient jiraClient, ShiftRosterRepository repository,
-                              AssignmentLogRepository logRepository, TeamRepository teamRepository) {
+                              AssignmentLogRepository logRepository, TeamRepository teamRepository,
+                              WebhookService webhookService) {
         this.jiraClient     = jiraClient;
         this.repository     = repository;
         this.logRepository  = logRepository;
         this.teamRepository = teamRepository;
+        this.webhookService = webhookService;
     }
 
     // -----------------------------------------------------------------------
@@ -282,6 +285,7 @@ public class ShiftAssignService {
                         log.info("[{}] Reassign [{}] {} -> {}", teamName, issueKey, offEmail, newEmail);
                         if (jiraClient.assignTicket(issueKey, newAccId)) {
                             logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, newEmail));
+                            webhookService.fireReassignment(teamId, teamName, issueKey, summary, offEmail, newEmail);
                         }
                     }
                     rrIndex++;

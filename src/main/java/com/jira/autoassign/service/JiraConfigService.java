@@ -20,6 +20,7 @@ public class JiraConfigService {
     private volatile String email;
     private volatile String apiToken;
     private volatile String slaFieldId;
+    private volatile String webhookUrl;
 
     public JiraConfigService(JiraConfigRepository repo, JiraProperties props) {
         this.repo  = repo;
@@ -39,12 +40,15 @@ public class JiraConfigService {
         }
         slaFieldId = (saved != null && saved.getSlaFieldId() != null)
                      ? saved.getSlaFieldId() : "";
+        webhookUrl = (saved != null && saved.getWebhookUrl() != null)
+                     ? saved.getWebhookUrl() : "";
     }
 
     public String getUrl()        { return props.getUrl(); } // always from application.properties
     public String getEmail()      { return email; }
     public String getApiToken()   { return apiToken; }
     public String getSlaFieldId() { return slaFieldId != null ? slaFieldId : ""; }
+    public String getWebhookUrl() { return webhookUrl != null ? webhookUrl : ""; }
 
     public boolean isConfigured() {
         return email != null && !email.isBlank()
@@ -67,5 +71,12 @@ public class JiraConfigService {
         cfg.setSlaFieldId(fieldId.trim());
         repo.save(cfg);
         this.slaFieldId = fieldId.trim();
+    }
+
+    public void saveWebhookUrl(String url) {
+        JiraConfig cfg = repo.findById(1L).orElse(new JiraConfig());
+        cfg.setWebhookUrl(url.trim());
+        repo.save(cfg);
+        this.webhookUrl = url.trim();
     }
 }
