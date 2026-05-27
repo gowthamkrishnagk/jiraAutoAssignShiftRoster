@@ -69,14 +69,18 @@ public class WebhookService {
             return m;
         }).collect(Collectors.toList());
 
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("teamName",    teamName != null ? teamName : teamId);
-        payload.put("timestamp",   LocalDateTime.now().format(FMT));
-        payload.put("ticketCount", enriched.size());
-        payload.put("tickets",     enriched);
-        payload.put("adaptiveCard", buildAdaptiveCard(teamId, teamName, enriched));
-
         try {
+            // Serialize card as a JSON string so PA receives it ready-to-use —
+            // no string() / json() conversion needed in the Compose expression.
+            String cardJson = mapper.writeValueAsString(buildAdaptiveCard(teamId, teamName, enriched));
+
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("teamName",    teamName != null ? teamName : teamId);
+            payload.put("timestamp",   LocalDateTime.now().format(FMT));
+            payload.put("ticketCount", enriched.size());
+            payload.put("tickets",     enriched);
+            payload.put("adaptiveCard", cardJson);   // ← plain JSON string, not object
+
             String body = mapper.writeValueAsString(payload);
             sendAsync(webhookUrl, body, teamId, "batch[" + enriched.size() + " tickets]");
         } catch (Exception e) {
@@ -116,12 +120,14 @@ public class WebhookService {
                    jiraBase + "/browse/SAC-004")
         );
 
+        String cardJson = mapper.writeValueAsString(buildAdaptiveCard("test", "Order Fallout", testTickets));
+
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("teamName",    "Order Fallout");
         payload.put("timestamp",   LocalDateTime.now().format(FMT));
         payload.put("ticketCount", testTickets.size());
         payload.put("tickets",     testTickets);
-        payload.put("adaptiveCard", buildAdaptiveCard("test", "Order Fallout", testTickets));
+        payload.put("adaptiveCard", cardJson);   // ← plain JSON string, not object
 
         try {
             String body = mapper.writeValueAsString(payload);
