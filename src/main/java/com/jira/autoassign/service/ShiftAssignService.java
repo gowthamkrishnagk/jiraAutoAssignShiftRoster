@@ -426,6 +426,10 @@ public class ShiftAssignService {
         return repository.findByTeamIdAndDate(teamId, LocalDate.now());
     }
 
+    public List<ShiftRoster> getShiftsForDate(String teamId, LocalDate date) {
+        return repository.findByTeamIdAndDate(teamId, date);
+    }
+
     /**
      * Returns upcoming shift boundaries (end + start) across ALL teams for today,
      * sorted by how soon they occur. Used by the webhook modal to show

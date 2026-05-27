@@ -238,38 +238,58 @@ public class UploadController {
     public ResponseEntity<List<Map<String, Object>>> todayShifts(
             @RequestParam(value = "team", required = false, defaultValue = "orderfallout") String teamId) {
 
-        LocalTime  now    = LocalTime.now();
-        Set<String> paused = shiftAssignService.getPausedEmails(teamId);
+        LocalDate today     = LocalDate.now();
+        LocalDate yesterday = today.minusDays(1);
+        LocalTime now       = LocalTime.now();
+        Set<String> paused  = shiftAssignService.getPausedEmails(teamId);
 
-        List<Map<String, Object>> result = shiftAssignService.getTodayShifts(teamId).stream()
-            .map(s -> {
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        // ── Yesterday's overnight shifts still active now ─────────────────────
+        // e.g. shift stored on 2026-05-27 with start=22:30, end=07:30
+        // → at 00:23 on 2026-05-28 the shift is still running (end hasn't passed)
+        for (ShiftRoster s : shiftAssignService.getShiftsForDate(teamId, yesterday)) {
+            boolean overnight = s.getShiftStart().isAfter(s.getShiftEnd());
+            if (overnight && s.getShiftEnd().isAfter(now)) {
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("id",    s.getId());
                 m.put("email", s.getEmail());
                 m.put("start", s.getShiftStart().toString());
                 m.put("end",   s.getShiftEnd().toString());
+                // Definitely started (it started yesterday); check only pause state
+                m.put("status", paused.contains(s.getEmail().toLowerCase().trim()) ? "break" : "active");
+                result.add(m);
+            }
+        }
 
-                boolean overnight  = s.getShiftStart().isAfter(s.getShiftEnd());
-                boolean started    = !now.isBefore(s.getShiftStart());
-                // Overnight shifts (e.g. 22:00–06:00) starting today end tomorrow — never "done" today
-                boolean shiftEnded = !overnight && now.isAfter(s.getShiftEnd());
+        // ── Today's shifts ────────────────────────────────────────────────────
+        for (ShiftRoster s : shiftAssignService.getTodayShifts(teamId)) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id",    s.getId());
+            m.put("email", s.getEmail());
+            m.put("start", s.getShiftStart().toString());
+            m.put("end",   s.getShiftEnd().toString());
 
-                String status;
-                if (shiftEnded) {
-                    status = "done";
-                } else if (paused.contains(s.getEmail().toLowerCase().trim())) {
-                    status = "break";
-                } else if (!started) {
-                    status = "upcoming";
-                } else {
-                    status = "active";
-                }
-                m.put("status", status);
-                return m;
-            })
-            .sorted(Comparator.comparingInt(m -> statusOrder((String) m.get("status"))))
-            .collect(Collectors.toList());
+            boolean overnight  = s.getShiftStart().isAfter(s.getShiftEnd());
+            boolean started    = !now.isBefore(s.getShiftStart());
+            // Overnight shifts starting today end tomorrow — never "done" today
+            boolean shiftEnded = !overnight && now.isAfter(s.getShiftEnd());
 
+            String status;
+            if (shiftEnded) {
+                status = "done";
+            } else if (paused.contains(s.getEmail().toLowerCase().trim())) {
+                status = "break";
+            } else if (!started) {
+                status = "upcoming";
+            } else {
+                status = "active";
+            }
+            m.put("status", status);
+            result.add(m);
+        }
+
+        result.sort(Comparator.comparingInt(m -> statusOrder((String) m.get("status"))));
         return ResponseEntity.ok(result);
     }
 
