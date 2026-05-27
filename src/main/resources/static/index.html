@@ -1963,6 +1963,7 @@ function cancelPreview() {
 // ---- step 2: confirm & save ----
 async function doSave() {
   if (!pickedFile) return;
+  const teamId  = activeTeam;                   // snapshot — upload must go to the team user chose
   const spin    = document.getElementById('save-spin');
   const alertEl = document.getElementById('save-alert');
   const saveBtn = document.getElementById('save-btn');
@@ -1973,7 +1974,7 @@ async function doSave() {
   const form = new FormData();
   form.append('file', pickedFile);
   try {
-    const url = '/api/upload' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+    const url = '/api/upload' + (teamId ? '?team=' + encodeURIComponent(teamId) : '');
     const res  = await fetch(url, { method: 'POST', body: form });
     const data = await res.json();
     if (res.ok && data.success) {
@@ -2007,14 +2008,17 @@ let shiftEditMode = false;
 async function loadStatus() { return loadTodayShift(); }  // backward-compat alias
 
 async function loadTodayShift() {
+  const teamId = activeTeam;                    // snapshot before any await
   const el = document.getElementById('status-content');
   try {
-    const url  = '/api/shift/today' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+    const url  = '/api/shift/today' + (teamId ? '?team=' + encodeURIComponent(teamId) : '');
     const rows = await (await fetch(url)).json();
+    if (activeTeam !== teamId) return;          // team switched while fetching
     document.getElementById('status-ts').textContent = 'as of ' + new Date().toLocaleTimeString();
     renderTodayShift(rows);
   } catch {
-    el.innerHTML = '<p class="no-data">Could not load today\'s shift.</p>';
+    if (activeTeam === teamId)
+      el.innerHTML = '<p class="no-data">Could not load today\'s shift.</p>';
   }
 }
 
@@ -2136,6 +2140,7 @@ async function removeFromShift(id, email) {
 let swapScheduleRows = [];   // cache of { id, email, date, start, end }
 
 async function openSwapModal(prefillEmail) {
+  const teamId = activeTeam;                    // snapshot before any await
   document.getElementById('swap-err').style.display = 'none';
   document.getElementById('swap-err').textContent = '';
   document.getElementById('swap-preview').style.display = 'none';
@@ -2143,8 +2148,9 @@ async function openSwapModal(prefillEmail) {
 
   // Load fresh schedule rows
   try {
-    const url  = '/api/schedule' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+    const url  = '/api/schedule' + (teamId ? '?team=' + encodeURIComponent(teamId) : '');
     swapScheduleRows = await (await fetch(url)).json();
+    if (activeTeam !== teamId) return;          // team switched while fetching — don't open modal
   } catch {
     swapScheduleRows = [];
   }
@@ -2216,6 +2222,7 @@ function updateSwapPreview() {
 }
 
 async function doSwap() {
+  const teamId = activeTeam;                    // snapshot — swap must target the correct team
   const idA    = document.getElementById('swap-sel-a').value;
   const idB    = document.getElementById('swap-sel-b').value;
   const errEl  = document.getElementById('swap-err');
@@ -2230,7 +2237,7 @@ async function doSwap() {
     const res  = await fetch('/api/shift/swap', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idA: Number(idA), idB: Number(idB), teamId: activeTeam })
+      body: JSON.stringify({ idA: Number(idA), idB: Number(idB), teamId })
     });
     const data = await res.json();
     if (!res.ok) {
@@ -2253,11 +2260,13 @@ async function doSwap() {
 
 // ---- schedule ----
 async function loadSchedule() {
+  const teamId = activeTeam;                    // snapshot before any await
   const el    = document.getElementById('schedule-content');
   const title = document.getElementById('schedule-title');
   try {
-    const url  = '/api/schedule' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+    const url  = '/api/schedule' + (teamId ? '?team=' + encodeURIComponent(teamId) : '');
     const rows = await (await fetch(url)).json();
+    if (activeTeam !== teamId) return;          // team switched while fetching
     const now  = new Date();
     title.textContent = now.toLocaleString('default', { month: 'long', year: 'numeric' }) + ' Schedule';
 
@@ -2318,19 +2327,20 @@ function cancelJqlEdit() {
 }
 
 async function saveJqlInline() {
+  const teamId = activeTeam;                    // snapshot — must update the team user is editing
   const jql   = document.getElementById('jql-inline-input').value.trim();
   const errEl = document.getElementById('jql-inline-err');
   errEl.style.display = 'none';
   if (!jql) { errEl.textContent = 'JQL cannot be empty'; errEl.style.display = 'block'; return; }
   try {
-    const res  = await fetch('/api/teams/' + encodeURIComponent(activeTeam), {
+    const res  = await fetch('/api/teams/' + encodeURIComponent(teamId), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jql })
     });
     const data = await res.json();
     if (!res.ok) { errEl.textContent = data.error || 'Save failed'; errEl.style.display = 'block'; return; }
-    const idx = teams.findIndex(t => t.id === activeTeam);
+    const idx = teams.findIndex(t => t.id === teamId);  // use snapshot, not activeTeam
     if (idx !== -1) teams[idx].jql = data.jql;
     document.getElementById('jql-inline-text').textContent = data.jql;
     cancelJqlEdit();
@@ -2354,9 +2364,11 @@ function toggleInstr(titleEl) {
 
 // ---- dry-run (per team) ----
 async function loadDryRun() {
+  const teamId = activeTeam;                    // snapshot before await
   try {
-    const url  = '/api/config' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+    const url  = '/api/config' + (teamId ? '?team=' + encodeURIComponent(teamId) : '');
     const data = await (await fetch(url)).json();
+    if (activeTeam !== teamId) return;          // team switched while fetching
     applyDryRunState(data.dryRun, null);
   } catch { /* ignore */ }
 }
@@ -2644,8 +2656,9 @@ function updateMetricCards(data) {
 async function loadSla() {
   // Snapshot the team and claim a token — any response from a previous/stale
   // call (different token) will be silently dropped to prevent overwriting.
-  const myToken  = ++slaLoadToken;
-  const teamId   = activeTeam;          // capture NOW before any awaits
+  const myToken   = ++slaLoadToken;
+  const teamId    = activeTeam;         // capture NOW before any awaits
+  const queryDate = slaDate;            // capture date too — calendar click mid-fetch must not bleed in
 
   if (!breachReasons.length) await loadBreachReasons();
   if (myToken !== slaLoadToken) return; // newer call started during breach load
@@ -2667,7 +2680,7 @@ async function loadSla() {
   </div>`;
 
   try {
-    const url = `/api/sla?team=${encodeURIComponent(teamId)}` + (slaDate ? `&date=${encodeURIComponent(slaDate)}` : '');
+    const url = `/api/sla?team=${encodeURIComponent(teamId)}` + (queryDate ? `&date=${encodeURIComponent(queryDate)}` : '');
     const res  = await fetch(url);
     if (myToken !== slaLoadToken) return; // team switched while waiting for response
 
