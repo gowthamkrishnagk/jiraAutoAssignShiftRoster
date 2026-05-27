@@ -279,14 +279,22 @@
       box-shadow: 0 2px 6px rgba(9,30,66,.28);
     }
     .btn-edit-shift.active:hover { background: #253858; border-color: #253858; }
-    .ts-btn-break  { background: #fff4e5; color: #974f0c; border: 1px solid #ffe380; }
-    .ts-btn-break:hover  { background: #ff8b00; color: #fff; border-color: #ff8b00; }
-    .ts-btn-resume { background: #e3fcef; color: #006644; border: 1px solid #57d9a3; }
-    .ts-btn-resume:hover { background: #57d9a3; color: #fff; border-color: #57d9a3; }
-    .ts-btn-swap   { background: #e6f0ff; color: #0052cc; border: 1px solid #b3d0ff; }
-    .ts-btn-swap:hover   { background: #0052cc; color: #fff; border-color: #0052cc; }
-    .ts-btn-remove { background: #ffebe6; color: #de350b; border: 1px solid #ff8f73; }
-    .ts-btn-remove:hover { background: #ff8f73; color: #fff; border-color: #ff8f73; }
+    .ts-btn-break, .ts-btn-resume, .ts-btn-swap, .ts-btn-remove {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: .74rem; font-weight: 600; padding: 5px 11px;
+      border-radius: 5px; cursor: pointer; flex-shrink: 0; white-space: nowrap;
+      -webkit-appearance: none; appearance: none;
+      transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+      box-shadow: 0 1px 2px rgba(9,30,66,.07);
+    }
+    .ts-btn-break  { background: #fff7ed; color: #92400e; border: 1.5px solid #fcd34d; }
+    .ts-btn-break:hover  { background: #f59e0b; color: #fff; border-color: #f59e0b; box-shadow: 0 2px 5px rgba(245,158,11,.35); }
+    .ts-btn-resume { background: #f0fdf4; color: #14532d; border: 1.5px solid #86efac; }
+    .ts-btn-resume:hover { background: #22c55e; color: #fff; border-color: #22c55e; box-shadow: 0 2px 5px rgba(34,197,94,.35); }
+    .ts-btn-swap   { background: #f8faff; color: #3b4a6b; border: 1.5px solid #c7d2e8; }
+    .ts-btn-swap:hover   { background: #3b4a6b; color: #fff; border-color: #3b4a6b; box-shadow: 0 2px 5px rgba(59,74,107,.3); }
+    .ts-btn-remove { background: #fff1f2; color: #9f1239; border: 1.5px solid #fda4af; }
+    .ts-btn-remove:hover { background: #e11d48; color: #fff; border-color: #e11d48; box-shadow: 0 2px 5px rgba(225,29,72,.35); }
     .shift-section-label {
       font-size: .72rem; font-weight: 700; text-transform: uppercase;
       letter-spacing: .5px; color: #5e6c84; margin: 12px 0 4px;
@@ -2054,23 +2062,23 @@ function renderTodayShift(rows) {
 
   // Active: Break always visible — Swap + Remove appear in edit mode
   html += section('Active', groups.active, 'ts-dot-active', 'ts-active', 'ts-badge-active', 'Active', false,
-    r => `<button class="btn-sm ts-btn-break" onclick="takeBreak('${esc(r.email)}')">☕ Break</button>`,
-    r => `<button class="btn-sm ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
-          <button class="btn-sm ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
+    r => `<button class="ts-btn-break" onclick="takeBreak('${esc(r.email)}')">☕ Break</button>`,
+    r => `<button class="ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
+          <button class="ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
 
   // On Break: Resume always visible — Swap + Remove appear in edit mode
   html += section('On Break', groups.break, 'ts-dot-break', 'ts-break', 'ts-badge-break', 'Break', false,
-    r => `<button class="btn-sm ts-btn-resume" onclick="resumeFromBreak('${esc(r.email)}')">▶ Resume</button>`,
-    r => `<button class="btn-sm ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
-          <button class="btn-sm ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
+    r => `<button class="ts-btn-resume" onclick="resumeFromBreak('${esc(r.email)}')">▶ Resume</button>`,
+    r => `<button class="ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
+          <button class="ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
 
   // Upcoming: no permanent button — Swap + Remove appear in edit mode
   html += section('Upcoming', groups.upcoming, 'ts-dot-upcoming', 'ts-upcoming', 'ts-badge-upcoming', 'Upcoming', false,
     null,
-    r => `<button class="btn-sm ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
-          <button class="btn-sm ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
+    r => `<button class="ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
+          <button class="ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
 
   // Done: read-only, no buttons
