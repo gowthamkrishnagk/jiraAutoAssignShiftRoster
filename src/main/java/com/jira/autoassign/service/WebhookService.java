@@ -38,7 +38,9 @@ import java.util.stream.Collectors;
 public class WebhookService {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookService.class);
-    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final DateTimeFormatter FMT             = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final int               TICKETS_PER_BATCH = 10;   // ~25 KB per card, well under 28 KB limit
+    private static final int               BATCH_DELAY_MS    = 2_000; // 2 s gap between batches (Teams rate limit)
 
     private final JiraConfigService jiraConfigService;
     private final ObjectMapper      mapper = new ObjectMapper();
@@ -52,7 +54,9 @@ public class WebhookService {
     }
 
     // -----------------------------------------------------------------------
-    // Called by ShiftAssignService — ONE call per scheduler cycle
+    // Called by ShiftAssignService — ONE call per scheduler cycle.
+    // Splits into batches of TICKETS_PER_BATCH so each card stays well
+    // under the 28 KB Teams Adaptive Card limit.
     // -----------------------------------------------------------------------
 
     public void fireReassignments(String teamId, String teamName,
@@ -69,23 +73,50 @@ public class WebhookService {
             return m;
         }).collect(Collectors.toList());
 
-        try {
-            // Serialize card as a JSON string so PA receives it ready-to-use —
-            // no string() / json() conversion needed in the Compose expression.
-            String cardJson = mapper.writeValueAsString(buildAdaptiveCard(teamId, teamName, enriched));
+        // Split into fixed-size batches
+        List<List<Map<String, String>>> batches = partition(enriched, TICKETS_PER_BATCH);
+        int totalBatches = batches.size();
 
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("teamName",    teamName != null ? teamName : teamId);
-            payload.put("timestamp",   LocalDateTime.now().format(FMT));
-            payload.put("ticketCount", enriched.size());
-            payload.put("tickets",     enriched);
-            payload.put("adaptiveCard", cardJson);   // ← plain JSON string, not object
+        log.info("[{}] Sending {} ticket(s) across {} webhook batch(es)", teamId, enriched.size(), totalBatches);
 
-            String body = mapper.writeValueAsString(payload);
-            sendAsync(webhookUrl, body, teamId, "batch[" + enriched.size() + " tickets]");
-        } catch (Exception e) {
-            log.error("[{}] Failed to build webhook payload: {}", teamId, e.getMessage());
+        for (int b = 0; b < totalBatches; b++) {
+            final int batchNum   = b + 1;
+            final int delayMs    = b * BATCH_DELAY_MS;           // stagger: 0s, 2s, 4s …
+            final List<Map<String, String>> batch = batches.get(b);
+
+            try {
+                String cardJson = mapper.writeValueAsString(
+                    buildAdaptiveCard(teamId, teamName, batch, batchNum, totalBatches));
+
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("teamName",     teamName != null ? teamName : teamId);
+                payload.put("timestamp",    LocalDateTime.now().format(FMT));
+                payload.put("ticketCount",  batch.size());
+                payload.put("batchNumber",  batchNum);
+                payload.put("totalBatches", totalBatches);
+                payload.put("tickets",      batch);
+                payload.put("adaptiveCard", cardJson);
+
+                String body  = mapper.writeValueAsString(payload);
+                String label = totalBatches == 1
+                    ? "batch[" + batch.size() + " tickets]"
+                    : "batch[" + batchNum + "/" + totalBatches + ", " + batch.size() + " tickets]";
+
+                sendAsyncDelayed(webhookUrl, body, teamId, label, delayMs);
+
+            } catch (Exception e) {
+                log.error("[{}] Failed to build payload for batch {}/{}: {}",
+                    teamId, batchNum, totalBatches, e.getMessage());
+            }
         }
+    }
+
+    /** Partition a list into sublists of at most {@code size} elements. */
+    private static <T> List<List<T>> partition(List<T> list, int size) {
+        List<List<T>> result = new ArrayList<>();
+        for (int i = 0; i < list.size(); i += size)
+            result.add(list.subList(i, Math.min(i + size, list.size())));
+        return result;
     }
 
     // -----------------------------------------------------------------------
@@ -160,10 +191,23 @@ public class WebhookService {
     //  From: john.doe@co…        →        To: alice@co…
     // -----------------------------------------------------------------------
 
+    /** Convenience overload — single batch (test calls). */
     private Map<String, Object> buildAdaptiveCard(String teamId, String teamName,
                                                    List<Map<String, String>> tickets) {
+        return buildAdaptiveCard(teamId, teamName, tickets, 1, 1);
+    }
+
+    private Map<String, Object> buildAdaptiveCard(String teamId, String teamName,
+                                                   List<Map<String, String>> tickets,
+                                                   int batchNum, int totalBatches) {
         String displayName = (teamName != null && !teamName.isBlank()) ? teamName : teamId;
         String timestamp   = LocalDateTime.now().format(FMT);
+
+        // Title line — show batch info only when there are multiple batches
+        String titleText = totalBatches == 1
+            ? "🔄  Shift Handover — " + tickets.size() + " Ticket(s) Reassigned"
+            : "🔄  Shift Handover — Part " + batchNum + " of " + totalBatches
+              + "  (" + tickets.size() + " tickets)";
 
         List<Map<String, Object>> body = new ArrayList<>();
 
@@ -173,8 +217,7 @@ public class WebhookService {
         banner.put("style", "emphasis");
         banner.put("bleed", true);
         banner.put("items", List.of(
-            tb("🔄  Shift Handover — " + tickets.size() + " Ticket(s) Reassigned",
-               "Bolder", "Accent", "Large", true),
+            tb(titleText, "Bolder", "Accent", "Large", true),
             colSet(
                 col("stretch", List.of(tb("**Team:** " + displayName, null, null, "Small", false))),
                 col("auto",    List.of(tb("🕐 " + timestamp, null, "Accent", "Small", false)))
@@ -287,14 +330,22 @@ public class WebhookService {
     // Async HTTP sender
     // -----------------------------------------------------------------------
 
-    private void sendAsync(String url, String body, String teamId, String label) {
+    /**
+     * Fire-and-forget HTTP POST on a virtual thread.
+     * delayMs > 0 staggers batches so Teams doesn't rate-limit back-to-back cards.
+     */
+    private void sendAsyncDelayed(String url, String body, String teamId, String label, int delayMs) {
         Thread.ofVirtual().start(() -> {
             try {
+                if (delayMs > 0) {
+                    log.info("[{}] Webhook ({}) — waiting {}ms before send", teamId, label, delayMs);
+                    Thread.sleep(delayMs);
+                }
                 HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
-                    .timeout(Duration.ofSeconds(10))
+                    .timeout(Duration.ofSeconds(15))
                     .build();
                 HttpResponse<String> resp =
                     httpClient.send(req, HttpResponse.BodyHandlers.ofString());
