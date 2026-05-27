@@ -231,6 +231,8 @@
     .btn-remove:hover { background: #ff8f73; color: #fff; }
     .btn-restore { background: #e3fcef; color: #006644; border: 1px solid #57d9a3; }
     .btn-restore:hover { background: #57d9a3; color: #fff; }
+    .btn-swap-open { background: #e6f0ff; color: #0052cc; border: 1px solid #b3d0ff; font-size: .8rem; padding: 5px 12px; }
+    .btn-swap-open:hover { background: #0052cc; color: #fff; }
     .shift-section-label {
       font-size: .72rem; font-weight: 700; text-transform: uppercase;
       letter-spacing: .5px; color: #5e6c84; margin: 12px 0 4px;
@@ -1165,6 +1167,42 @@
   </div>
 </div>
 
+<!-- Shift Swap Modal -->
+<div class="modal-backdrop" id="swap-modal" onclick="if(event.target===this)closeSwapModal()">
+  <div class="modal-box" style="max-width:480px;">
+    <div class="modal-title">⇄ Swap Shifts</div>
+    <p style="font-size:.82rem;color:#5e6c84;margin-bottom:16px;line-height:1.5;">
+      Pick two schedule rows — their assignees will be swapped immediately.
+    </p>
+    <div class="modal-err" id="swap-err"></div>
+
+    <div class="modal-field">
+      <label>Shift A &nbsp;<span style="font-weight:400;color:#5e6c84;">(person scheduled)</span></label>
+      <select id="swap-sel-a" onchange="updateSwapPreview()">
+        <option value="">— select —</option>
+      </select>
+    </div>
+
+    <div style="text-align:center;font-size:1.3rem;margin:4px 0;color:#0052cc;">⇅</div>
+
+    <div class="modal-field">
+      <label>Shift B &nbsp;<span style="font-weight:400;color:#5e6c84;">(person actually working)</span></label>
+      <select id="swap-sel-b" onchange="updateSwapPreview()">
+        <option value="">— select —</option>
+      </select>
+    </div>
+
+    <!-- Swap preview -->
+    <div id="swap-preview" style="display:none;margin:12px 0;padding:10px 14px;background:#f4f5f7;border-radius:6px;font-size:.82rem;line-height:1.8;">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" id="swap-confirm-btn" onclick="doSwap()" disabled>Confirm Swap</button>
+      <button class="btn-cancel" onclick="closeSwapModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============================================================ -->
 <!-- SLA DASHBOARD (hidden until SLA mode is toggled)          -->
 <!-- ============================================================ -->
@@ -1525,7 +1563,10 @@
 
   <!-- Monthly Schedule -->
   <div class="card">
-    <div class="card-title" id="schedule-title">This Month's Schedule</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <div class="card-title" id="schedule-title" style="margin-bottom:0;flex:1;">This Month's Schedule</div>
+      <button class="btn-sm btn-swap-open" onclick="openSwapModal()">⇄ Swap Shifts</button>
+    </div>
     <div id="schedule-content"><div class="spin"></div></div>
   </div>
 
@@ -1962,6 +2003,118 @@ async function resumeAssignee(email) {
     body: JSON.stringify({ email, teamId: activeTeam })
   });
   loadStatus();
+}
+
+// ================================================================
+// SHIFT SWAP
+// ================================================================
+let swapScheduleRows = [];   // cache of { id, email, date, start, end }
+
+async function openSwapModal() {
+  document.getElementById('swap-err').style.display = 'none';
+  document.getElementById('swap-err').textContent = '';
+  document.getElementById('swap-preview').style.display = 'none';
+  document.getElementById('swap-confirm-btn').disabled = true;
+
+  // Load fresh schedule rows
+  try {
+    const url  = '/api/schedule' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+    swapScheduleRows = await (await fetch(url)).json();
+  } catch {
+    swapScheduleRows = [];
+  }
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  // Populate both selects — sort today first, then by date
+  const sorted = [...swapScheduleRows].sort((a, b) => {
+    if (a.date === todayStr && b.date !== todayStr) return -1;
+    if (b.date === todayStr && a.date !== todayStr) return  1;
+    return a.date.localeCompare(b.date) || a.email.localeCompare(b.email);
+  });
+
+  ['swap-sel-a', 'swap-sel-b'].forEach(selId => {
+    const sel = document.getElementById(selId);
+    sel.innerHTML = '<option value="">— select —</option>';
+    sorted.forEach(r => {
+      const today = r.date === todayStr ? ' 📅 TODAY' : '';
+      sel.innerHTML += `<option value="${r.id}">${r.date}${today} — ${esc(r.email)}  (${r.start}–${r.end})</option>`;
+    });
+    sel.value = '';
+  });
+
+  document.getElementById('swap-modal').style.display = 'flex';
+}
+
+function closeSwapModal() {
+  document.getElementById('swap-modal').style.display = 'none';
+}
+
+function updateSwapPreview() {
+  const idA = document.getElementById('swap-sel-a').value;
+  const idB = document.getElementById('swap-sel-b').value;
+  const previewEl  = document.getElementById('swap-preview');
+  const confirmBtn = document.getElementById('swap-confirm-btn');
+  const errEl      = document.getElementById('swap-err');
+
+  errEl.style.display = 'none';
+  previewEl.style.display = 'none';
+  confirmBtn.disabled = true;
+
+  if (!idA || !idB) return;
+  if (idA === idB) {
+    errEl.textContent = 'Please select two different shifts.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const rowA = swapScheduleRows.find(r => String(r.id) === idA);
+  const rowB = swapScheduleRows.find(r => String(r.id) === idB);
+  if (!rowA || !rowB) return;
+
+  previewEl.innerHTML = `
+    <strong>After swap:</strong><br>
+    📅 <strong>${rowA.date}</strong> &nbsp;${rowA.start}–${rowA.end} &nbsp;→&nbsp; <span style="color:#0052cc;font-weight:600;">${esc(rowB.email)}</span><br>
+    📅 <strong>${rowB.date}</strong> &nbsp;${rowB.start}–${rowB.end} &nbsp;→&nbsp; <span style="color:#0052cc;font-weight:600;">${esc(rowA.email)}</span>
+  `;
+  previewEl.style.display = 'block';
+  confirmBtn.disabled = false;
+}
+
+async function doSwap() {
+  const idA    = document.getElementById('swap-sel-a').value;
+  const idB    = document.getElementById('swap-sel-b').value;
+  const errEl  = document.getElementById('swap-err');
+  const btn    = document.getElementById('swap-confirm-btn');
+
+  if (!idA || !idB || idA === idB) return;
+  btn.disabled = true;
+  btn.textContent = 'Swapping…';
+  errEl.style.display = 'none';
+
+  try {
+    const res  = await fetch('/api/shift/swap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idA: Number(idA), idB: Number(idB), teamId: activeTeam })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Swap failed';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Confirm Swap';
+      return;
+    }
+    closeSwapModal();
+    // Refresh schedule and status so the change is visible immediately
+    await Promise.all([loadSchedule(), loadStatus()]);
+  } catch (e) {
+    errEl.textContent = 'Network error: ' + e.message;
+    errEl.style.display = 'block';
+    btn.disabled = false;
+  }
+  btn.textContent = 'Confirm Swap';
 }
 
 // ---- schedule ----

@@ -204,11 +204,12 @@ public class UploadController {
     // -----------------------------------------------------------------------
 
     @GetMapping("/schedule")
-    public ResponseEntity<List<Map<String, String>>> schedule(
+    public ResponseEntity<List<Map<String, Object>>> schedule(
             @RequestParam(value = "team", required = false, defaultValue = "orderfallout") String teamId) {
         return ResponseEntity.ok(
             shiftAssignService.getCurrentMonthSchedule(teamId).stream().map(s -> {
-                Map<String, String> m = new LinkedHashMap<>();
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("id",    s.getId());
                 m.put("email", s.getEmail());
                 m.put("date",  s.getShiftDate().toString());
                 m.put("start", s.getShiftStart().toString());
@@ -216,6 +217,32 @@ public class UploadController {
                 return m;
             }).collect(Collectors.toList())
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Shift swap
+    // -----------------------------------------------------------------------
+
+    @PostMapping("/shift/swap")
+    public ResponseEntity<?> swapShifts(@RequestBody Map<String, Object> body) {
+        Object rawA    = body.get("idA");
+        Object rawB    = body.get("idB");
+        Object rawTeam = body.get("teamId");
+
+        if (rawA == null || rawB == null)
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing 'idA' or 'idB'"));
+
+        String teamId = rawTeam != null ? rawTeam.toString() : "orderfallout";
+        try {
+            Long idA = Long.parseLong(rawA.toString());
+            Long idB = Long.parseLong(rawB.toString());
+            Map<String, Object> result = shiftAssignService.swapShifts(idA, idB, teamId);
+            return ResponseEntity.ok(result);
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "idA and idB must be numbers"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     // -----------------------------------------------------------------------

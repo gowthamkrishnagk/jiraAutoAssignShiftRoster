@@ -334,6 +334,54 @@ public class ShiftAssignService {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // Shift swap
+    // -----------------------------------------------------------------------
+
+    /**
+     * Swaps the email (assignee) between two ShiftRoster rows.
+     * Both rows must belong to the given team.
+     *
+     * @throws IllegalArgumentException if either row is not found or doesn't belong to the team
+     */
+    public Map<String, Object> swapShifts(Long idA, Long idB, String teamId) {
+        ShiftRoster a = repository.findById(idA)
+            .orElseThrow(() -> new IllegalArgumentException("Shift row not found: " + idA));
+        ShiftRoster b = repository.findById(idB)
+            .orElseThrow(() -> new IllegalArgumentException("Shift row not found: " + idB));
+
+        if (!teamId.equals(a.getTeamId()) || !teamId.equals(b.getTeamId()))
+            throw new IllegalArgumentException("Both shifts must belong to team: " + teamId);
+
+        if (idA.equals(idB))
+            throw new IllegalArgumentException("Cannot swap a shift with itself");
+
+        String emailA = a.getEmail();
+        a.setEmail(b.getEmail());
+        b.setEmail(emailA);
+        repository.save(a);
+        repository.save(b);
+
+        log.info("[{}] Shift swap: row {} ({}) ↔ row {} ({})",
+            teamId, idA, b.getEmail(), idB, a.getEmail());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("swapped", true);
+        result.put("shiftA", shiftRowMap(a));
+        result.put("shiftB", shiftRowMap(b));
+        return result;
+    }
+
+    private Map<String, Object> shiftRowMap(ShiftRoster s) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id",    s.getId());
+        m.put("email", s.getEmail());
+        m.put("date",  s.getShiftDate().toString());
+        m.put("start", s.getShiftStart().toString());
+        m.put("end",   s.getShiftEnd().toString());
+        return m;
+    }
+
     public void purgeOldData() {
         LocalDateTime logCutoff    = LocalDateTime.now().minusDays(7);
         LocalDate     rosterCutoff = LocalDate.now().minusDays(7);
