@@ -12,7 +12,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -217,6 +219,77 @@ public class UploadController {
                 return m;
             }).collect(Collectors.toList())
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Today's shift (all rows: active, break, upcoming, done)
+    // -----------------------------------------------------------------------
+
+    @GetMapping("/shift/today")
+    public ResponseEntity<List<Map<String, Object>>> todayShifts(
+            @RequestParam(value = "team", required = false, defaultValue = "orderfallout") String teamId) {
+
+        LocalTime  now    = LocalTime.now();
+        LocalDate  today  = LocalDate.now();
+        Set<String> paused = shiftAssignService.getPausedEmails(teamId);
+
+        List<Map<String, Object>> result = shiftAssignService.getTodayShifts(teamId).stream()
+            .map(s -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("id",    s.getId());
+                m.put("email", s.getEmail());
+                m.put("start", s.getShiftStart().toString());
+                m.put("end",   s.getShiftEnd().toString());
+
+                boolean overnight    = s.getShiftStart().isAfter(s.getShiftEnd());
+                boolean started      = !now.isBefore(s.getShiftStart());
+                boolean shiftEnded   = overnight
+                    ? (s.getShiftDate().isBefore(today) && now.isAfter(s.getShiftEnd()))
+                    : now.isAfter(s.getShiftEnd());
+
+                String status;
+                if (shiftEnded) {
+                    status = "done";
+                } else if (paused.contains(s.getEmail().toLowerCase().trim())) {
+                    status = "break";
+                } else if (!started) {
+                    status = "upcoming";
+                } else {
+                    status = "active";
+                }
+                m.put("status", status);
+                return m;
+            })
+            .sorted(Comparator.comparingInt(m -> statusOrder((String) m.get("status"))))
+            .collect(Collectors.toList());
+
+        return ResponseEntity.ok(result);
+    }
+
+    private static int statusOrder(String s) {
+        return switch (s) {
+            case "active"   -> 0;
+            case "break"    -> 1;
+            case "upcoming" -> 2;
+            case "done"     -> 3;
+            default         -> 4;
+        };
+    }
+
+    // -----------------------------------------------------------------------
+    // Remove a single shift row (used by "Remove from today's shift")
+    // -----------------------------------------------------------------------
+
+    @DeleteMapping("/shift/{id}")
+    public ResponseEntity<?> removeShiftRow(
+            @PathVariable Long id,
+            @RequestParam(value = "team", required = false, defaultValue = "orderfallout") String teamId) {
+        try {
+            shiftAssignService.removeShiftRow(id, teamId);
+            return ResponseEntity.ok(Map.of("removed", true, "id", id));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     // -----------------------------------------------------------------------

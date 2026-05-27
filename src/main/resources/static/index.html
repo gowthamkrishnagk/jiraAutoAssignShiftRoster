@@ -231,8 +231,52 @@
     .btn-remove:hover { background: #ff8f73; color: #fff; }
     .btn-restore { background: #e3fcef; color: #006644; border: 1px solid #57d9a3; }
     .btn-restore:hover { background: #57d9a3; color: #fff; }
-    .btn-swap-open { background: #e6f0ff; color: #0052cc; border: 1px solid #b3d0ff; font-size: .8rem; padding: 5px 12px; }
-    .btn-swap-open:hover { background: #0052cc; color: #fff; }
+    /* ---- Today's Shift card ---- */
+    .ts-section-label {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .5px; color: #5e6c84; margin: 10px 0 5px;
+    }
+    .ts-card {
+      border-radius: 6px; padding: 9px 12px;
+      display: flex; align-items: center; gap: 8px; margin-bottom: 5px; flex-wrap: wrap;
+    }
+    .ts-active   { background: #e3fcef; border: 1px solid #57d9a3; }
+    .ts-break    { background: #fff4e5; border: 1px solid #ffe380; }
+    .ts-done     { background: #f4f5f7; border: 1px solid #dfe1e6; opacity: .72; }
+    .ts-upcoming { background: #f0f4ff; border: 1px solid #c0d0ff; }
+    .ts-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .ts-dot-active   { background: #00875a; animation: pulse 2s infinite; }
+    .ts-dot-break    { background: #ff8b00; }
+    .ts-dot-done     { background: #97a0af; }
+    .ts-dot-upcoming { background: #0052cc; }
+    .ts-info { flex: 1; min-width: 0; }
+    .ts-email { font-weight: 600; font-size: .88rem; }
+    .ts-time  { font-size: .76rem; color: #5e6c84; margin-top: 1px; }
+    .ts-badge {
+      font-size: .68rem; font-weight: 700; padding: 2px 8px;
+      border-radius: 10px; flex-shrink: 0;
+    }
+    .ts-badge-active   { background: #00875a; color: #fff; }
+    .ts-badge-break    { background: #ffe380; color: #974f0c; }
+    .ts-badge-done     { background: #dfe1e6; color: #5e6c84; }
+    .ts-badge-upcoming { background: #0052cc; color: #fff; }
+    .ts-actions { display: none; gap: 4px; flex-shrink: 0; }
+    .ts-actions.edit-on { display: flex; }
+    .btn-edit-shift {
+      background: none; border: 1px solid #dfe1e6; border-radius: 4px;
+      padding: 3px 8px; font-size: .82rem; cursor: pointer; color: #5e6c84;
+      transition: all .15s; line-height: 1;
+    }
+    .btn-edit-shift:hover { background: #f4f5f7; }
+    .btn-edit-shift.active { background: #0052cc; color: #fff; border-color: #0052cc; }
+    .ts-btn-break  { background: #fff4e5; color: #974f0c; border: 1px solid #ffe380; }
+    .ts-btn-break:hover  { background: #ff8b00; color: #fff; border-color: #ff8b00; }
+    .ts-btn-resume { background: #e3fcef; color: #006644; border: 1px solid #57d9a3; }
+    .ts-btn-resume:hover { background: #57d9a3; color: #fff; border-color: #57d9a3; }
+    .ts-btn-swap   { background: #e6f0ff; color: #0052cc; border: 1px solid #b3d0ff; }
+    .ts-btn-swap:hover   { background: #0052cc; color: #fff; border-color: #0052cc; }
+    .ts-btn-remove { background: #ffebe6; color: #de350b; border: 1px solid #ff8f73; }
+    .ts-btn-remove:hover { background: #ff8f73; color: #fff; border-color: #ff8f73; }
     .shift-section-label {
       font-size: .72rem; font-weight: 700; text-transform: uppercase;
       letter-spacing: .5px; color: #5e6c84; margin: 12px 0 4px;
@@ -1552,21 +1596,19 @@
     <div class="dry-status" id="dry-status"></div>
   </div>
 
-  <!-- Current Shift -->
+  <!-- Today's Shift -->
   <div class="card">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-      <div class="card-title" style="margin-bottom:0">Current Shift</div>
+      <div class="card-title" style="margin-bottom:0;flex:1;">Today's Shift</div>
       <span id="status-ts" class="ts"></span>
+      <button class="btn-edit-shift" id="shift-edit-btn" onclick="toggleShiftEditMode()" title="Edit today's shift">✏</button>
     </div>
     <div id="status-content"><div class="spin"></div></div>
   </div>
 
   <!-- Monthly Schedule -->
   <div class="card">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-      <div class="card-title" id="schedule-title" style="margin-bottom:0;flex:1;">This Month's Schedule</div>
-      <button class="btn-sm btn-swap-open" onclick="openSwapModal()">⇄ Swap Shifts</button>
-    </div>
+    <div class="card-title" id="schedule-title">This Month's Schedule</div>
     <div id="schedule-content"><div class="spin"></div></div>
   </div>
 
@@ -1936,73 +1978,121 @@ async function doSave() {
   saveBtn.disabled = false;
 }
 
-// ---- status ----
-async function loadStatus() {
+// ================================================================
+// TODAY'S SHIFT
+// ================================================================
+let shiftEditMode = false;
+
+async function loadStatus() { return loadTodayShift(); }  // backward-compat alias
+
+async function loadTodayShift() {
   const el = document.getElementById('status-content');
   try {
-    const url  = '/api/status' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
-    const data = await (await fetch(url)).json();
-    document.getElementById('status-ts').textContent =
-      'as of ' + new Date(data.currentTime).toLocaleTimeString();
-
-    const assignees = data.activeAssignees || [];
-    const active  = assignees.filter(a => !a.paused);
-    const paused  = assignees.filter(a =>  a.paused);
-    const on = active.length > 0;
-
-    let html = `<span class="badge ${on ? 'badge-on' : 'badge-off'}">
-      <span class="dot ${on ? 'dot-on' : 'dot-off'}"></span>
-      ${on ? 'Shift Active' : 'No Active Shift'}
-    </span>`;
-
-    if (assignees.length > 0) {
-      if (active.length > 0) {
-        html += '<div class="shift-section-label">On Shift</div><div class="a-cards">';
-        active.forEach(a => {
-          html += `<div class="a-card">
-            <span class="a-email">${esc(a.email)}</span>
-            <span class="a-time">${a.shiftDate} &nbsp; ${a.shiftStart} – ${a.shiftEnd}</span>
-            <button class="btn-sm btn-remove" onclick="pauseAssignee('${esc(a.email)}')">Remove</button>
-          </div>`;
-        });
-        html += '</div>';
-      }
-      if (paused.length > 0) {
-        html += '<div class="shift-section-label">Paused</div><div class="a-cards">';
-        paused.forEach(a => {
-          html += `<div class="a-card paused">
-            <span class="a-email">${esc(a.email)}<span class="paused-tag">paused</span></span>
-            <span class="a-time">${a.shiftDate} &nbsp; ${a.shiftStart} – ${a.shiftEnd}</span>
-            <button class="btn-sm btn-restore" onclick="resumeAssignee('${esc(a.email)}')">Add Back</button>
-          </div>`;
-        });
-        html += '</div>';
-      }
-    } else {
-      html += '<p class="no-data" style="margin-top:8px;">No one is on shift right now.</p>';
-    }
-    el.innerHTML = html;
+    const url  = '/api/shift/today' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+    const rows = await (await fetch(url)).json();
+    document.getElementById('status-ts').textContent = 'as of ' + new Date().toLocaleTimeString();
+    renderTodayShift(rows);
   } catch {
-    el.innerHTML = '<p class="no-data">Could not load status.</p>';
+    el.innerHTML = '<p class="no-data">Could not load today\'s shift.</p>';
   }
 }
 
-async function pauseAssignee(email) {
-  await fetch('/api/shift/pause', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, teamId: activeTeam })
-  });
-  loadStatus();
+function renderTodayShift(rows) {
+  const el = document.getElementById('status-content');
+  if (!rows.length) {
+    el.innerHTML = '<p class="no-data" style="margin-top:4px;">No shifts scheduled for today.</p>';
+    return;
+  }
+
+  const groups = {
+    active:   rows.filter(r => r.status === 'active'),
+    break:    rows.filter(r => r.status === 'break'),
+    upcoming: rows.filter(r => r.status === 'upcoming'),
+    done:     rows.filter(r => r.status === 'done'),
+  };
+
+  const hasActive = groups.active.length > 0;
+  let html = `<div style="margin-bottom:10px;">
+    <span class="badge ${hasActive ? 'badge-on' : 'badge-off'}">
+      <span class="dot ${hasActive ? 'dot-on' : 'dot-off'}"></span>
+      ${hasActive ? 'Shift Active' : 'No Active Shift'}
+    </span>
+  </div>`;
+
+  const section = (label, items, dotCls, cardCls, badgeCls, badgeText, tick, btns) => {
+    if (!items.length) return '';
+    let s = `<div class="ts-section-label">${label}</div>`;
+    items.forEach(r => {
+      s += `<div class="ts-card ${cardCls}">
+        <span class="ts-status-dot ${dotCls}"></span>
+        <div class="ts-info">
+          <div class="ts-email">${tick ? '✓ ' : ''}${esc(r.email)}</div>
+          <div class="ts-time">${r.start} – ${r.end}</div>
+        </div>
+        <span class="ts-badge ${badgeCls}">${badgeText}</span>
+        <div class="ts-actions${shiftEditMode ? ' edit-on' : ''}">${btns(r)}</div>
+      </div>`;
+    });
+    return s;
+  };
+
+  html += section('Active', groups.active, 'ts-dot-active', 'ts-active', 'ts-badge-active', 'Active', false, r =>
+    `<button class="btn-sm ts-btn-break"  onclick="takeBreak('${esc(r.email)}')">☕ Break</button>
+     <button class="btn-sm ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
+     <button class="btn-sm ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
+  );
+
+  html += section('On Break', groups.break, 'ts-dot-break', 'ts-break', 'ts-badge-break', 'Break', false, r =>
+    `<button class="btn-sm ts-btn-resume" onclick="resumeFromBreak('${esc(r.email)}')">▶ Resume</button>
+     <button class="btn-sm ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
+     <button class="btn-sm ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
+  );
+
+  html += section('Upcoming', groups.upcoming, 'ts-dot-upcoming', 'ts-upcoming', 'ts-badge-upcoming', 'Upcoming', false, r =>
+    `<button class="btn-sm ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
+     <button class="btn-sm ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
+  );
+
+  html += section('Done', groups.done, 'ts-dot-done', 'ts-done', 'ts-badge-done', 'Done', true, () => '');
+
+  el.innerHTML = html;
 }
 
-async function resumeAssignee(email) {
-  await fetch('/api/shift/resume', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+function toggleShiftEditMode() {
+  shiftEditMode = !shiftEditMode;
+  const btn = document.getElementById('shift-edit-btn');
+  btn.classList.toggle('active', shiftEditMode);
+  btn.title = shiftEditMode ? 'Exit edit mode' : 'Edit today\'s shift';
+  loadTodayShift();
+}
+
+async function takeBreak(email) {
+  await fetch('/api/shift/pause', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, teamId: activeTeam })
   });
-  loadStatus();
+  loadTodayShift();
+}
+
+async function resumeFromBreak(email) {
+  await fetch('/api/shift/resume', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, teamId: activeTeam })
+  });
+  loadTodayShift();
+}
+
+async function removeFromShift(id, email) {
+  if (!confirm('Remove ' + email + ' from today\'s shift?\nThis permanently deletes the roster row.')) return;
+  const url = '/api/shift/' + id + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+  const res = await fetch(url, { method: 'DELETE' });
+  if (res.ok) {
+    loadTodayShift();
+    loadSchedule();
+  } else {
+    const d = await res.json().catch(() => ({}));
+    alert('Error: ' + (d.error || 'Remove failed'));
+  }
 }
 
 // ================================================================
@@ -2010,7 +2100,7 @@ async function resumeAssignee(email) {
 // ================================================================
 let swapScheduleRows = [];   // cache of { id, email, date, start, end }
 
-async function openSwapModal() {
+async function openSwapModal(prefillEmail) {
   document.getElementById('swap-err').style.display = 'none';
   document.getElementById('swap-err').textContent = '';
   document.getElementById('swap-preview').style.display = 'none';
@@ -2037,11 +2127,20 @@ async function openSwapModal() {
     const sel = document.getElementById(selId);
     sel.innerHTML = '<option value="">— select —</option>';
     sorted.forEach(r => {
-      const today = r.date === todayStr ? ' 📅 TODAY' : '';
-      sel.innerHTML += `<option value="${r.id}">${r.date}${today} — ${esc(r.email)}  (${r.start}–${r.end})</option>`;
+      const todayTag = r.date === todayStr ? ' 📅 TODAY' : '';
+      sel.innerHTML += `<option value="${r.id}">${r.date}${todayTag} — ${esc(r.email)}  (${r.start}–${r.end})</option>`;
     });
     sel.value = '';
   });
+
+  // Pre-select the person who triggered the swap (Shift A = person being replaced)
+  if (prefillEmail) {
+    const match = sorted.find(r => r.email === prefillEmail && r.date === todayStr);
+    if (match) {
+      document.getElementById('swap-sel-a').value = String(match.id);
+      updateSwapPreview();
+    }
+  }
 
   document.getElementById('swap-modal').style.display = 'flex';
 }
@@ -2107,8 +2206,8 @@ async function doSwap() {
       return;
     }
     closeSwapModal();
-    // Refresh schedule and status so the change is visible immediately
-    await Promise.all([loadSchedule(), loadStatus()]);
+    // Refresh schedule and today's shift so the change is visible immediately
+    await Promise.all([loadSchedule(), loadTodayShift()]);
   } catch (e) {
     errEl.textContent = 'Network error: ' + e.message;
     errEl.style.display = 'block';

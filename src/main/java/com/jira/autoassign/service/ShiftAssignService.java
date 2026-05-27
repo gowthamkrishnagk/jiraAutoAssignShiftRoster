@@ -334,6 +334,35 @@ public class ShiftAssignService {
         );
     }
 
+    /**
+     * All shifts visible in "Today's Shift" panel:
+     *  - Every row with shiftDate = today
+     *  - Overnight rows from yesterday (shiftStart > shiftEnd) that may still be running
+     */
+    public List<ShiftRoster> getTodayShifts(String teamId) {
+        LocalDate today     = LocalDate.now();
+        LocalDate yesterday = today.minusDays(1);
+        List<ShiftRoster> all = new ArrayList<>(repository.findByTeamIdAndDate(teamId, today));
+        repository.findByTeamIdAndDate(teamId, yesterday).stream()
+            .filter(s -> s.getShiftStart().isAfter(s.getShiftEnd()))   // overnight only
+            .forEach(all::add);
+        return all;
+    }
+
+    /**
+     * Permanently removes a single ShiftRoster row (used by "Remove from today's shift").
+     * Also clears the pause state for that email so they don't linger in the paused set.
+     */
+    public void removeShiftRow(Long id, String teamId) {
+        ShiftRoster row = repository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Shift row not found: " + id));
+        if (!teamId.equals(row.getTeamId()))
+            throw new IllegalArgumentException("Row does not belong to team: " + teamId);
+        repository.deleteById(id);
+        resumeEmail(teamId, row.getEmail());   // clear any lingering break state
+        log.info("[{}] Removed from today's shift: {} (row {})", teamId, row.getEmail(), id);
+    }
+
     // -----------------------------------------------------------------------
     // Shift swap
     // -----------------------------------------------------------------------
