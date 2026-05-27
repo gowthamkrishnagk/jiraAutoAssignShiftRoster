@@ -435,12 +435,16 @@ public class ShiftAssignService {
      * Shift-start → unassigned tickets are picked up by the new assignee.
      */
     public List<Map<String, Object>> getUpcomingHandovers() {
-        LocalDate           today   = LocalDate.now();
-        LocalTime           now     = LocalTime.now();
-        DateTimeFormatter   timeFmt = DateTimeFormatter.ofPattern("HH:mm");
+        LocalDate today     = LocalDate.now();
+        LocalDate yesterday = today.minusDays(1);
+        LocalDate tomorrow  = today.plusDays(1);
+        LocalTime now       = LocalTime.now();
+        DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("HH:mm");
 
-        // Build teamId → display-name map from the teams table.
-        // Falls back to the raw teamId string if the team isn't found.
+        // Seconds from now until midnight — used for overnight shift end calculations
+        long secsToMidnight = 86400L - now.toSecondOfDay();
+
+        // Build teamId → display-name map (falls back to raw teamId string if not found)
         Map<String, String> teamNames = teamRepository.findAll().stream()
             .filter(t -> t.getId() != null)
             .collect(Collectors.toMap(
@@ -451,14 +455,61 @@ public class ShiftAssignService {
 
         List<Map<String, Object>> result = new ArrayList<>();
 
-        // Query all shifts for today across every team — avoids teamId mismatch issues.
+        // ── Yesterday's overnight shifts whose end is still in the future today ─
+        // e.g. shift stored on 2026-05-26 with start=22:00, end=06:00
+        // → at 01:00 today their end (06:00) is still upcoming
+        for (ShiftRoster s : repository.findAllForDate(yesterday)) {
+            boolean overnight = s.getShiftStart().isAfter(s.getShiftEnd());
+            if (overnight && s.getShiftEnd().isAfter(now)) {
+                long secs = ChronoUnit.SECONDS.between(now, s.getShiftEnd());
+                addHandover(result, s.getTeamId(),
+                    teamNames.getOrDefault(s.getTeamId(), s.getTeamId()),
+                    s.getShiftEnd().format(timeFmt), secs, s.getEmail(), "shift_end");
+            }
+        }
+
+        // ── Today's shift boundaries ──────────────────────────────────────────
         for (ShiftRoster s : repository.findAllForDate(today)) {
             String teamName = teamNames.getOrDefault(s.getTeamId(), s.getTeamId());
-            if (s.getShiftEnd().isAfter(now)) {
-                addHandover(result, s.getTeamId(), teamName, s.getShiftEnd(),   s.getEmail(), "shift_end",   now, timeFmt);
+            boolean overnight = s.getShiftStart().isAfter(s.getShiftEnd());
+
+            if (!overnight) {
+                // Normal shift: start and end are both within today
+                if (s.getShiftEnd().isAfter(now)) {
+                    long secs = ChronoUnit.SECONDS.between(now, s.getShiftEnd());
+                    addHandover(result, s.getTeamId(), teamName,
+                        s.getShiftEnd().format(timeFmt), secs, s.getEmail(), "shift_end");
+                }
+                if (s.getShiftStart().isAfter(now)) {
+                    long secs = ChronoUnit.SECONDS.between(now, s.getShiftStart());
+                    addHandover(result, s.getTeamId(), teamName,
+                        s.getShiftStart().format(timeFmt), secs, s.getEmail(), "shift_start");
+                }
+            } else {
+                // Overnight shift (e.g. 14:30 → 02:30): end crosses midnight into tomorrow.
+                // secsEnd is always positive — it's the distance to tomorrow's end time.
+                long secsEnd = secsToMidnight + s.getShiftEnd().toSecondOfDay();
+                addHandover(result, s.getTeamId(), teamName,
+                    "tomorrow " + s.getShiftEnd().format(timeFmt), secsEnd, s.getEmail(), "shift_end");
+                // Start is today — only show if still upcoming
+                if (s.getShiftStart().isAfter(now)) {
+                    long secsStart = ChronoUnit.SECONDS.between(now, s.getShiftStart());
+                    addHandover(result, s.getTeamId(), teamName,
+                        s.getShiftStart().format(timeFmt), secsStart, s.getEmail(), "shift_start");
+                }
             }
-            if (s.getShiftStart().isAfter(now)) {
-                addHandover(result, s.getTeamId(), teamName, s.getShiftStart(), s.getEmail(), "shift_start", now, timeFmt);
+        }
+
+        // ── If nothing remains today/tonight, look at tomorrow ────────────────
+        if (result.isEmpty()) {
+            for (ShiftRoster s : repository.findAllForDate(tomorrow)) {
+                String teamName = teamNames.getOrDefault(s.getTeamId(), s.getTeamId());
+                long secsEnd   = secsToMidnight + s.getShiftEnd().toSecondOfDay();
+                long secsStart = secsToMidnight + s.getShiftStart().toSecondOfDay();
+                addHandover(result, s.getTeamId(), teamName,
+                    "tomorrow " + s.getShiftEnd().format(timeFmt),   secsEnd,   s.getEmail(), "shift_end");
+                addHandover(result, s.getTeamId(), teamName,
+                    "tomorrow " + s.getShiftStart().format(timeFmt), secsStart, s.getEmail(), "shift_start");
             }
         }
 
@@ -468,15 +519,14 @@ public class ShiftAssignService {
 
     private static void addHandover(List<Map<String, Object>> out,
                                      String teamId, String teamName,
-                                     LocalTime eventTime, String email, String type,
-                                     LocalTime now, DateTimeFormatter fmt) {
-        long secs = ChronoUnit.SECONDS.between(now, eventTime);
+                                     String atDisplay, long secsUntil,
+                                     String email, String type) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("teamId",       teamId);
         m.put("teamName",     teamName);
-        m.put("at",           eventTime.format(fmt));
-        m.put("secondsUntil", secs);
-        m.put("minutesUntil", secs / 60);
+        m.put("at",           atDisplay);
+        m.put("secondsUntil", secsUntil);
+        m.put("minutesUntil", secsUntil / 60);
         m.put("email",        email);
         m.put("type",         type);   // "shift_end" or "shift_start"
         out.add(m);

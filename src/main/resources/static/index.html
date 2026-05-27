@@ -2006,7 +2006,7 @@ async function fetchHandovers() {
     const data  = await (await fetch('/api/scheduler/handovers')).json();
     const items = (data.handovers || []).slice(0, 6);
     if (!items.length) {
-      list.innerHTML = '<div style="font-size:.78rem;color:#5e6c84;">No shifts scheduled for today — no reassignments pending.</div>';
+      list.innerHTML = '<div style="font-size:.78rem;color:#5e6c84;">No upcoming shifts found in the roster.</div>';
       box.style.display = 'block';
       return;
     }
