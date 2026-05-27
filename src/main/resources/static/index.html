@@ -3030,7 +3030,7 @@ function downloadBreachReport() {
 
   const COLS = ['Assignee', 'Email', 'Ticket', 'Summary', 'Ticket Status',
                 'Severity', 'SLA Status', 'Remaining / Completed At',
-                'Breach Time', 'Reassigned To'];
+                'Breach Time', 'Reassigned To', 'Breach Reason'];
 
   function slaStatusLabel(sla) {
     if (!sla || !sla.available) return 'N/A';
@@ -3063,7 +3063,8 @@ function downloadBreachReport() {
           slaStatusLabel(sla),
           timeCol,
           breachCol,
-          t.reassignedTo || ''
+          t.reassignedTo || '',
+          commentedTickets[t.key] || ''
         ]);
       });
     });
@@ -3092,10 +3093,36 @@ function downloadBreachReport() {
   XLSX.writeFile(wb, fileName);
 }
 
-// Set column widths for readability
+// Apply column widths, bold headers with fill, and borders to all cells
 function styleSheet(ws, colCount) {
-  const widths = [20, 28, 14, 50, 16, 12, 22, 20, 20, 20];
+  const widths = [20, 28, 14, 50, 16, 12, 22, 20, 20, 20, 30];
   ws['!cols'] = widths.slice(0, colCount).map(w => ({ wch: w }));
+
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+
+  const thinBorder = {
+    top:    { style: 'thin', color: { rgb: 'B0B0B0' } },
+    bottom: { style: 'thin', color: { rgb: 'B0B0B0' } },
+    left:   { style: 'thin', color: { rgb: 'B0B0B0' } },
+    right:  { style: 'thin', color: { rgb: 'B0B0B0' } }
+  };
+
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    const isHeader = R === range.s.r;
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+      ws[addr].s = {
+        font:      { bold: isHeader, sz: isHeader ? 11 : 10,
+                     color: { rgb: isHeader ? 'FFFFFF' : '222222' } },
+        fill:      isHeader
+                     ? { fgColor: { rgb: '1E3A5F' }, patternType: 'solid' }
+                     : { fgColor: { rgb: 'FFFFFF' }, patternType: 'solid' },
+        alignment: { vertical: 'center', wrapText: !isHeader },
+        border:    thinBorder
+      };
+    }
+  }
 }
 
 
