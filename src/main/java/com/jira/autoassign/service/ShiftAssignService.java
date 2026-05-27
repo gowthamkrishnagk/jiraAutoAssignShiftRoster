@@ -34,15 +34,8 @@ public class ShiftAssignService {
 
     private static final Logger log = LoggerFactory.getLogger(ShiftAssignService.class);
 
-    /** Returned by tryAssign — holds result and updated index. */
-    private record AssignResult(String email, String accountId, int nextRrIndex) {}
-
-    /**
-     * Per-run assignment counter: tracks how many tickets each accountId received
-     * this scheduler cycle so we can always give the next ticket to the
-     * least-loaded working account.
-     */
-    private final Map<String, Map<String, Integer>> runCountsByTeam = new ConcurrentHashMap<>();
+    /** Returned by tryAssign — holds result and the updated working-list index. */
+    private record AssignResult(String email, String accountId, int nextWorkRr) {}
 
     private final JiraClient jiraClient;
     private final ShiftRosterRepository repository;
@@ -160,8 +153,14 @@ public class ShiftAssignService {
 
         int rrIndex = rrIndexByTeam.getOrDefault(teamId, 0);
 
-        // Reset per-run load counters so each scheduler cycle starts fresh
-        resetRunCounts(teamId);
+        // Mutable working lists for this run.
+        // Any account that fails a Jira assignment is removed on the spot so
+        // remaining tickets go only to reachable accounts — perfect equal spread.
+        // The full list is rebuilt from accountIds at the start of every run,
+        // so a previously locked account is retried fresh next scheduler tick.
+        List<String> workIds    = new ArrayList<>(accountIds);
+        List<String> workEmails = new ArrayList<>(resolvedEmails);
+        int workRr = rrIndex;
 
         // --- Step 2: assign unassigned tickets (team JQL) ---
         List<JsonNode> unassigned = jiraClient.getTicketsByJql(team.getJql()).stream()
@@ -176,16 +175,17 @@ public class ShiftAssignService {
             String summary  = ticket.get("fields").path("summary").asText("");
 
             if (team.isDryRun()) {
-                String email = resolvedEmails.get(rrIndex % accountIds.size());
-                log.info("[{}][DRY-RUN] Would assign [{}] -> {}", teamName, issueKey, email);
-                assigned++;
-                rrIndex++;
+                if (!workIds.isEmpty()) {
+                    log.info("[{}][DRY-RUN] Would assign [{}] -> {}",
+                        teamName, issueKey, workEmails.get(workRr % workIds.size()));
+                    assigned++;
+                    workRr++;
+                }
             } else {
-                AssignResult res = tryAssignRoundRobin(
-                    teamId, teamName, issueKey, accountIds, resolvedEmails, rrIndex);
+                AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workRr);
                 if (res != null) {
                     assigned++;
-                    rrIndex = res.nextRrIndex();
+                    workRr = res.nextWorkRr();
                     logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, res.email()));
                     String status = ticket.get("fields").path("status").path("name").asText("");
                     if ("Waiting for support".equalsIgnoreCase(status)) {
@@ -193,7 +193,7 @@ public class ShiftAssignService {
                     }
                 } else {
                     failed++;
-                    rrIndex++;
+                    workRr++;
                 }
                 jiraClient.pauseBetweenAssignments();
             }
@@ -251,17 +251,18 @@ public class ShiftAssignService {
             String summary  = ticket.get("fields").path("summary").asText("");
 
             if (team.isDryRun()) {
-                String email = resolvedEmails.get(rrIndex % accountIds.size());
-                log.info("[{}][DRY-RUN] Would assign other-escalated [{}] -> {}", teamName, issueKey, email);
-                rrIndex++;
+                if (!workIds.isEmpty()) {
+                    log.info("[{}][DRY-RUN] Would assign other-escalated [{}] -> {}",
+                        teamName, issueKey, workEmails.get(workRr % workIds.size()));
+                    workRr++;
+                }
             } else {
-                AssignResult res = tryAssignRoundRobin(
-                    teamId, teamName, issueKey, accountIds, resolvedEmails, rrIndex);
+                AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workRr);
                 if (res != null) {
-                    rrIndex = res.nextRrIndex();
+                    workRr = res.nextWorkRr();
                     logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, res.email()));
                 } else {
-                    rrIndex++;
+                    workRr++;
                 }
                 jiraClient.pauseBetweenAssignments();
             }
@@ -296,14 +297,15 @@ public class ShiftAssignService {
                     String summary  = ticket.get("fields").path("summary").asText("");
 
                     if (team.isDryRun()) {
-                        String newEmail = resolvedEmails.get(rrIndex % accountIds.size());
-                        log.info("[{}][DRY-RUN] Would reassign [{}] {} -> {}", teamName, issueKey, offEmail, newEmail);
-                        rrIndex++;
+                        if (!workIds.isEmpty()) {
+                            String newEmail = workEmails.get(workRr % workIds.size());
+                            log.info("[{}][DRY-RUN] Would reassign [{}] {} -> {}", teamName, issueKey, offEmail, newEmail);
+                            workRr++;
+                        }
                     } else {
-                        AssignResult res = tryAssignRoundRobin(
-                            teamId, teamName, issueKey, accountIds, resolvedEmails, rrIndex);
+                        AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workRr);
                         if (res != null) {
-                            rrIndex = res.nextRrIndex();
+                            workRr = res.nextWorkRr();
                             logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, res.email()));
                             String slaRemaining = jiraClient.extractSlaRemaining(ticket);
                             Map<String, String> t = new LinkedHashMap<>();
@@ -314,7 +316,7 @@ public class ShiftAssignService {
                             t.put("reassignedTo",    res.email());
                             allReassigned.add(t);
                         } else {
-                            rrIndex++;
+                            workRr++;
                         }
                         jiraClient.pauseBetweenAssignments();
                     }
@@ -329,62 +331,50 @@ public class ShiftAssignService {
             webhookService.fireReassignments(teamId, teamName, allReassigned);
         }
 
-        rrIndexByTeam.put(teamId, rrIndex);
+        rrIndexByTeam.put(teamId, workRr);
     }
 
     // -----------------------------------------------------------------------
-    // Equal-load assignment — least-count first, fallback on locked accounts
+    // Round-robin assignment with dynamic working list
     // -----------------------------------------------------------------------
 
     /**
-     * Assigns issueKey to the active-shift account that has received the fewest
-     * tickets so far this scheduler run (ties broken by original round-robin order).
-     * If that account is locked in Jira, the next-least-loaded account is tried,
-     * and so on, until one succeeds or all fail.
+     * Assigns issueKey using a simple round-robin on the provided working lists.
      *
-     * This guarantees equal distribution regardless of which accounts are locked —
-     * locked accounts are simply skipped and never receive a count increment.
+     * If the chosen account fails (locked / unavailable in Jira) it is removed
+     * from workIds/workEmails immediately, so:
+     *   • the same ticket retries with the very next account in line
+     *   • all subsequent tickets in this run skip the locked account entirely
+     *   • the round-robin cycles only over reachable accounts → perfect equal spread
+     *
+     * The working lists are rebuilt from the full active roster at the start of
+     * every scheduler run, so a previously locked account is retried fresh next tick.
+     *
+     * Returns AssignResult on success, or null if every account in workIds failed.
      */
     private AssignResult tryAssignRoundRobin(String teamId, String teamName, String issueKey,
-                                              List<String> accountIds, List<String> emails,
-                                              int rrIndex) {
-        int n = accountIds.size();
-        Map<String, Integer> counts = runCountsByTeam
-            .computeIfAbsent(teamId, k -> new LinkedHashMap<>());
+                                              List<String> workIds, List<String> workEmails,
+                                              int workRr) {
+        while (!workIds.isEmpty()) {
+            int    pos   = workRr % workIds.size();
+            String accId = workIds.get(pos);
+            String email = workEmails.get(pos);
+            log.info("[{}] [{}] -> {}", teamName, issueKey, email);
 
-        // Initialise counts for any new account seen this run
-        for (String id : accountIds) counts.putIfAbsent(id, 0);
-
-        // Build candidate order: sort by (count ASC, original round-robin position ASC)
-        // so ties are broken by who is "next" in rotation — preserves fairness
-        List<Integer> order = new ArrayList<>();
-        for (int i = 0; i < n; i++) order.add(i);
-        order.sort(Comparator
-            .comparingInt((Integer i) -> counts.getOrDefault(accountIds.get(i), 0))
-            .thenComparingInt(i -> Math.floorMod(i - rrIndex, n)));  // round-robin tie-break
-
-        for (int rank = 0; rank < n; rank++) {
-            int    idx       = order.get(rank);
-            String accountId = accountIds.get(idx);
-            String email     = emails.get(idx);
-            int    cnt       = counts.getOrDefault(accountId, 0);
-            log.info("[{}] [{}] -> {} (load:{}, rank:{}/{})",
-                     teamName, issueKey, email, cnt, rank + 1, n);
-
-            if (jiraClient.assignTicket(issueKey, accountId)) {
-                counts.put(accountId, cnt + 1);           // increment only on success
-                return new AssignResult(email, accountId, rrIndex + 1);
+            if (jiraClient.assignTicket(issueKey, accId)) {
+                return new AssignResult(email, accId, workRr + 1);
             }
-            log.warn("[{}] [{}] Assignment to {} failed — trying next least-loaded account",
-                     teamName, issueKey, email);
-        }
-        log.error("[{}] [{}] All {} accounts failed — ticket left unassigned", teamName, issueKey, n);
-        return null;
-    }
 
-    /** Reset per-run counts at the start of each scheduler cycle for this team. */
-    private void resetRunCounts(String teamId) {
-        runCountsByTeam.remove(teamId);
+            // Account unreachable — remove so it doesn't waste future slots this run
+            log.warn("[{}] [{}] {} unavailable — removed from this run's rotation (will retry next run)",
+                     teamName, issueKey, email);
+            workIds.remove(pos);
+            workEmails.remove(pos);
+            // Do NOT advance workRr: the same position now holds the next account
+        }
+
+        log.error("[{}] [{}] All active accounts unavailable — ticket left unassigned", teamName, issueKey);
+        return null;
     }
 
     // -----------------------------------------------------------------------
