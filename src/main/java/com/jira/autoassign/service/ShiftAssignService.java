@@ -264,16 +264,17 @@ public class ShiftAssignService {
         log.info("[{}] Off-shift sweep — people to check: {}",
             teamName, offShiftEmails.isEmpty() ? "NONE" : offShiftEmails);
 
+        // Collect ALL reassignments across every off-shift person → one batched webhook
+        List<Map<String, String>> allReassigned = new ArrayList<>();
+
         for (String offEmail : offShiftEmails) {
             try {
                 String offAccountId = jiraClient.getAccountId(offEmail);
-                List<JsonNode> theirTickets = jiraClient.getTicketsAssignedToByJql(offAccountId, team.getJql());
+                // Fetch with SLA field so we can include remaining time in the notification
+                List<JsonNode> theirTickets = jiraClient.getTicketsAssignedToByJqlWithSla(offAccountId, team.getJql());
 
                 if (theirTickets.isEmpty()) continue;
                 log.info("[{}] {} has {} ticket(s) to reassign", teamName, offEmail, theirTickets.size());
-
-                // Collect all successful reassignments for a single batched webhook call
-                List<Map<String, String>> reassigned = new ArrayList<>();
 
                 for (JsonNode ticket : theirTickets) {
                     String issueKey = ticket.get("key").asText();
@@ -288,25 +289,27 @@ public class ShiftAssignService {
                         log.info("[{}] Reassign [{}] {} -> {}", teamName, issueKey, offEmail, newEmail);
                         if (jiraClient.assignTicket(issueKey, newAccId)) {
                             logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, newEmail));
+                            String slaRemaining = jiraClient.extractSlaRemaining(ticket);
                             Map<String, String> t = new LinkedHashMap<>();
-                            t.put("key",          issueKey);
-                            t.put("summary",      summary);
-                            t.put("reassignedTo", newEmail);
-                            reassigned.add(t);
+                            t.put("key",             issueKey);
+                            t.put("summary",         summary);
+                            t.put("slaRemaining",    slaRemaining);  // "" if not configured
+                            t.put("currentAssignee", offEmail);      // who it was taken from
+                            t.put("reassignedTo",    newEmail);      // who is taking over
+                            allReassigned.add(t);
                         }
                     }
                     rrIndex++;
                     jiraClient.pauseBetweenAssignments();
                 }
-
-                // One webhook call per off-shift person — all their tickets in one payload
-                if (!reassigned.isEmpty()) {
-                    webhookService.fireReassignments(teamId, teamName, offEmail, reassigned);
-                }
-
             } catch (Exception e) {
                 log.warn("[{}] Could not sweep off-shift {}: {}", teamName, offEmail, e.getMessage());
             }
+        }
+
+        // Fire one single webhook with the full picture across all off-shift people
+        if (!allReassigned.isEmpty()) {
+            webhookService.fireReassignments(teamId, teamName, allReassigned);
         }
 
         rrIndexByTeam.put(teamId, rrIndex);

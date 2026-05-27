@@ -280,12 +280,7 @@ public class JiraClient {
     private String buildAssignedJql(String accountId) {
         String base;
         if (hasCustomJql()) {
-            // Strip unassigned filter + ORDER BY, then reattach ORDER BY at end
-            base = props.getCustomJql()
-                .replaceAll("(?i)\\s+AND\\s+Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
-                .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)\\s+AND\\s+", "")
-                .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
-                .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
+            base = baseJqlStripped(props.getCustomJql());
         } else {
             List<String> conds = new ArrayList<>();
             conds.add("project = " + props.getProjectKey());
@@ -340,14 +335,68 @@ public class JiraClient {
      * Strips the "Assignee in (EMPTY)" clause and appends the accountId filter.
      */
     public List<JsonNode> getTicketsAssignedToByJql(String accountId, String baseJql) {
-        String base = baseJql
+        String jql = baseJqlStripped(baseJql) + " AND assignee = \"" + accountId + "\" ORDER BY created ASC";
+        log.debug("Fetching tickets assigned to {}: {}", accountId, jql);
+        return searchTickets(jql);
+    }
+
+    /**
+     * Same as {@link #getTicketsAssignedToByJql} but also fetches the SLA custom field
+     * so callers can extract remaining time / breach status per ticket.
+     * Falls back to the standard field list if no SLA field is configured.
+     */
+    public List<JsonNode> getTicketsAssignedToByJqlWithSla(String accountId, String baseJql) {
+        String slaFieldId = configService.getSlaFieldId();
+        String base = baseJqlStripped(baseJql);
+        String jql  = base + " AND assignee = \"" + accountId + "\" ORDER BY created ASC";
+
+        String fields = "summary,assignee,status";
+        if (slaFieldId != null && !slaFieldId.isBlank()) fields += "," + slaFieldId;
+
+        log.debug("Fetching tickets (with SLA) assigned to {}: {}", accountId, jql);
+        return searchTicketsWithFields(jql, fields);
+    }
+
+    /**
+     * Extracts the human-readable SLA remaining time from a ticket node.
+     * Returns "⚠ Breached" if already breached, empty string if SLA not configured
+     * or the field is missing.
+     *
+     * Reads from: fields.{slaFieldId}.ongoingCycle.remainingTime.friendly
+     */
+    public String extractSlaRemaining(JsonNode ticket) {
+        String slaFieldId = configService.getSlaFieldId();
+        if (slaFieldId == null || slaFieldId.isBlank()) return "";
+
+        JsonNode slaNode = ticket.path("fields").path(slaFieldId);
+        if (slaNode.isMissingNode() || slaNode.isNull()) return "";
+
+        JsonNode ongoing = slaNode.path("ongoingCycle");
+        if (!ongoing.isMissingNode() && !ongoing.isNull()) {
+            boolean breached = ongoing.path("breached").asBoolean(false);
+            long    millis   = ongoing.path("remainingTime").path("millis").asLong(0);
+            if (millis < 0 || breached) return "⚠ Breached";
+            String friendly = ongoing.path("remainingTime").path("friendly").asText("").trim();
+            return friendly.isEmpty() ? "" : friendly + " remaining";
+        }
+
+        // Completed cycle — SLA already closed
+        JsonNode completed = slaNode.path("completedCycles");
+        if (completed.isArray() && completed.size() > 0) {
+            JsonNode last    = completed.get(completed.size() - 1);
+            boolean  breached = last.path("breached").asBoolean(false);
+            return breached ? "⚠ Breached" : "✓ Met";
+        }
+        return "";
+    }
+
+    /** Shared JQL stripping used by assignee-based queries. */
+    private static String baseJqlStripped(String baseJql) {
+        return baseJql
             .replaceAll("(?i)\\s+AND\\s+Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
             .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)\\s+AND\\s+", "")
             .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
             .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
-        String jql = base + " AND assignee = \"" + accountId + "\" ORDER BY created ASC";
-        log.debug("Fetching tickets assigned to {}: {}", accountId, jql);
-        return searchTickets(jql);
     }
 
     /**
