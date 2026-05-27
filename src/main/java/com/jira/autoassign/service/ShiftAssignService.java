@@ -438,16 +438,27 @@ public class ShiftAssignService {
         LocalDate           today   = LocalDate.now();
         LocalTime           now     = LocalTime.now();
         DateTimeFormatter   timeFmt = DateTimeFormatter.ofPattern("HH:mm");
+
+        // Build teamId → display-name map from the teams table.
+        // Falls back to the raw teamId string if the team isn't found.
+        Map<String, String> teamNames = teamRepository.findAll().stream()
+            .filter(t -> t.getId() != null)
+            .collect(Collectors.toMap(
+                Team::getId,
+                t -> t.getName() != null && !t.getName().isBlank() ? t.getName() : t.getId(),
+                (a, b) -> a
+            ));
+
         List<Map<String, Object>> result = new ArrayList<>();
 
-        for (Team team : teamRepository.findAll()) {
-            for (ShiftRoster s : repository.findByTeamIdAndDate(team.getId(), today)) {
-                if (s.getShiftEnd().isAfter(now)) {
-                    addHandover(result, team, s.getShiftEnd(),   s.getEmail(), "shift_end",   now, timeFmt);
-                }
-                if (s.getShiftStart().isAfter(now)) {
-                    addHandover(result, team, s.getShiftStart(), s.getEmail(), "shift_start", now, timeFmt);
-                }
+        // Query all shifts for today across every team — avoids teamId mismatch issues.
+        for (ShiftRoster s : repository.findAllForDate(today)) {
+            String teamName = teamNames.getOrDefault(s.getTeamId(), s.getTeamId());
+            if (s.getShiftEnd().isAfter(now)) {
+                addHandover(result, s.getTeamId(), teamName, s.getShiftEnd(),   s.getEmail(), "shift_end",   now, timeFmt);
+            }
+            if (s.getShiftStart().isAfter(now)) {
+                addHandover(result, s.getTeamId(), teamName, s.getShiftStart(), s.getEmail(), "shift_start", now, timeFmt);
             }
         }
 
@@ -455,13 +466,14 @@ public class ShiftAssignService {
         return result;
     }
 
-    private static void addHandover(List<Map<String, Object>> out, Team team,
+    private static void addHandover(List<Map<String, Object>> out,
+                                     String teamId, String teamName,
                                      LocalTime eventTime, String email, String type,
                                      LocalTime now, DateTimeFormatter fmt) {
         long secs = ChronoUnit.SECONDS.between(now, eventTime);
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("teamId",       team.getId());
-        m.put("teamName",     team.getName() != null ? team.getName() : team.getId());
+        m.put("teamId",       teamId);
+        m.put("teamName",     teamName);
         m.put("at",           eventTime.format(fmt));
         m.put("secondsUntil", secs);
         m.put("minutesUntil", secs / 60);

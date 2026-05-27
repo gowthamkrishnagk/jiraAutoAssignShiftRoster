@@ -79,6 +79,10 @@ public interface ShiftRosterRepository extends JpaRepository<ShiftRoster, Long> 
     @Query("SELECT s FROM ShiftRoster s WHERE s.teamId = :teamId AND s.shiftDate = :date ORDER BY s.shiftStart")
     List<ShiftRoster> findByTeamIdAndDate(@Param("teamId") String teamId, @Param("date") LocalDate date);
 
+    /** All shifts for ALL teams on a specific date, ordered by start time. */
+    @Query("SELECT s FROM ShiftRoster s WHERE s.shiftDate = :date ORDER BY s.shiftStart")
+    List<ShiftRoster> findAllForDate(@Param("date") LocalDate date);
+
     /** Purge old entries across all teams. */
     @Modifying
     @Transactional
