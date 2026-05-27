@@ -129,8 +129,11 @@ public class WebhookService {
      * Builds the Teams incoming-webhook JSON envelope that wraps an Adaptive Card.
      *
      * Schema reference:
-     *   https://adaptivecards.io/schemas/adaptive-card.json  (version 1.4)
+     *   https://adaptivecards.io/schemas/adaptive-card.json  (version 1.2)
      *   Teams envelope: { "type": "message", "attachments": [ { "contentType": "application/vnd.microsoft.card.adaptive", ... } ] }
+     *
+     * NOTE: "Separator" is NOT a valid card element type — use separator:true on
+     * the element that should have a divider line above it.
      */
     private String buildCard(String issueKey, String summary,
                               String fromEmail, String toEmail,
@@ -155,28 +158,26 @@ public class WebhookService {
                 "wrap",     true
             );
 
-            // Divider
-            Map<String, Object> divider = map("type", "Separator");
-
-            // Fact set
+            // Fact set — separator:true draws the divider line above this element
             Map<String, Object> facts = new LinkedHashMap<>();
-            facts.put("type", "FactSet");
-            facts.put("spacing", "Medium");
+            facts.put("type",      "FactSet");
+            facts.put("separator", true);
+            facts.put("spacing",   "Medium");
             facts.put("facts", List.of(
-                fact("🎫 Ticket",   issueKey  != null ? issueKey  : "—"),
-                fact("📝 Summary",  summary   != null ? summary   : "—"),
-                fact("👤 From",     fromEmail != null ? fromEmail : "—"),
-                fact("➡️ To",      toEmail   != null ? toEmail   : "—"),
-                fact("🏷️ Team",    teamName  != null ? teamName  : "—"),
-                fact("🕐 Time",     timestamp != null ? timestamp : "—")
+                fact("Ticket",   issueKey  != null ? issueKey  : "—"),
+                fact("Summary",  summary   != null ? summary   : "—"),
+                fact("From",     fromEmail != null ? fromEmail : "—"),
+                fact("To",       toEmail   != null ? toEmail   : "—"),
+                fact("Team",     teamName  != null ? teamName  : "—"),
+                fact("Time",     timestamp != null ? timestamp : "—")
             ));
 
-            // Adaptive Card content
+            // Adaptive Card content — version 1.2 for maximum PA/Teams compatibility
             Map<String, Object> card = new LinkedHashMap<>();
             card.put("$schema", "http://adaptivecards.io/schemas/adaptive-card.json");
             card.put("type",    "AdaptiveCard");
-            card.put("version", "1.4");
-            card.put("body",    List.of(heading, subtitle, divider, facts));
+            card.put("version", "1.2");
+            card.put("body",    List.of(heading, subtitle, facts));
             card.put("msteams", Map.of("width", "Full"));
 
             // Teams envelope
