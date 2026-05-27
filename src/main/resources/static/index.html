@@ -1138,6 +1138,12 @@
     </svg>
     Jira Settings <span id="settings-status-dot" style="width:7px;height:7px;border-radius:50%;background:#ff5630;display:inline-block;vertical-align:middle;margin-left:2px;"></span>
   </button>
+  <button class="activity-btn" onclick="openWebhookModal()" id="webhook-btn" style="gap:5px;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm-8 3c1.93 0 3.5 1.57 3.5 3.5S13.93 14 12 14s-3.5-1.57-3.5-3.5S10.07 7 12 7zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 17.18 9.64 16.5 12 16.5s4.53.68 6.24 1.69c.48.38.76.97.76 1.58V20z"/>
+    </svg>
+    Teams Webhook <span id="webhook-status-dot" style="width:7px;height:7px;border-radius:50%;background:#ff5630;display:inline-block;vertical-align:middle;margin-left:2px;"></span>
+  </button>
 </header>
 
 <div class="dry-run-banner" id="dry-run-banner">
@@ -1206,26 +1212,81 @@
       </div>
     </div>
 
-    <!-- ── Power Automate Webhook ────────────────────────────────── -->
-    <div style="border-top:1px solid #dfe1e6;margin-top:20px;padding-top:18px;">
-      <div style="font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
-                  color:#5e6c84;margin-bottom:12px;">Power Automate Webhook</div>
-      <div class="modal-field">
-        <label>Webhook URL</label>
-        <input type="url" id="wh-url" placeholder="https://prod-xx.westus.logic.azure.com/workflows/…" />
-        <div class="modal-hint">
-          Notified on every ticket reassignment (shift handover).<br>
-          Payload: <code>ticketId | ticketSummary | currentAssignee | reassignedTo</code>
-        </div>
+  </div>
+</div>
+
+<!-- Teams Webhook Modal -->
+<div class="modal-backdrop" id="webhook-modal" onclick="if(event.target===this)closeWebhookModal()">
+  <div class="modal-box" style="max-width:500px;">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="#6264a7">
+        <path d="M19.952 6.533a4 4 0 1 0-5.47 5.582l-.482 3H12v2h1.77l-.29 1.8A1 1 0 0 0 14.47 20h.06a1 1 0 0 0 .99-.85l.31-1.95L17 17h1v-2h-1.27l.47-2.9A4 4 0 0 0 19.952 6.533zM16 10a2 2 0 1 1 0-4 2 2 0 0 1 0 4zM4 8h8v2H4zm0 3h6v2H4zm0 3h8v2H4z"/>
+      </svg>
+      <div class="modal-title" style="margin:0;">Teams Webhook</div>
+      <span id="wh-status-badge" style="margin-left:auto;font-size:.72rem;font-weight:600;
+            padding:2px 8px;border-radius:10px;background:#ffebe6;color:#bf2600;">Not configured</span>
+    </div>
+    <p style="font-size:.8rem;color:#5e6c84;margin:0 0 18px;line-height:1.5;">
+      Posts an Adaptive Card to your Microsoft Teams channel every time a ticket is
+      automatically reassigned during a shift handover.
+    </p>
+
+    <!-- View mode -->
+    <div id="wh-view" style="display:none;">
+      <div style="background:#f4f5f7;border-radius:6px;padding:12px 14px;margin-bottom:16px;">
+        <div style="font-size:.75rem;color:#5e6c84;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Configured URL</div>
+        <div id="wh-view-url" style="font-size:.78rem;color:#172b4d;word-break:break-all;line-height:1.5;"></div>
       </div>
-      <div id="wh-msg" style="font-size:.8rem;margin-bottom:10px;display:none;"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn" onclick="saveWebhookUrl()">Save URL</button>
-        <button class="btn" id="wh-test-btn" onclick="testWebhookUrl()"
-                style="background:#0065ff;" title="Send a test payload now">Test</button>
-        <button class="btn-cancel" onclick="closeSettingsModal()">Close</button>
+      <div class="modal-actions">
+        <button class="btn" onclick="switchToEditWebhook()">Change</button>
+        <button class="btn" onclick="testWebhookUrl()" id="wh-test-btn"
+                style="background:#6264a7;">Test Card</button>
+        <button class="btn-cancel" onclick="closeWebhookModal()">Close</button>
       </div>
     </div>
+
+    <!-- Edit mode -->
+    <div id="wh-edit">
+      <div class="modal-field">
+        <label>Incoming Webhook URL</label>
+        <input type="url" id="wh-url"
+               placeholder="https://prod-xx.westus.logic.azure.com/workflows/…"
+               style="font-size:.8rem;" />
+        <div class="modal-hint">
+          Copy from: Teams channel → <strong>Connectors</strong> → <strong>Incoming Webhook</strong>
+          &nbsp;or&nbsp; Power Automate HTTP trigger URL.<br>
+          Leave blank to disable notifications.
+        </div>
+      </div>
+
+      <!-- Card preview -->
+      <div style="background:#f4f5f7;border-radius:6px;padding:12px 14px;margin-bottom:16px;border-left:3px solid #6264a7;">
+        <div style="font-size:.72rem;font-weight:700;color:#6264a7;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Card preview</div>
+        <div style="font-size:.8rem;color:#172b4d;line-height:1.8;">
+          <strong>🔄 Ticket Reassigned — Shift Handover</strong><br>
+          <span style="color:#5e6c84;font-size:.75rem;">A ticket was moved to the active shift assignee.</span><br>
+          <table style="width:100%;margin-top:6px;font-size:.77rem;border-collapse:collapse;">
+            <tr><td style="color:#5e6c84;padding:1px 8px 1px 0;white-space:nowrap;">🎫 Ticket</td><td style="color:#172b4d;">SAC-123</td></tr>
+            <tr><td style="color:#5e6c84;padding:1px 8px 1px 0;white-space:nowrap;">📝 Summary</td><td style="color:#172b4d;">Order activation failure — Prod</td></tr>
+            <tr><td style="color:#5e6c84;padding:1px 8px 1px 0;white-space:nowrap;">👤 From</td><td style="color:#172b4d;">leaving.person@company.com</td></tr>
+            <tr><td style="color:#5e6c84;padding:1px 8px 1px 0;white-space:nowrap;">➡️ To</td><td style="color:#172b4d;">next.person@company.com</td></tr>
+            <tr><td style="color:#5e6c84;padding:1px 8px 1px 0;white-space:nowrap;">🏷️ Team</td><td style="color:#172b4d;">Order Fallout</td></tr>
+            <tr><td style="color:#5e6c84;padding:1px 8px 1px 0;white-space:nowrap;">🕐 Time</td><td style="color:#172b4d;">2026-05-27 14:30</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div id="wh-msg" style="font-size:.8rem;margin-bottom:10px;display:none;padding:8px 12px;border-radius:5px;"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="saveWebhookUrl()">Save</button>
+        <button class="btn" onclick="testWebhookUrl()" id="wh-test-btn"
+                style="background:#6264a7;">Test Card</button>
+        <button class="btn-cancel" onclick="closeWebhookModal()">Cancel</button>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -1725,7 +1786,7 @@ function switchToTeam(teamId) {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => { initTeams(); loadSettingsStatus(); });
+document.addEventListener('DOMContentLoaded', () => { initTeams(); loadSettingsStatus(); loadWebhookStatus(); });
 
 // ================================================================
 // JIRA SETTINGS MODAL
@@ -1762,7 +1823,6 @@ async function openSettingsModal() {
     document.getElementById('settings-edit').style.display = 'block';
   }
   document.getElementById('settings-modal').style.display = 'flex';
-  loadWebhookUrl(); // pre-fill the webhook URL section
 }
 
 function closeSettingsModal() {
@@ -1806,22 +1866,60 @@ async function saveSettings() {
 }
 
 // ================================================================
-// POWER AUTOMATE WEBHOOK SETTINGS
+// TEAMS WEBHOOK MODAL
 // ================================================================
 
-async function loadWebhookUrl() {
+function whSetStatus(configured, url) {
+  const dot   = document.getElementById('webhook-status-dot');
+  const badge = document.getElementById('wh-status-badge');
+  if (dot)   dot.style.background = configured ? '#36b37e' : '#ff5630';
+  if (badge) {
+    badge.textContent   = configured ? '✓ Configured' : 'Not configured';
+    badge.style.background = configured ? '#e3fcef' : '#ffebe6';
+    badge.style.color      = configured ? '#006644' : '#bf2600';
+  }
+  const viewUrl = document.getElementById('wh-view-url');
+  if (viewUrl && url) {
+    // Mask the URL — show first 40 chars + …
+    viewUrl.textContent = url.length > 60 ? url.slice(0, 60) + '…' : url;
+    viewUrl.title = url;
+  }
+}
+
+async function openWebhookModal() {
+  whHideMsg();
   try {
     const data = await (await fetch('/api/webhook-settings')).json();
-    const inp = document.getElementById('wh-url');
-    if (inp) inp.value = data.webhookUrl || '';
-  } catch { /* non-fatal */ }
+    const url  = data.webhookUrl || '';
+    document.getElementById('wh-url').value = url;
+    whSetStatus(data.configured, url);
+    if (data.configured) {
+      document.getElementById('wh-view').style.display = 'block';
+      document.getElementById('wh-edit').style.display = 'none';
+    } else {
+      document.getElementById('wh-view').style.display = 'none';
+      document.getElementById('wh-edit').style.display = 'block';
+    }
+  } catch {
+    document.getElementById('wh-view').style.display = 'none';
+    document.getElementById('wh-edit').style.display = 'block';
+  }
+  document.getElementById('webhook-modal').style.display = 'flex';
+}
+
+function closeWebhookModal() {
+  document.getElementById('webhook-modal').style.display = 'none';
+}
+
+function switchToEditWebhook() {
+  document.getElementById('wh-view').style.display = 'none';
+  document.getElementById('wh-edit').style.display = 'block';
+  document.getElementById('wh-url').focus();
 }
 
 async function saveWebhookUrl() {
-  const inp   = document.getElementById('wh-url');
-  const msgEl = document.getElementById('wh-msg');
-  const url   = inp ? inp.value.trim() : '';
-  msgEl.style.display = 'none';
+  const url   = document.getElementById('wh-url').value.trim();
+  whHideMsg();
   try {
     const res  = await fetch('/api/webhook-settings', {
       method: 'POST',
@@ -1830,35 +1928,29 @@ async function saveWebhookUrl() {
     });
     const data = await res.json();
     if (res.ok) {
-      msgEl.style.color   = '#36b37e';
-      msgEl.textContent   = url ? '✓ Webhook URL saved.' : '✓ Webhook URL cleared.';
+      whSetStatus(data.configured, url);
+      whShowMsg(url ? '✓ Webhook URL saved.' : '✓ Webhook URL cleared.', true);
+      if (url) {
+        document.getElementById('wh-view').style.display = 'block';
+        document.getElementById('wh-edit').style.display = 'none';
+      }
     } else {
-      msgEl.style.color   = '#ff5630';
-      msgEl.textContent   = data.error || 'Save failed.';
+      whShowMsg(data.error || 'Save failed.', false);
     }
-    msgEl.style.display = 'block';
-    setTimeout(() => { msgEl.style.display = 'none'; }, 4000);
   } catch (e) {
-    msgEl.style.color   = '#ff5630';
-    msgEl.textContent   = 'Network error: ' + e.message;
-    msgEl.style.display = 'block';
+    whShowMsg('Network error: ' + e.message, false);
   }
 }
 
 async function testWebhookUrl() {
-  const inp     = document.getElementById('wh-url');
-  const msgEl   = document.getElementById('wh-msg');
-  const btn     = document.getElementById('wh-test-btn');
-  const url     = inp ? inp.value.trim() : '';
-  if (!url) {
-    msgEl.style.color   = '#ff5630';
-    msgEl.textContent   = 'Enter a webhook URL first.';
-    msgEl.style.display = 'block';
-    return;
-  }
-  btn.disabled    = true;
-  btn.textContent = 'Testing…';
-  msgEl.style.display = 'none';
+  const url = document.getElementById('wh-url').value.trim()
+           || (document.getElementById('wh-view').style.display !== 'none'
+                 ? document.getElementById('wh-view-url').title : '');
+  if (!url) { whShowMsg('Enter a webhook URL first.', false); return; }
+
+  const btns = document.querySelectorAll('#wh-test-btn');
+  btns.forEach(b => { b.disabled = true; b.textContent = 'Sending…'; });
+  whHideMsg();
   try {
     const res  = await fetch('/api/webhook-settings/test', {
       method: 'POST',
@@ -1867,22 +1959,36 @@ async function testWebhookUrl() {
     });
     const data = await res.json();
     if (data.success) {
-      msgEl.style.color   = '#36b37e';
-      msgEl.textContent   = `✓ Test payload delivered (HTTP ${data.httpStatus}).`;
+      whShowMsg(`✓ Test card delivered (HTTP ${data.httpStatus}). Check your Teams channel.`, true);
     } else {
-      msgEl.style.color   = '#ff5630';
-      msgEl.textContent   = data.error || `✗ Webhook test failed (HTTP ${data.httpStatus || '?'}).`;
+      whShowMsg(data.error || `✗ Test failed (HTTP ${data.httpStatus || '?'}).`, false);
     }
-    msgEl.style.display = 'block';
-    setTimeout(() => { msgEl.style.display = 'none'; }, 5000);
   } catch (e) {
-    msgEl.style.color   = '#ff5630';
-    msgEl.textContent   = 'Network error: ' + e.message;
-    msgEl.style.display = 'block';
+    whShowMsg('Network error: ' + e.message, false);
   } finally {
-    btn.disabled    = false;
-    btn.textContent = 'Test';
+    btns.forEach(b => { b.disabled = false; b.textContent = 'Test Card'; });
   }
+}
+
+function whShowMsg(text, ok) {
+  const el = document.getElementById('wh-msg');
+  el.textContent       = text;
+  el.style.background  = ok ? '#e3fcef' : '#ffebe6';
+  el.style.color       = ok ? '#006644' : '#bf2600';
+  el.style.display     = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+function whHideMsg() {
+  const el = document.getElementById('wh-msg');
+  if (el) el.style.display = 'none';
+}
+
+// Load status dot on page load (non-blocking)
+async function loadWebhookStatus() {
+  try {
+    const data = await (await fetch('/api/webhook-settings')).json();
+    whSetStatus(data.configured, data.webhookUrl || '');
+  } catch { /* ignore */ }
 }
 
 // ================================================================
