@@ -34,8 +34,15 @@ public class ShiftAssignService {
 
     private static final Logger log = LoggerFactory.getLogger(ShiftAssignService.class);
 
-    /** Returned by tryAssignRoundRobin — holds result and updated index. */
+    /** Returned by tryAssign — holds result and updated index. */
     private record AssignResult(String email, String accountId, int nextRrIndex) {}
+
+    /**
+     * Per-run assignment counter: tracks how many tickets each accountId received
+     * this scheduler cycle so we can always give the next ticket to the
+     * least-loaded working account.
+     */
+    private final Map<String, Map<String, Integer>> runCountsByTeam = new ConcurrentHashMap<>();
 
     private final JiraClient jiraClient;
     private final ShiftRosterRepository repository;
@@ -152,6 +159,9 @@ public class ShiftAssignService {
         }
 
         int rrIndex = rrIndexByTeam.getOrDefault(teamId, 0);
+
+        // Reset per-run load counters so each scheduler cycle starts fresh
+        resetRunCounts(teamId);
 
         // --- Step 2: assign unassigned tickets (team JQL) ---
         List<JsonNode> unassigned = jiraClient.getTicketsByJql(team.getJql()).stream()
@@ -323,31 +333,58 @@ public class ShiftAssignService {
     }
 
     // -----------------------------------------------------------------------
-    // Round-robin with fallback — skips locked/unavailable accounts
+    // Equal-load assignment — least-count first, fallback on locked accounts
     // -----------------------------------------------------------------------
 
     /**
-     * Tries to assign issueKey starting at rrIndex, cycling through all active accounts.
-     * If the first account fails (locked/unavailable), tries the next, then the next, etc.
-     * Returns AssignResult with the winning email and the updated rrIndex,
-     * or null if every account in the rotation failed.
+     * Assigns issueKey to the active-shift account that has received the fewest
+     * tickets so far this scheduler run (ties broken by original round-robin order).
+     * If that account is locked in Jira, the next-least-loaded account is tried,
+     * and so on, until one succeeds or all fail.
+     *
+     * This guarantees equal distribution regardless of which accounts are locked —
+     * locked accounts are simply skipped and never receive a count increment.
      */
     private AssignResult tryAssignRoundRobin(String teamId, String teamName, String issueKey,
                                               List<String> accountIds, List<String> emails,
                                               int rrIndex) {
         int n = accountIds.size();
-        for (int attempt = 0; attempt < n; attempt++) {
-            int    idx       = (rrIndex + attempt) % n;
+        Map<String, Integer> counts = runCountsByTeam
+            .computeIfAbsent(teamId, k -> new LinkedHashMap<>());
+
+        // Initialise counts for any new account seen this run
+        for (String id : accountIds) counts.putIfAbsent(id, 0);
+
+        // Build candidate order: sort by (count ASC, original round-robin position ASC)
+        // so ties are broken by who is "next" in rotation — preserves fairness
+        List<Integer> order = new ArrayList<>();
+        for (int i = 0; i < n; i++) order.add(i);
+        order.sort(Comparator
+            .comparingInt((Integer i) -> counts.getOrDefault(accountIds.get(i), 0))
+            .thenComparingInt(i -> Math.floorMod(i - rrIndex, n)));  // round-robin tie-break
+
+        for (int rank = 0; rank < n; rank++) {
+            int    idx       = order.get(rank);
             String accountId = accountIds.get(idx);
             String email     = emails.get(idx);
-            log.info("[{}] [{}] -> {} (attempt {}/{})", teamName, issueKey, email, attempt + 1, n);
+            int    cnt       = counts.getOrDefault(accountId, 0);
+            log.info("[{}] [{}] -> {} (load:{}, rank:{}/{})",
+                     teamName, issueKey, email, cnt, rank + 1, n);
+
             if (jiraClient.assignTicket(issueKey, accountId)) {
-                return new AssignResult(email, accountId, rrIndex + attempt + 1);
+                counts.put(accountId, cnt + 1);           // increment only on success
+                return new AssignResult(email, accountId, rrIndex + 1);
             }
-            log.warn("[{}] [{}] Assignment to {} failed — trying next account", teamName, issueKey, email);
+            log.warn("[{}] [{}] Assignment to {} failed — trying next least-loaded account",
+                     teamName, issueKey, email);
         }
         log.error("[{}] [{}] All {} accounts failed — ticket left unassigned", teamName, issueKey, n);
         return null;
+    }
+
+    /** Reset per-run counts at the start of each scheduler cycle for this team. */
+    private void resetRunCounts(String teamId) {
+        runCountsByTeam.remove(teamId);
     }
 
     // -----------------------------------------------------------------------
