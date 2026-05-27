@@ -436,6 +436,15 @@ public class UploadController {
     // -----------------------------------------------------------------------
 
     /**
+     * Returns upcoming shift boundaries across all teams —
+     * i.e. when tickets will next be reassigned and the webhook will fire.
+     */
+    @GetMapping("/scheduler/handovers")
+    public ResponseEntity<Map<String, Object>> schedulerHandovers() {
+        return ResponseEntity.ok(Map.of("handovers", shiftAssignService.getUpcomingHandovers()));
+    }
+
+    /**
      * Returns when the scheduler last fired and when it will next fire.
      * Cron default is {@code 0 *\/1 * * * *} (every minute at second :00),
      * so "next run" is always the start of the next minute.

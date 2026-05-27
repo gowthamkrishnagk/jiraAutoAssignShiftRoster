@@ -1255,6 +1255,12 @@
         </div>
       </div>
 
+      <!-- Upcoming reassignments -->
+      <div id="wh-handovers" style="background:#fff8e1;border-radius:6px;padding:10px 14px;margin-bottom:16px;border-left:3px solid #f59e0b;display:none;">
+        <div style="font-size:.72rem;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">📅 Upcoming Reassignments</div>
+        <div id="wh-handovers-list"></div>
+      </div>
+
       <div class="modal-actions">
         <button class="btn" onclick="switchToEditWebhook()">Change</button>
         <button class="btn" onclick="testWebhookUrl()" id="wh-test-btn"
@@ -1915,6 +1921,7 @@ async function openWebhookModal() {
       document.getElementById('wh-view').style.display = 'block';
       document.getElementById('wh-edit').style.display = 'none';
       fetchAndStartCountdown();
+      fetchHandovers();
     } else {
       document.getElementById('wh-view').style.display = 'none';
       document.getElementById('wh-edit').style.display = 'block';
@@ -1929,6 +1936,7 @@ async function openWebhookModal() {
 function closeWebhookModal() {
   document.getElementById('webhook-modal').style.display = 'none';
   whStopCountdown();
+  whHideHandovers();
 }
 
 function switchToEditWebhook() {
@@ -1936,6 +1944,12 @@ function switchToEditWebhook() {
   document.getElementById('wh-edit').style.display = 'block';
   document.getElementById('wh-url').focus();
   whStopCountdown();
+  whHideHandovers();
+}
+
+function whHideHandovers() {
+  const box = document.getElementById('wh-handovers');
+  if (box) box.style.display = 'none';
 }
 
 function whStopCountdown() {
@@ -1980,6 +1994,43 @@ async function fetchAndStartCountdown() {
     whCountdownTimer = setInterval(tick, 1000);
   } catch {
     // Silently hide if endpoint unavailable
+    if (box) box.style.display = 'none';
+  }
+}
+
+async function fetchHandovers() {
+  const box  = document.getElementById('wh-handovers');
+  const list = document.getElementById('wh-handovers-list');
+  if (!box || !list) return;
+  try {
+    const data  = await (await fetch('/api/scheduler/handovers')).json();
+    const items = (data.handovers || []).slice(0, 6);
+    if (!items.length) {
+      list.innerHTML = '<div style="font-size:.78rem;color:#5e6c84;">No shifts scheduled for today — no reassignments pending.</div>';
+      box.style.display = 'block';
+      return;
+    }
+    list.innerHTML = items.map((h, i) => {
+      const role  = h.type === 'shift_end' ? 'shift ends' : 'shift starts';
+      const mins  = h.minutesUntil;
+      const hrs   = Math.floor(mins / 60);
+      const until = hrs >= 1
+        ? `in ${hrs}h ${mins % 60}m`
+        : mins > 0 ? `in ${mins}m` : 'now';
+      const user  = h.email.includes('@') ? h.email.split('@')[0] : h.email;
+      const isLast = i === items.length - 1;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;
+                          padding:5px 0;${isLast ? '' : 'border-bottom:1px solid #fde68a;'}">
+        <div>
+          <span style="font-weight:700;color:#172b4d;font-size:.82rem;">${h.at}</span>
+          <span style="color:#5e6c84;font-size:.75rem;margin-left:6px;">${h.teamName} — ${user}'s ${role}</span>
+        </div>
+        <span style="font-size:.72rem;color:#b45309;background:#fef3c7;border-radius:4px;
+                     padding:1px 8px;font-weight:600;white-space:nowrap;">${until}</span>
+      </div>`;
+    }).join('');
+    box.style.display = 'block';
+  } catch {
     if (box) box.style.display = 'none';
   }
 }

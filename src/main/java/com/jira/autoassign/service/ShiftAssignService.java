@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
@@ -422,6 +424,50 @@ public class ShiftAssignService {
      */
     public List<ShiftRoster> getTodayShifts(String teamId) {
         return repository.findByTeamIdAndDate(teamId, LocalDate.now());
+    }
+
+    /**
+     * Returns upcoming shift boundaries (end + start) across ALL teams for today,
+     * sorted by how soon they occur. Used by the webhook modal to show
+     * "next reassignment" — i.e. when the next webhook will actually fire.
+     *
+     * Shift-end   → off-shift sweep reassigns tickets (primary webhook trigger).
+     * Shift-start → unassigned tickets are picked up by the new assignee.
+     */
+    public List<Map<String, Object>> getUpcomingHandovers() {
+        LocalDate           today   = LocalDate.now();
+        LocalTime           now     = LocalTime.now();
+        DateTimeFormatter   timeFmt = DateTimeFormatter.ofPattern("HH:mm");
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        for (Team team : teamRepository.findAll()) {
+            for (ShiftRoster s : repository.findByTeamIdAndDate(team.getId(), today)) {
+                if (s.getShiftEnd().isAfter(now)) {
+                    addHandover(result, team, s.getShiftEnd(),   s.getEmail(), "shift_end",   now, timeFmt);
+                }
+                if (s.getShiftStart().isAfter(now)) {
+                    addHandover(result, team, s.getShiftStart(), s.getEmail(), "shift_start", now, timeFmt);
+                }
+            }
+        }
+
+        result.sort(Comparator.comparingLong(m -> (long) m.get("secondsUntil")));
+        return result;
+    }
+
+    private static void addHandover(List<Map<String, Object>> out, Team team,
+                                     LocalTime eventTime, String email, String type,
+                                     LocalTime now, DateTimeFormatter fmt) {
+        long secs = ChronoUnit.SECONDS.between(now, eventTime);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("teamId",       team.getId());
+        m.put("teamName",     team.getName() != null ? team.getName() : team.getId());
+        m.put("at",           eventTime.format(fmt));
+        m.put("secondsUntil", secs);
+        m.put("minutesUntil", secs / 60);
+        m.put("email",        email);
+        m.put("type",         type);   // "shift_end" or "shift_start"
+        out.add(m);
     }
 
     /**
