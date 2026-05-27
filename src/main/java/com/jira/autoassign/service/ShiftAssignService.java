@@ -335,18 +335,11 @@ public class ShiftAssignService {
     }
 
     /**
-     * All shifts visible in "Today's Shift" panel:
-     *  - Every row with shiftDate = today
-     *  - Overnight rows from yesterday (shiftStart > shiftEnd) that may still be running
+     * All shifts visible in "Today's Shift" panel — only rows whose shiftDate = today.
+     * Yesterday's overnight rows are intentionally excluded; the panel shows today's schedule only.
      */
     public List<ShiftRoster> getTodayShifts(String teamId) {
-        LocalDate today     = LocalDate.now();
-        LocalDate yesterday = today.minusDays(1);
-        List<ShiftRoster> all = new ArrayList<>(repository.findByTeamIdAndDate(teamId, today));
-        repository.findByTeamIdAndDate(teamId, yesterday).stream()
-            .filter(s -> s.getShiftStart().isAfter(s.getShiftEnd()))   // overnight only
-            .forEach(all::add);
-        return all;
+        return repository.findByTeamIdAndDate(teamId, LocalDate.now());
     }
 
     /**

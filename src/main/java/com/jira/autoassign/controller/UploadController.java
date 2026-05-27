@@ -230,7 +230,6 @@ public class UploadController {
             @RequestParam(value = "team", required = false, defaultValue = "orderfallout") String teamId) {
 
         LocalTime  now    = LocalTime.now();
-        LocalDate  today  = LocalDate.now();
         Set<String> paused = shiftAssignService.getPausedEmails(teamId);
 
         List<Map<String, Object>> result = shiftAssignService.getTodayShifts(teamId).stream()
@@ -241,11 +240,10 @@ public class UploadController {
                 m.put("start", s.getShiftStart().toString());
                 m.put("end",   s.getShiftEnd().toString());
 
-                boolean overnight    = s.getShiftStart().isAfter(s.getShiftEnd());
-                boolean started      = !now.isBefore(s.getShiftStart());
-                boolean shiftEnded   = overnight
-                    ? (s.getShiftDate().isBefore(today) && now.isAfter(s.getShiftEnd()))
-                    : now.isAfter(s.getShiftEnd());
+                boolean overnight  = s.getShiftStart().isAfter(s.getShiftEnd());
+                boolean started    = !now.isBefore(s.getShiftStart());
+                // Overnight shifts (e.g. 22:00–06:00) starting today end tomorrow — never "done" today
+                boolean shiftEnded = !overnight && now.isAfter(s.getShiftEnd());
 
                 String status;
                 if (shiftEnded) {
