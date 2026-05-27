@@ -3,6 +3,8 @@ package com.jira.autoassign.scheduler;
 import com.jira.autoassign.service.ShiftAssignService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +22,22 @@ public class AssignScheduler {
 
     public AssignScheduler(ShiftAssignService shiftAssignService) {
         this.shiftAssignService = shiftAssignService;
+    }
+
+    /**
+     * Catch-up run fired once as soon as the app is fully started.
+     * Ensures any trigger missed while the app was down is processed immediately
+     * instead of waiting up to 60 seconds for the next cron tick.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void runOnStartup() {
+        log.info("Startup catch-up run — processing any missed triggers.");
+        try {
+            lastRunAt = Instant.now();
+            shiftAssignService.runAllTeams();
+        } catch (Exception e) {
+            log.error("Startup catch-up run failed: {}", e.getMessage(), e);
+        }
     }
 
     /**
