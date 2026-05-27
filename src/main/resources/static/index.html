@@ -2415,6 +2415,7 @@ let slaDate      = null;    // null = today; 'YYYY-MM-DD' = specific date
 let slaActiveTab = 'open';  // 'open' | 'resolved'
 let slaAllData        = { open: [], resolved: [] }; // full dataset from last fetch
 let commentedTickets  = {};  // { "SAC-123": "Aria Escalation" } — from DB, persists across refresh
+let slaLoadToken = 0;       // incremented on every loadSla() call — stale responses abort
 
 // Severity colour map built from real Jira data: { "Critical": {bg,color,border}, ... }
 // Populated once via /api/sla/severity-options; empty = use default grey
@@ -2641,14 +2642,24 @@ function updateMetricCards(data) {
 }
 
 async function loadSla() {
+  // Snapshot the team and claim a token — any response from a previous/stale
+  // call (different token) will be silently dropped to prevent overwriting.
+  const myToken  = ++slaLoadToken;
+  const teamId   = activeTeam;          // capture NOW before any awaits
+
   if (!breachReasons.length) await loadBreachReasons();
+  if (myToken !== slaLoadToken) return; // newer call started during breach load
 
   const mainEl = document.getElementById('sla-main');
 
-  if (!activeTeam) {
+  if (!teamId) {
     mainEl.innerHTML = `<div class="sla-empty-state"><strong>No team selected</strong>Click a team tab above.</div>`;
     return;
   }
+
+  // Reset assignee filter so stale orderfallout name doesn't bleed into SAC view
+  const filterSel = document.getElementById('sla-assignee-filter');
+  if (filterSel) filterSel.value = '';
 
   mainEl.innerHTML = `<div style="text-align:center;padding:48px;">
     <div class="spin" style="margin:0 auto;width:28px;height:28px;border-width:3px;"></div>
@@ -2656,9 +2667,12 @@ async function loadSla() {
   </div>`;
 
   try {
-    const url = `/api/sla?team=${encodeURIComponent(activeTeam)}` + (slaDate ? `&date=${encodeURIComponent(slaDate)}` : '');
-    const res = await fetch(url);
+    const url = `/api/sla?team=${encodeURIComponent(teamId)}` + (slaDate ? `&date=${encodeURIComponent(slaDate)}` : '');
+    const res  = await fetch(url);
+    if (myToken !== slaLoadToken) return; // team switched while waiting for response
+
     const data = await res.json();
+    if (myToken !== slaLoadToken) return; // team switched while parsing JSON
 
     if (data && data.error === 'sla_not_configured') {
       mainEl.innerHTML = `<div class="sla-empty-state">
@@ -2677,7 +2691,7 @@ async function loadSla() {
       return;
     }
 
-    const team = teams.find(t => t.id === activeTeam);
+    const team = teams.find(t => t.id === teamId);
     document.getElementById('sla-fetch-time').textContent =
       'Fetched ' + new Date().toLocaleTimeString() + (team ? '  ·  ' + team.name : '');
 
@@ -2693,6 +2707,7 @@ async function loadSla() {
     renderSlaTabContent(slaAllData);
 
   } catch (e) {
+    if (myToken !== slaLoadToken) return; // stale error — don't overwrite newer result
     mainEl.innerHTML = `<div class="sla-empty-state" style="color:#bf2600;">
       <strong>Network error</strong>${esc(e.message)}
     </div>`;
