@@ -263,12 +263,14 @@
     .ts-actions { display: none; gap: 4px; flex-shrink: 0; }
     .ts-actions.edit-on { display: flex; }
     .btn-edit-shift {
-      background: none; border: 1px solid #dfe1e6; border-radius: 4px;
-      padding: 3px 8px; font-size: .82rem; cursor: pointer; color: #5e6c84;
-      transition: all .15s; line-height: 1;
+      display: inline-flex; align-items: center; gap: 5px;
+      background: #f4f5f7; border: 1px solid #c1c7d0; border-radius: 5px;
+      padding: 5px 11px; font-size: .78rem; font-weight: 600;
+      cursor: pointer; color: #42526e; transition: all .15s; flex-shrink: 0;
     }
-    .btn-edit-shift:hover { background: #f4f5f7; }
-    .btn-edit-shift.active { background: #0052cc; color: #fff; border-color: #0052cc; }
+    .btn-edit-shift:hover { background: #ebecf0; border-color: #97a0af; color: #172b4d; }
+    .btn-edit-shift.active { background: #0052cc; color: #fff; border-color: #0041a8; }
+    .btn-edit-shift.active:hover { background: #0041a8; }
     .ts-btn-break  { background: #fff4e5; color: #974f0c; border: 1px solid #ffe380; }
     .ts-btn-break:hover  { background: #ff8b00; color: #fff; border-color: #ff8b00; }
     .ts-btn-resume { background: #e3fcef; color: #006644; border: 1px solid #57d9a3; }
@@ -1601,7 +1603,10 @@
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
       <div class="card-title" style="margin-bottom:0;flex:1;">Today's Shift</div>
       <span id="status-ts" class="ts"></span>
-      <button class="btn-edit-shift" id="shift-edit-btn" onclick="toggleShiftEditMode()" title="Edit today's shift">✏</button>
+      <button class="btn-edit-shift" id="shift-edit-btn" onclick="toggleShiftEditMode()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+        Edit
+      </button>
     </div>
     <div id="status-content"><div class="spin"></div></div>
   </div>
@@ -2019,7 +2024,9 @@ function renderTodayShift(rows) {
     </span>
   </div>`;
 
-  const section = (label, items, dotCls, cardCls, badgeCls, badgeText, tick, btns) => {
+  // permBtn  = always visible (Break / Resume)
+  // editBtns = only visible in edit mode (Swap, Remove)
+  const section = (label, items, dotCls, cardCls, badgeCls, badgeText, tick, permBtn, editBtns) => {
     if (!items.length) return '';
     let s = `<div class="ts-section-label">${label}</div>`;
     items.forEach(r => {
@@ -2030,30 +2037,37 @@ function renderTodayShift(rows) {
           <div class="ts-time">${r.start} – ${r.end}</div>
         </div>
         <span class="ts-badge ${badgeCls}">${badgeText}</span>
-        <div class="ts-actions${shiftEditMode ? ' edit-on' : ''}">${btns(r)}</div>
+        ${permBtn ? permBtn(r) : ''}
+        <div class="ts-actions${shiftEditMode ? ' edit-on' : ''}">${editBtns(r)}</div>
       </div>`;
     });
     return s;
   };
 
-  html += section('Active', groups.active, 'ts-dot-active', 'ts-active', 'ts-badge-active', 'Active', false, r =>
-    `<button class="btn-sm ts-btn-break"  onclick="takeBreak('${esc(r.email)}')">☕ Break</button>
-     <button class="btn-sm ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
-     <button class="btn-sm ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
+  // Active: Break always visible — Swap + Remove appear in edit mode
+  html += section('Active', groups.active, 'ts-dot-active', 'ts-active', 'ts-badge-active', 'Active', false,
+    r => `<button class="btn-sm ts-btn-break" onclick="takeBreak('${esc(r.email)}')">☕ Break</button>`,
+    r => `<button class="btn-sm ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
+          <button class="btn-sm ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
 
-  html += section('On Break', groups.break, 'ts-dot-break', 'ts-break', 'ts-badge-break', 'Break', false, r =>
-    `<button class="btn-sm ts-btn-resume" onclick="resumeFromBreak('${esc(r.email)}')">▶ Resume</button>
-     <button class="btn-sm ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
-     <button class="btn-sm ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
+  // On Break: Resume always visible — Swap + Remove appear in edit mode
+  html += section('On Break', groups.break, 'ts-dot-break', 'ts-break', 'ts-badge-break', 'Break', false,
+    r => `<button class="btn-sm ts-btn-resume" onclick="resumeFromBreak('${esc(r.email)}')">▶ Resume</button>`,
+    r => `<button class="btn-sm ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
+          <button class="btn-sm ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
 
-  html += section('Upcoming', groups.upcoming, 'ts-dot-upcoming', 'ts-upcoming', 'ts-badge-upcoming', 'Upcoming', false, r =>
-    `<button class="btn-sm ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
-     <button class="btn-sm ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
+  // Upcoming: no permanent button — Swap + Remove appear in edit mode
+  html += section('Upcoming', groups.upcoming, 'ts-dot-upcoming', 'ts-upcoming', 'ts-badge-upcoming', 'Upcoming', false,
+    null,
+    r => `<button class="btn-sm ts-btn-swap"   onclick="openSwapModal('${esc(r.email)}')">⇄ Swap</button>
+          <button class="btn-sm ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
 
-  html += section('Done', groups.done, 'ts-dot-done', 'ts-done', 'ts-badge-done', 'Done', true, () => '');
+  // Done: read-only, no buttons
+  html += section('Done', groups.done, 'ts-dot-done', 'ts-done', 'ts-badge-done', 'Done', true,
+    null, () => '');
 
   el.innerHTML = html;
 }
