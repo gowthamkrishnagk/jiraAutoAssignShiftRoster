@@ -1144,22 +1144,7 @@
     </svg>
     Teams Webhook <span id="webhook-status-dot" style="width:7px;height:7px;border-radius:50%;background:#ff5630;display:inline-block;vertical-align:middle;margin-left:2px;"></span>
   </button>
-  <button class="activity-btn" onclick="quickTestWebhook()" id="webhook-test-quick-btn"
-          style="gap:5px;display:none;background:#6264a7;color:#fff;border-color:#6264a7;">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-    </svg>
-    <span id="webhook-test-quick-label">Send to Teams</span>
-  </button>
 </header>
-
-<!-- Webhook test toast -->
-<div id="webhook-toast" style="
-  display:none;position:fixed;top:18px;left:50%;transform:translateX(-50%);
-  background:#1e3a5f;color:#fff;font-size:.82rem;font-weight:500;
-  padding:10px 20px;border-radius:8px;z-index:9999;
-  box-shadow:0 4px 16px rgba(0,0,0,.25);white-space:nowrap;
-  transition:opacity .3s;"></div>
 
 <div class="dry-run-banner" id="dry-run-banner">
   ⚠ DRY-RUN MODE ACTIVE for <span id="dry-run-team-name"></span> — no Jira tickets will be assigned
@@ -1887,57 +1872,17 @@ async function saveSettings() {
 function whSetStatus(configured, url) {
   const dot   = document.getElementById('webhook-status-dot');
   const badge = document.getElementById('wh-status-badge');
-  const quick = document.getElementById('webhook-test-quick-btn');
   if (dot)   dot.style.background = configured ? '#36b37e' : '#ff5630';
   if (badge) {
     badge.textContent      = configured ? '✓ Configured' : 'Not configured';
     badge.style.background = configured ? '#e3fcef' : '#ffebe6';
     badge.style.color      = configured ? '#006644' : '#bf2600';
   }
-  if (quick) quick.style.display = configured ? 'inline-flex' : 'none';
   const viewUrl = document.getElementById('wh-view-url');
   if (viewUrl && url) {
     viewUrl.textContent = url.length > 60 ? url.slice(0, 60) + '…' : url;
     viewUrl.title = url;
   }
-}
-
-async function quickTestWebhook() {
-  const btn   = document.getElementById('webhook-test-quick-btn');
-  const label = document.getElementById('webhook-test-quick-label');
-  btn.disabled  = true;
-  label.textContent = 'Sending…';
-  try {
-    const res  = await fetch('/api/webhook-settings/test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ webhookUrl: '' }) // backend uses saved URL when empty
-    });
-    const data = await res.json();
-    if (data.success) {
-      showWebhookToast('✅  Test card sent to Teams (HTTP ' + data.httpStatus + ')');
-    } else {
-      showWebhookToast('❌  ' + (data.error || 'Test failed — check webhook URL'), true);
-    }
-  } catch (e) {
-    showWebhookToast('❌  Network error: ' + e.message, true);
-  } finally {
-    btn.disabled = false;
-    label.textContent = 'Send to Teams';
-  }
-}
-
-function showWebhookToast(msg, isError) {
-  const el = document.getElementById('webhook-toast');
-  el.textContent       = msg;
-  el.style.background  = isError ? '#bf2600' : '#1e3a5f';
-  el.style.display     = 'block';
-  el.style.opacity     = '1';
-  clearTimeout(el._timer);
-  el._timer = setTimeout(() => {
-    el.style.opacity = '0';
-    setTimeout(() => { el.style.display = 'none'; el.style.opacity = '1'; }, 300);
-  }, 4000);
 }
 
 async function openWebhookModal() {
