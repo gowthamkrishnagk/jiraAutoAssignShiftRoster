@@ -160,8 +160,15 @@ public class ShiftAssignService {
         // remaining tickets go only to reachable accounts — perfect equal spread.
         // The full list is rebuilt from accountIds at the start of every run,
         // so a previously locked account is retried fresh next scheduler tick.
-        List<String> workIds    = new ArrayList<>(accountIds);
-        List<String> workEmails = new ArrayList<>(resolvedEmails);
+        // Sort both lists in tandem by email so the rr index maps to the same person
+        // across runs, regardless of the order the DB returns active shifts.
+        List<String[]> pairs = new ArrayList<>();
+        for (int i = 0; i < resolvedEmails.size(); i++) {
+            pairs.add(new String[]{ resolvedEmails.get(i), accountIds.get(i) });
+        }
+        pairs.sort(Comparator.comparing((String[] p) -> p[0]));
+        List<String> workEmails = pairs.stream().map(p -> p[0]).collect(Collectors.toList());
+        List<String> workIds    = pairs.stream().map(p -> p[1]).collect(Collectors.toList());
         int workRr = rrIndex;
 
         // --- Step 2: assign unassigned tickets (team JQL) ---
@@ -333,7 +340,9 @@ public class ShiftAssignService {
             webhookService.fireReassignments(teamId, teamName, allReassigned);
         }
 
-        rrIndexByTeam.put(teamId, workRr);
+        // Normalize so the stored index stays in [0, teamSize) across team size changes.
+        int normalizedRr = resolvedEmails.isEmpty() ? 0 : workRr % resolvedEmails.size();
+        rrIndexByTeam.put(teamId, normalizedRr);
     }
 
     // -----------------------------------------------------------------------
