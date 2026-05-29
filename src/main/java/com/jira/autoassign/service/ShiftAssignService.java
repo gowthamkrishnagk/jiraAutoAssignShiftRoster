@@ -581,11 +581,81 @@ public class ShiftAssignService {
         log.info("[{}] Shift swap: row {} ({}) ↔ row {} ({})",
             teamId, idA, b.getEmail(), idB, a.getEmail());
 
+        triggerAssignmentRun(teamId);
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("swapped", true);
         result.put("shiftA", shiftRowMap(a));
         result.put("shiftB", shiftRowMap(b));
         return result;
+    }
+
+    public Map<String, Object> replaceShiftEmail(Long id, String newEmail, String teamId) {
+        ShiftRoster row = repository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Shift row not found: " + id));
+
+        if (!teamId.equals(row.getTeamId()))
+            throw new IllegalArgumentException("Shift does not belong to team: " + teamId);
+
+        if (newEmail.equals(row.getEmail()))
+            throw new IllegalArgumentException("New email is the same as the current one");
+
+        String oldEmail = row.getEmail();
+        row.setEmail(newEmail);
+        repository.save(row);
+
+        log.info("[{}] Shift email replaced: row {} {} → {}", teamId, id, oldEmail, newEmail);
+
+        triggerAssignmentRun(teamId);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("replaced", true);
+        result.put("shift", shiftRowMap(row));
+        return result;
+    }
+
+    public Map<String, Object> swapAssignee(String fromEmail, String toEmail, String teamId) {
+        if (fromEmail.equals(toEmail))
+            throw new IllegalArgumentException("fromEmail and toEmail are the same");
+
+        Team team = teamRepository.findById(teamId)
+            .orElseThrow(() -> new IllegalArgumentException("Team not found: " + teamId));
+
+        String fromAccountId = jiraClient.getAccountId(fromEmail);
+        String toAccountId   = jiraClient.getAccountId(toEmail);
+
+        List<JsonNode> tickets = jiraClient.getTicketsAssignedToByJql(fromAccountId, team.getJql());
+        log.info("[{}] Swap assignee {} → {}: {} ticket(s)", teamId, fromEmail, toEmail, tickets.size());
+
+        int reassigned = 0;
+        for (JsonNode ticket : tickets) {
+            String issueKey = ticket.get("key").asText();
+            String summary  = ticket.get("fields").path("summary").asText("");
+            if (jiraClient.assignTicket(issueKey, toAccountId)) {
+                logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, toEmail));
+                reassigned++;
+            }
+            jiraClient.pauseBetweenAssignments();
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("swapped", true);
+        result.put("from", fromEmail);
+        result.put("to", toEmail);
+        result.put("reassigned", reassigned);
+        return result;
+    }
+
+    private void triggerAssignmentRun(String teamId) {
+        teamRepository.findById(teamId).ifPresent(team ->
+            CompletableFuture.runAsync(() -> {
+                try {
+                    runShiftAssignment(team);
+                } catch (Exception e) {
+                    log.error("[{}] Assignment run after roster change failed: {}", teamId, e.getMessage(), e);
+                }
+            }, teamExecutor)
+        );
     }
 
     private Map<String, Object> shiftRowMap(ShiftRoster s) {

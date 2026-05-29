@@ -345,6 +345,46 @@ public class UploadController {
         }
     }
 
+    @PostMapping("/shift/swap-assignee")
+    public ResponseEntity<?> swapAssignee(@RequestBody Map<String, Object> body) {
+        Object rawFrom = body.get("fromEmail");
+        Object rawTo   = body.get("toEmail");
+        Object rawTeam = body.get("teamId");
+
+        if (rawFrom == null || rawTo == null || rawFrom.toString().isBlank() || rawTo.toString().isBlank())
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing 'fromEmail' or 'toEmail'"));
+
+        String teamId = rawTeam != null ? rawTeam.toString() : "orderfallout";
+        try {
+            Map<String, Object> result = shiftAssignService.swapAssignee(
+                rawFrom.toString().trim(), rawTo.toString().trim(), teamId);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/shift/replace-email")
+    public ResponseEntity<?> replaceShiftEmail(@RequestBody Map<String, Object> body) {
+        Object rawId    = body.get("id");
+        Object rawEmail = body.get("newEmail");
+        Object rawTeam  = body.get("teamId");
+
+        if (rawId == null || rawEmail == null || rawEmail.toString().isBlank())
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing 'id' or 'newEmail'"));
+
+        String teamId = rawTeam != null ? rawTeam.toString() : "orderfallout";
+        try {
+            Long id = Long.parseLong(rawId.toString());
+            Map<String, Object> result = shiftAssignService.replaceShiftEmail(id, rawEmail.toString().trim(), teamId);
+            return ResponseEntity.ok(result);
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "id must be a number"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Config — dry-run is per-team
     // -----------------------------------------------------------------------
