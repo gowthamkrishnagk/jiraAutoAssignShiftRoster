@@ -51,6 +51,15 @@ public class ShiftAssignService {
     // Per-team paused emails
     private final Map<String, Set<String>> pausedByTeam = new ConcurrentHashMap<>();
 
+    // Per-team discovered-unavailable emails → epoch millis until which to skip them.
+    // An account whose Jira assignment fails (deactivated / frozen / locked) still
+    // resolves a valid accountId, so without this it keeps occupying a round-robin
+    // slot and the next person in sorted order silently absorbs its share. Parking it
+    // for a cooldown keeps the rotation — and the index normalization — over only the
+    // reachable people, so distribution stays even. Auto-retried once the cooldown lapses.
+    private final Map<String, Map<String, Long>> unavailableByTeam = new ConcurrentHashMap<>();
+    private static final long UNAVAILABLE_COOLDOWN_MS = 60 * 60 * 1000L; // 1 hour
+
     // One thread per team, daemon so they don't block JVM shutdown
     private final ExecutorService teamExecutor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r);
@@ -118,15 +127,26 @@ public class ShiftAssignService {
 
         Set<String> paused = pausedByTeam.getOrDefault(teamId, Collections.emptySet());
 
+        // Emails currently parked because their Jira assignment failed (frozen/locked).
+        // Cooldown-expired entries are pruned so they get retried this run.
+        long nowMs = System.currentTimeMillis();
+        Map<String, Long> unavailable = unavailableByTeam.getOrDefault(teamId, Collections.emptyMap());
+        unavailable.values().removeIf(until -> until <= nowMs);
+        Set<String> skip = unavailable.keySet();
+
         // --- Step 1: who is on shift right now for this team? ---
         List<ShiftRoster> activeShifts = repository.findActiveShifts(teamId, today, yesterday, now);
         List<String> activeEmails = activeShifts.stream()
             .map(ShiftRoster::getEmail).distinct()
             .filter(e -> !paused.contains(e))
+            .filter(e -> !skip.contains(e.toLowerCase().trim()))
             .collect(Collectors.toList());
 
         if (!paused.isEmpty()) {
             log.info("[{}] Paused (skipped) assignees: {}", teamName, paused);
+        }
+        if (!skip.isEmpty()) {
+            log.info("[{}] Temporarily unavailable (assignment failed, in cooldown): {}", teamName, skip);
         }
         log.info("[{}] Active shift assignees: {}", teamName,
             activeEmails.isEmpty() ? "NONE" : activeEmails);
@@ -376,9 +396,12 @@ public class ShiftAssignService {
                 return new AssignResult(email, accId, workRr + 1);
             }
 
-            // Account unreachable — remove so it doesn't waste future slots this run
-            log.warn("[{}] [{}] {} unavailable — removed from this run's rotation (will retry next run)",
-                     teamName, issueKey, email);
+            // Account unreachable — remove so it doesn't waste future slots this run,
+            // and park it in cooldown so subsequent runs skip it entirely (keeps the
+            // rotation even). Auto-retried once UNAVAILABLE_COOLDOWN_MS lapses.
+            log.warn("[{}] [{}] {} unavailable — removed from rotation, parked for {} min",
+                     teamName, issueKey, email, UNAVAILABLE_COOLDOWN_MS / 60000);
+            markUnavailable(teamId, email);
             workIds.remove(pos);
             workEmails.remove(pos);
             // Do NOT advance workRr: the same position now holds the next account
@@ -391,6 +414,12 @@ public class ShiftAssignService {
     // -----------------------------------------------------------------------
     // Pause / resume — per team
     // -----------------------------------------------------------------------
+
+    /** Parks an email whose Jira assignment failed so it's skipped until the cooldown lapses. */
+    private void markUnavailable(String teamId, String email) {
+        unavailableByTeam.computeIfAbsent(teamId, k -> new ConcurrentHashMap<>())
+            .put(email.toLowerCase().trim(), System.currentTimeMillis() + UNAVAILABLE_COOLDOWN_MS);
+    }
 
     public void pauseEmail(String teamId, String email) {
         pausedByTeam.computeIfAbsent(teamId, k -> ConcurrentHashMap.newKeySet())
