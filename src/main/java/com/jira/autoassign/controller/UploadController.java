@@ -245,6 +245,10 @@ public class UploadController {
 
         List<Map<String, Object>> result = new ArrayList<>();
 
+        // Emails already shown via yesterday's still-running overnight shift — used to
+        // suppress their duplicate row in today's list (they're on one shift at a time).
+        Set<String> activeOvernight = new HashSet<>();
+
         // ── Yesterday's overnight shifts still active now ─────────────────────
         // e.g. shift stored on 2026-05-27 with start=22:30, end=07:30
         // → at 00:23 on 2026-05-28 the shift is still running (end hasn't passed)
@@ -259,11 +263,16 @@ public class UploadController {
                 // Definitely started (it started yesterday); check only pause state
                 m.put("status", paused.contains(s.getEmail().toLowerCase().trim()) ? "break" : "active");
                 result.add(m);
+                activeOvernight.add(s.getEmail().toLowerCase().trim());
             }
         }
 
         // ── Today's shifts ────────────────────────────────────────────────────
         for (ShiftRoster s : shiftAssignService.getTodayShifts(teamId)) {
+            // Skip tonight's row for someone still finishing yesterday's overnight shift,
+            // otherwise they appear twice (once active/break, once upcoming) after midnight.
+            if (activeOvernight.contains(s.getEmail().toLowerCase().trim())) continue;
+
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id",    s.getId());
             m.put("email", s.getEmail());
