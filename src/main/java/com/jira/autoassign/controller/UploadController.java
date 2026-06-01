@@ -245,9 +245,11 @@ public class UploadController {
 
         List<Map<String, Object>> result = new ArrayList<>();
 
-        // Emails already shown via yesterday's still-running overnight shift — used to
-        // suppress their duplicate row in today's list (they're on one shift at a time).
-        Set<String> activeOvernight = new HashSet<>();
+        // Dedupe key = email|start|end. Collapses both genuine duplicate roster rows
+        // (same person + same shift inserted twice) and the overnight yesterday/today
+        // pair (identical times → identical key). First occurrence wins; yesterday's
+        // still-running row is added first so it keeps the correct active/break status.
+        Set<String> seen = new HashSet<>();
 
         // ── Yesterday's overnight shifts still active now ─────────────────────
         // e.g. shift stored on 2026-05-27 with start=22:30, end=07:30
@@ -255,6 +257,7 @@ public class UploadController {
         for (ShiftRoster s : shiftAssignService.getShiftsForDate(teamId, yesterday)) {
             boolean overnight = s.getShiftStart().isAfter(s.getShiftEnd());
             if (overnight && s.getShiftEnd().isAfter(now)) {
+                if (!seen.add(dedupeKey(s))) continue;
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("id",    s.getId());
                 m.put("email", s.getEmail());
@@ -263,15 +266,12 @@ public class UploadController {
                 // Definitely started (it started yesterday); check only pause state
                 m.put("status", paused.contains(s.getEmail().toLowerCase().trim()) ? "break" : "active");
                 result.add(m);
-                activeOvernight.add(s.getEmail().toLowerCase().trim());
             }
         }
 
         // ── Today's shifts ────────────────────────────────────────────────────
         for (ShiftRoster s : shiftAssignService.getTodayShifts(teamId)) {
-            // Skip tonight's row for someone still finishing yesterday's overnight shift,
-            // otherwise they appear twice (once active/break, once upcoming) after midnight.
-            if (activeOvernight.contains(s.getEmail().toLowerCase().trim())) continue;
+            if (!seen.add(dedupeKey(s))) continue;
 
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id",    s.getId());
@@ -300,6 +300,11 @@ public class UploadController {
 
         result.sort(Comparator.comparingInt(m -> statusOrder((String) m.get("status"))));
         return ResponseEntity.ok(result);
+    }
+
+    /** Identity for deduping shift rows in the Today panel: same person + same shift window. */
+    private static String dedupeKey(ShiftRoster s) {
+        return s.getEmail().toLowerCase().trim() + "|" + s.getShiftStart() + "|" + s.getShiftEnd();
     }
 
     private static int statusOrder(String s) {
