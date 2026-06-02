@@ -1115,6 +1115,9 @@
   </style>
   <!-- SheetJS — client-side Excel (.xlsx) generation -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- flatpickr — calendar date picker for the SLA report (only DB dates enabled) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
   <!-- Tailwind CSS — utility layer for SLA dashboard (preflight off to protect existing styles) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config = { corePlugins: { preflight: false } };</script>
@@ -1368,19 +1371,20 @@
 
     <div class="modal-field">
       <label>From Date</label>
-      <select id="sla-range-from"></select>
+      <input type="text" id="sla-range-from" placeholder="Pick a date" readonly />
     </div>
     <div class="modal-field">
       <label>To Date</label>
-      <select id="sla-range-to"></select>
+      <input type="text" id="sla-range-to" placeholder="Pick a date" readonly />
     </div>
 
     <div class="modal-hint">
       Builds one Excel workbook with an <b>Overall</b> sheet for the whole range,
       an <b>Open Breached</b> snapshot, and <b>one sheet per day</b> of resolved
       SLA breaches — each ticket shown with its logged breach reason.
-      Only dates that already have a logged breach reason are selectable;
-      in-between days with no reason are still included in the export.
+      In the calendar, only dates that already have a logged breach reason are
+      selectable (others are disabled); in-between days with no reason are still
+      included in the export.
     </div>
 
     <div class="modal-actions">
@@ -3405,37 +3409,46 @@ function safeSheetName(name) {
 
 // ---- Date-range breach report (one sheet per day + Open + Overall) ----
 
+// flatpickr instances for the report's From/To calendars (re-created on each open)
+let fpRangeFrom = null, fpRangeTo = null;
+
+function setRangeErr(msg) {
+  const el = document.getElementById('sla-range-err');
+  el.textContent = msg || '';
+  el.classList.toggle('visible', !!msg);
+}
+
 async function openRangeModal() {
   if (!activeTeam) { alert('Select a team first.'); return; }
-  const errEl   = document.getElementById('sla-range-err');
-  const fromSel = document.getElementById('sla-range-from');
-  const toSel   = document.getElementById('sla-range-to');
-  const btn     = document.getElementById('sla-range-download-btn');
+  const fromEl = document.getElementById('sla-range-from');
+  const toEl   = document.getElementById('sla-range-to');
+  const btn    = document.getElementById('sla-range-download-btn');
 
-  errEl.textContent = '';
-  fromSel.innerHTML = '<option>Loading…</option>';
-  toSel.innerHTML   = '<option>Loading…</option>';
+  setRangeErr('');
+  fromEl.value = '';
+  toEl.value   = '';
   btn.disabled = true;
   document.getElementById('sla-range-modal').style.display = 'flex';
 
   try {
     const res   = await fetch('/api/sla/report/dates');
     const data  = await res.json();
-    const dates = (data && data.dates) || [];
+    const dates = (data && data.dates) || [];   // ["YYYY-MM-DD", ...] ascending
     if (!dates.length) {
-      fromSel.innerHTML = '';
-      toSel.innerHTML   = '';
-      errEl.textContent = 'No breach-reason dates are stored yet.';
+      setRangeErr('No breach-reason dates are stored yet.');
       return;
     }
-    const opts = dates.map(d => `<option value="${d}">${d}</option>`).join('');
-    fromSel.innerHTML = opts;
-    toSel.innerHTML   = opts;
-    fromSel.value = dates[0];                 // earliest stored reason
-    toSel.value   = dates[dates.length - 1];  // latest stored reason
+
+    if (fpRangeFrom) fpRangeFrom.destroy();
+    if (fpRangeTo)   fpRangeTo.destroy();
+
+    // Only DB dates are clickable; every other day is shown disabled/greyed.
+    const common = { dateFormat: 'Y-m-d', enable: dates, disableMobile: true };
+    fpRangeFrom = flatpickr(fromEl, { ...common, defaultDate: dates[0] });
+    fpRangeTo   = flatpickr(toEl,   { ...common, defaultDate: dates[dates.length - 1] });
     btn.disabled = false;
   } catch (e) {
-    errEl.textContent = 'Could not load dates: ' + e.message;
+    setRangeErr('Could not load dates: ' + e.message);
   }
 }
 
@@ -3446,12 +3459,11 @@ function closeRangeModal() {
 async function downloadRangeReport() {
   const from  = document.getElementById('sla-range-from').value;
   const to    = document.getElementById('sla-range-to').value;
-  const errEl = document.getElementById('sla-range-err');
-  errEl.textContent = '';
+  setRangeErr('');
 
-  if (!activeTeam)   { errEl.textContent = 'Select a team first.'; return; }
-  if (!from || !to)  { errEl.textContent = 'Pick both From and To dates.'; return; }
-  if (from > to)     { errEl.textContent = "'From' date must be on or before 'To' date."; return; }
+  if (!activeTeam)   { setRangeErr('Select a team first.'); return; }
+  if (!from || !to)  { setRangeErr('Pick both From and To dates.'); return; }
+  if (from > to)     { setRangeErr("'From' date must be on or before 'To' date."); return; }
 
   const btn  = document.getElementById('sla-range-download-btn');
   const orig = btn.textContent;
@@ -3462,9 +3474,9 @@ async function downloadRangeReport() {
                            + `&from=${from}&to=${to}`);
     const data = await res.json();
     if (!res.ok || data.error) {
-      errEl.textContent = data.error === 'sla_not_configured'
+      setRangeErr(data.error === 'sla_not_configured'
         ? 'SLA field is not configured yet (set it in the Admin tab).'
-        : (data.error || 'Failed to generate report.');
+        : (data.error || 'Failed to generate report.'));
       return;
     }
 
@@ -3491,7 +3503,7 @@ async function downloadRangeReport() {
     if (data.note) alert(data.note);
     closeRangeModal();
   } catch (e) {
-    errEl.textContent = 'Error: ' + e.message;
+    setRangeErr('Error: ' + e.message);
   } finally {
     btn.disabled = false;
     btn.textContent = orig;
