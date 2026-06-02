@@ -1861,8 +1861,9 @@ function switchToTeam(teamId) {
   }
 
   if (slaMode) {
-    // Stay in SLA mode but reload for the newly selected team
-    loadSla();
+    // Stay in SLA mode for the newly selected team — reuse a fresh cached result if any
+    document.getElementById('sla-assignee-filter').value = '';  // new team → clear filter
+    if (slaDataIsFresh()) renderSlaFromCache(); else loadSla();
   } else {
     resetUpload();
     loadDryRun();
@@ -2789,19 +2790,35 @@ let slaLoadToken = 0;       // incremented on every loadSla() call — stale res
 let slaCollapsedKeys = new Set(); // person keys (email||name) the user collapsed — survives re-render
 let slaPollTimer = null;    // background auto-refresh interval handle
 const SLA_POLL_MS = 60000;  // auto-refresh cadence while the SLA tab is open & visible
-let slaLastLoad = { team: null, date: null, at: 0 }; // last successful fetch — for freshness guard
+// Per team+date result cache: "team|date" -> { open, resolved, commented, at }.
+// Lets re-entry / team-flip / date-revisit within SLA_POLL_MS re-render instantly
+// instead of refetching from Jira. The background poll refreshes the active entry;
+// inactive entries simply age out and refetch on return.
+let slaCache = new Map();
+const SLA_CACHE_MAX = 40;  // cap entries so a long session can't grow unbounded
 
-// True when cached SLA data is recent and for the same team+date — lets re-entry
-// (mode toggle / tab re-focus) skip a redundant Jira fetch and re-render instead.
-function slaDataIsFresh() {
-  return slaLastLoad.at > 0
-      && slaLastLoad.team === activeTeam
-      && slaLastLoad.date === slaDate
-      && (Date.now() - slaLastLoad.at) < SLA_POLL_MS;
+function slaCacheKey(team, date) {
+  return `${team || activeTeam}|${(date !== undefined ? date : slaDate) || 'today'}`;
 }
 
-// Re-render the SLA panel from the in-memory dataset (no network), honoring filter.
+function slaCacheStore(team, date, open, resolved, commented) {
+  slaCache.set(slaCacheKey(team, date),
+    { open, resolved, commented: commented || {}, at: Date.now() });
+  if (slaCache.size > SLA_CACHE_MAX) slaCache.delete(slaCache.keys().next().value); // FIFO evict
+}
+
+// True when the current team+date has a recent cached result.
+function slaDataIsFresh() {
+  const e = slaCache.get(slaCacheKey());
+  return !!e && (Date.now() - e.at) < SLA_POLL_MS;
+}
+
+// Re-render the SLA panel from cache (no network) for the current team+date.
 function renderSlaFromCache() {
+  const e = slaCache.get(slaCacheKey());
+  if (!e) { loadSla(); return; }  // safety: nothing cached → fetch
+  slaAllData       = { open: e.open || [], resolved: e.resolved || [] };
+  commentedTickets = e.commented || {};
   updateMetricCards(slaAllData);
   populateAssigneeFilter([...slaAllData.open, ...slaAllData.resolved]);
   const sel    = document.getElementById('sla-assignee-filter');
@@ -3142,8 +3159,9 @@ async function loadSla(quiet = false) {
       : slaAllData;
     renderSlaTabContent(toRender);
 
-    // Record this successful fetch so re-entry within SLA_POLL_MS can skip refetching.
-    slaLastLoad = { team: teamId, date: queryDate, at: Date.now() };
+    // Cache this result so re-entry / team-flip / date-revisit within SLA_POLL_MS
+    // can re-render without refetching.
+    slaCacheStore(teamId, queryDate, slaAllData.open, slaAllData.resolved, commentedTickets);
 
   } catch (e) {
     if (myToken !== slaLoadToken) return; // stale error — don't overwrite newer result
@@ -3281,7 +3299,8 @@ function selectSlaCalDate(dateStr) {
   slaDate = (dateStr === today) ? null : dateStr;
   renderSlaCalendar();
   document.getElementById('sla-assignee-filter').value = '';
-  loadSla();
+  // Revisiting a recently-loaded date re-renders from cache; otherwise fetch.
+  if (slaDataIsFresh()) renderSlaFromCache(); else loadSla();
 }
 
 function slaCalPrev() {
