@@ -9,8 +9,8 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 
 /**
- * Keeps the breach_comment table to a rolling 30-day window.
- * Runs daily at 00:30 and removes any comment older than 30 days, so reasons
+ * Keeps the breach_comment table to a rolling 45-day window.
+ * Runs daily at 00:30 and removes any comment older than 45 days, so reasons
  * fall off gradually instead of all disappearing on the 1st of the month.
  */
 @Component
@@ -19,7 +19,7 @@ public class BreachCommentCleanupScheduler {
     private static final Logger log = LoggerFactory.getLogger(BreachCommentCleanupScheduler.class);
 
     /** How long a breach reason is retained. */
-    private static final int RETENTION_DAYS = 30;
+    private static final int RETENTION_DAYS = 45;
 
     private final BreachCommentRepository repo;
 

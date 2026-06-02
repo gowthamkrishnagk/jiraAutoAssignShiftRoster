@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 
 /**
  * Stores breach-reason comments posted to Jira tickets.
- * Retained for a rolling 30 days by BreachCommentCleanupScheduler.
+ * Retained for a rolling 45 days by BreachCommentCleanupScheduler.
  */
 @Entity
 @Table(name = "breach_comment")

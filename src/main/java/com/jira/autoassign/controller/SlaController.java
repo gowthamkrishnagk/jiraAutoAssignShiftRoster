@@ -196,7 +196,7 @@ public class SlaController {
             return ResponseEntity.badRequest().body(Map.of("error", "'To' date is before 'From' date."));
 
         // Breach reasons drive the report window. Reasons are kept for a rolling
-        // 30 days, so the DB only holds recent ones. We clamp the range to the FIRST
+        // 45 days, so the DB only holds recent ones. We clamp the range to the FIRST
         // and LAST logged reason date (by commentedAt). Every day in between is still
         // emitted — including gap days where nobody logged a reason (those just show
         // breached tickets with blank reason cells), so no dates are skipped.
