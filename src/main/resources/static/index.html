@@ -1133,16 +1133,16 @@
     .rpt-cal-day.rpt-empty { visibility:hidden; }
     /* not available — visible but greyed, not clickable */
     .rpt-cal-day.rpt-na    { background:#f3f4f6; color:#9ca3af; cursor:not-allowed; }
-    /* available — blue */
-    .rpt-cal-day.rpt-avail { background:#e7f0ff; color:#1d4ed8; font-weight:600; cursor:pointer; }
-    .rpt-cal-day.rpt-avail:hover { background:#cfe0ff; }
+    /* available — blue (stronger than grey so it stands out) */
+    .rpt-cal-day.rpt-avail { background:#bcd6ff; color:#13388f; font-weight:700; cursor:pointer; }
+    .rpt-cal-day.rpt-avail:hover { background:#9dc1ff; }
     /* selected range — green (endpoints + in-between, incl. gap days) */
     .rpt-cal-day.rpt-sel       { background:#16a34a; color:#fff; font-weight:700; cursor:pointer; }
     .rpt-cal-day.rpt-sel.rpt-na{ cursor:not-allowed; }
     .rpt-cal-day.rpt-sel-edge  { box-shadow:0 0 0 2px #14532d inset; }
     .rpt-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:9px; font-size:.7rem; color:#6b7280; }
     .rpt-sw { display:inline-block; width:11px; height:11px; border-radius:3px; vertical-align:-1px; margin-right:4px; }
-    .rpt-sw-avail { background:#e7f0ff; border:1px solid #1d4ed8; }
+    .rpt-sw-avail { background:#bcd6ff; border:1px solid #1d4ed8; }
     .rpt-sw-sel   { background:#16a34a; }
     .rpt-sw-na    { background:#f3f4f6; border:1px solid #d1d5db; }
     .rpt-range-summary { font-size:.78rem; color:#172b4d; margin-top:9px; font-weight:600; }
@@ -3488,10 +3488,10 @@ async function openRangeModal() {
       updateRangeSummary();
       return;
     }
-    // Default selection = first → last stored reason date
-    reportFrom = reportDatesArr[0];
-    reportTo   = reportDatesArr[reportDatesArr.length - 1];
-    const [y, m] = reportFrom.split('-').map(Number);
+    // Start with nothing selected — user picks From then To.
+    // Open on the month of the most recent available date.
+    const latest = reportDatesArr[reportDatesArr.length - 1];
+    const [y, m] = latest.split('-').map(Number);
     rptCalYear = y; rptCalMonth = m - 1;
     renderReportCal();
     updateRangeSummary();
