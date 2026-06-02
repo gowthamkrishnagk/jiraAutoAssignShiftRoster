@@ -2789,6 +2789,29 @@ let slaLoadToken = 0;       // incremented on every loadSla() call — stale res
 let slaCollapsedKeys = new Set(); // person keys (email||name) the user collapsed — survives re-render
 let slaPollTimer = null;    // background auto-refresh interval handle
 const SLA_POLL_MS = 60000;  // auto-refresh cadence while the SLA tab is open & visible
+let slaLastLoad = { team: null, date: null, at: 0 }; // last successful fetch — for freshness guard
+
+// True when cached SLA data is recent and for the same team+date — lets re-entry
+// (mode toggle / tab re-focus) skip a redundant Jira fetch and re-render instead.
+function slaDataIsFresh() {
+  return slaLastLoad.at > 0
+      && slaLastLoad.team === activeTeam
+      && slaLastLoad.date === slaDate
+      && (Date.now() - slaLastLoad.at) < SLA_POLL_MS;
+}
+
+// Re-render the SLA panel from the in-memory dataset (no network), honoring filter.
+function renderSlaFromCache() {
+  updateMetricCards(slaAllData);
+  populateAssigneeFilter([...slaAllData.open, ...slaAllData.resolved]);
+  const sel    = document.getElementById('sla-assignee-filter');
+  const selKey = sel && sel.value ? sel.value : '';
+  const data = selKey
+    ? { open:     slaAllData.open.filter(a     => (a.email||a.name) === selKey),
+        resolved: slaAllData.resolved.filter(a => (a.email||a.name) === selKey) }
+    : slaAllData;
+  renderSlaTabContent(data);
+}
 
 // Severity colour map built from real Jira data: { "Critical": {bg,color,border}, ... }
 // Populated once via /api/sla/severity-options; empty = use default grey
@@ -2834,9 +2857,11 @@ function startSlaPoll() {
 function stopSlaPoll() {
   if (slaPollTimer) { clearInterval(slaPollTimer); slaPollTimer = null; }
 }
-// When the user returns to the browser tab, refresh immediately so they see latest.
+// When the user returns to the browser tab, refresh only if the data has gone
+// stale (avoids a refetch on a quick alt-tab away and back).
 document.addEventListener('visibilitychange', () => {
-  if (slaMode && activeTeam && document.visibilityState === 'visible') loadSla(true);
+  if (slaMode && activeTeam && document.visibilityState === 'visible' && !slaDataIsFresh())
+    loadSla(true);
 });
 
 function toggleSlaMode() {
@@ -2851,7 +2876,10 @@ function toggleSlaMode() {
 
   if (slaMode) {
     initSlaCalendar();
-    loadSlaConfig().then(() => loadSeverityOptions()).then(() => loadSla());
+    loadSlaConfig().then(() => loadSeverityOptions()).then(() => {
+      // Re-entering with recent data for the same team+date? Re-render, don't refetch.
+      if (slaDataIsFresh()) renderSlaFromCache(); else loadSla();
+    });
     startSlaPoll();
   } else {
     stopSlaPoll();
@@ -3113,6 +3141,9 @@ async function loadSla(quiet = false) {
           resolved: slaAllData.resolved.filter(a => (a.email||a.name) === selKey) }
       : slaAllData;
     renderSlaTabContent(toRender);
+
+    // Record this successful fetch so re-entry within SLA_POLL_MS can skip refetching.
+    slaLastLoad = { team: teamId, date: queryDate, at: Date.now() };
 
   } catch (e) {
     if (myToken !== slaLoadToken) return; // stale error — don't overwrite newer result
