@@ -3088,6 +3088,20 @@ async function loadSla() {
 // ---- Inline calendar helpers ----
 let slaCalYear  = new Date().getFullYear();
 let slaCalMonth = new Date().getMonth(); // 0-indexed
+let slaMinDate  = null;  // oldest date with data in DB (YYYY-MM-DD); dates before it are disabled
+
+// Oldest breach-reason date in the DB — the resolved calendar floor.
+async function loadSlaMinDate() {
+  try {
+    const res   = await fetch('/api/sla/report/dates');
+    const data  = await res.json();
+    const dates = (data && data.dates) || [];
+    slaMinDate  = dates.length ? dates[0] : null;
+  } catch (e) {
+    slaMinDate = null;
+  }
+  renderSlaCalendar();
+}
 
 function todayISO() {
   const d = new Date();
@@ -3101,6 +3115,7 @@ function initSlaCalendar() {
   slaCalMonth = now.getMonth();
   slaDate     = null;   // default = today
   renderSlaCalendar();
+  loadSlaMinDate();     // fetch the DB floor, then re-render to disable older dates
 }
 
 function renderSlaCalendar() {
@@ -3122,9 +3137,16 @@ function renderSlaCalendar() {
   if (nextBtn) {
     nextBtn.disabled = (slaCalYear === now.getFullYear() && slaCalMonth >= now.getMonth());
   }
-  // Disable prev if more than 12 months back (reasonable limit)
+  // Disable prev once we reach the month of the oldest DB date (no data before it).
+  // Falls back to a 12-month limit until the floor is known.
   if (prevBtn) {
-    const earliest = new Date(now); earliest.setMonth(now.getMonth() - 12);
+    let earliest;
+    if (slaMinDate) {
+      const [ey, em] = slaMinDate.split('-').map(Number);
+      earliest = new Date(ey, em - 1, 1);
+    } else {
+      earliest = new Date(now); earliest.setMonth(now.getMonth() - 12);
+    }
     prevBtn.disabled = (slaCalYear < earliest.getFullYear() ||
       (slaCalYear === earliest.getFullYear() && slaCalMonth <= earliest.getMonth()));
   }
@@ -3149,11 +3171,12 @@ function renderSlaCalendar() {
   cur.setDate(firstOfMonth.getDate() - firstOfMonth.getDay());
 
   for (let i = 0; i < 42; i++) {
-    const ds         = `${cur.getFullYear()}-${pad(cur.getMonth()+1)}-${pad(cur.getDate())}`;
-    const isToday    = ds === todayStr;
-    const isFuture   = cur > now;
-    const isOtherMon = cur.getMonth() !== slaCalMonth;
-    const isSelected = ds === selStr && !isOtherMon;
+    const ds          = `${cur.getFullYear()}-${pad(cur.getMonth()+1)}-${pad(cur.getDate())}`;
+    const isToday     = ds === todayStr;
+    const isFuture    = cur > now;
+    const isOtherMon  = cur.getMonth() !== slaCalMonth;
+    const isBeforeMin = slaMinDate && ds < slaMinDate;   // no DB data before the oldest stored date
+    const isSelected  = ds === selStr && !isOtherMon;
 
     const btn = document.createElement('button');
     btn.className = 'sla-cal-day';
@@ -3161,7 +3184,7 @@ function renderSlaCalendar() {
     if (isToday)    btn.classList.add('sla-cal-today');
     if (isSelected) btn.classList.add('sla-cal-selected');
     if (isOtherMon) { btn.classList.add('sla-cal-other'); btn.disabled = true; }
-    else if (isFuture) { btn.disabled = true; }
+    else if (isFuture || isBeforeMin) { btn.disabled = true; }  // shown but not pickable
     else {
       const captured = ds;
       btn.addEventListener('click', () => selectSlaCalDate(captured));
