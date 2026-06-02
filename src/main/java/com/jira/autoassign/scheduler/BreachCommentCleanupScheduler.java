@@ -6,14 +6,20 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
+
 /**
- * Automatically clears the breach_comment table on the 1st of every month at midnight.
- * This keeps the table lightweight — comments are only relevant within the current month.
+ * Keeps the breach_comment table to a rolling 30-day window.
+ * Runs daily at 00:30 and removes any comment older than 30 days, so reasons
+ * fall off gradually instead of all disappearing on the 1st of the month.
  */
 @Component
 public class BreachCommentCleanupScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(BreachCommentCleanupScheduler.class);
+
+    /** How long a breach reason is retained. */
+    private static final int RETENTION_DAYS = 30;
 
     private final BreachCommentRepository repo;
 
@@ -21,11 +27,12 @@ public class BreachCommentCleanupScheduler {
         this.repo = repo;
     }
 
-    // Runs at 00:00:00 on the 1st of every month
-    @Scheduled(cron = "0 0 0 1 * *")
-    public void clearMonthlyComments() {
-        long count = repo.count();
-        repo.deleteAll();
-        log.info("[BreachComment] Monthly cleanup — deleted {} comment record(s)", count);
+    // Runs at 00:30:00 every day
+    @Scheduled(cron = "0 30 0 * * *")
+    public void purgeOldComments() {
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(RETENTION_DAYS);
+        int deleted = repo.deleteOlderThan(cutoff);
+        log.info("[BreachComment] Daily cleanup — deleted {} comment(s) older than {} days (before {})",
+            deleted, RETENTION_DAYS, cutoff);
     }
 }
