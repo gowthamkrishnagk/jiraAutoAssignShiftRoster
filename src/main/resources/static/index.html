@@ -1861,9 +1861,9 @@ function switchToTeam(teamId) {
   }
 
   if (slaMode) {
-    // Stay in SLA mode for the newly selected team — reuse a fresh cached result if any
+    // Stay in SLA mode for the newly selected team — paint cache then revalidate
     document.getElementById('sla-assignee-filter').value = '';  // new team → clear filter
-    if (slaDataIsFresh()) renderSlaFromCache(); else loadSla();
+    showSlaForCurrent();
   } else {
     resetUpload();
     loadDryRun();
@@ -2813,6 +2813,19 @@ function slaDataIsFresh() {
   return !!e && (Date.now() - e.at) < SLA_POLL_MS;
 }
 
+// Show SLA for the current team+date. If we have a recent cached result, paint it
+// instantly (no spinner flash) AND quietly revalidate so it converges to live data;
+// otherwise do a normal fetch with the spinner. This keeps team-flips/re-entry fast
+// without leaving stale data on screen.
+function showSlaForCurrent() {
+  if (slaDataIsFresh()) {
+    renderSlaFromCache();  // instant paint from cache
+    loadSla(true);         // quiet background revalidate → updates to latest
+  } else {
+    loadSla();             // nothing fresh cached → fetch with spinner
+  }
+}
+
 // Re-render the SLA panel from cache (no network) for the current team+date.
 function renderSlaFromCache() {
   const e = slaCache.get(slaCacheKey());
@@ -2874,11 +2887,9 @@ function startSlaPoll() {
 function stopSlaPoll() {
   if (slaPollTimer) { clearInterval(slaPollTimer); slaPollTimer = null; }
 }
-// When the user returns to the browser tab, refresh only if the data has gone
-// stale (avoids a refetch on a quick alt-tab away and back).
+// When the user returns to the browser tab, quietly revalidate so they see latest.
 document.addEventListener('visibilitychange', () => {
-  if (slaMode && activeTeam && document.visibilityState === 'visible' && !slaDataIsFresh())
-    loadSla(true);
+  if (slaMode && activeTeam && document.visibilityState === 'visible') loadSla(true);
 });
 
 function toggleSlaMode() {
@@ -2894,8 +2905,8 @@ function toggleSlaMode() {
   if (slaMode) {
     initSlaCalendar();
     loadSlaConfig().then(() => loadSeverityOptions()).then(() => {
-      // Re-entering with recent data for the same team+date? Re-render, don't refetch.
-      if (slaDataIsFresh()) renderSlaFromCache(); else loadSla();
+      // Re-entering: paint recent cache instantly, then quietly revalidate to latest.
+      showSlaForCurrent();
     });
     startSlaPoll();
   } else {
@@ -3299,8 +3310,8 @@ function selectSlaCalDate(dateStr) {
   slaDate = (dateStr === today) ? null : dateStr;
   renderSlaCalendar();
   document.getElementById('sla-assignee-filter').value = '';
-  // Revisiting a recently-loaded date re-renders from cache; otherwise fetch.
-  if (slaDataIsFresh()) renderSlaFromCache(); else loadSla();
+  // Revisiting a recent date paints cache instantly, then revalidates to latest.
+  showSlaForCurrent();
 }
 
 function slaCalPrev() {
