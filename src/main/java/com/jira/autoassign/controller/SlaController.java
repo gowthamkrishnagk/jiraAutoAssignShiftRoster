@@ -262,6 +262,21 @@ public class SlaController {
         return ResponseEntity.ok(result);
     }
 
+    /**
+     * Distinct dates that have a stored breach reason (by commentedAt).
+     * Drives the From/To dropdowns in the report modal so users can only pick
+     * dates that actually exist in the DB. Sorted ascending (YYYY-MM-DD).
+     *
+     * GET /api/sla/report/dates
+     */
+    @GetMapping("/sla/report/dates")
+    public ResponseEntity<?> getReportDates() {
+        TreeSet<String> dates = new TreeSet<>();
+        commentRepo.findAll().forEach(bc ->
+            dates.add(bc.getCommentedAt().toLocalDate().toString()));
+        return ResponseEntity.ok(Map.of("dates", new ArrayList<>(dates)));
+    }
+
     // -----------------------------------------------------------------------
     // Grouping helper — shared by open and resolved sections
     // -----------------------------------------------------------------------

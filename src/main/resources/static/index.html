@@ -1368,19 +1368,19 @@
 
     <div class="modal-field">
       <label>From Date</label>
-      <input type="date" id="sla-range-from" />
+      <select id="sla-range-from"></select>
     </div>
     <div class="modal-field">
       <label>To Date</label>
-      <input type="date" id="sla-range-to" />
+      <select id="sla-range-to"></select>
     </div>
 
     <div class="modal-hint">
       Builds one Excel workbook with an <b>Overall</b> sheet for the whole range,
       an <b>Open Breached</b> snapshot, and <b>one sheet per day</b> of resolved
       SLA breaches — each ticket shown with its logged breach reason.
-      Days run from the first to the last logged breach reason; in-between days
-      with no reason are still included.
+      Only dates that already have a logged breach reason are selectable;
+      in-between days with no reason are still included in the export.
     </div>
 
     <div class="modal-actions">
@@ -3405,14 +3405,38 @@ function safeSheetName(name) {
 
 // ---- Date-range breach report (one sheet per day + Open + Overall) ----
 
-function openRangeModal() {
+async function openRangeModal() {
   if (!activeTeam) { alert('Select a team first.'); return; }
-  const now = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  document.getElementById('sla-range-from').value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
-  document.getElementById('sla-range-to').value   = slaDate || todayISO();
-  document.getElementById('sla-range-err').textContent = '';
+  const errEl   = document.getElementById('sla-range-err');
+  const fromSel = document.getElementById('sla-range-from');
+  const toSel   = document.getElementById('sla-range-to');
+  const btn     = document.getElementById('sla-range-download-btn');
+
+  errEl.textContent = '';
+  fromSel.innerHTML = '<option>Loading…</option>';
+  toSel.innerHTML   = '<option>Loading…</option>';
+  btn.disabled = true;
   document.getElementById('sla-range-modal').style.display = 'flex';
+
+  try {
+    const res   = await fetch('/api/sla/report/dates');
+    const data  = await res.json();
+    const dates = (data && data.dates) || [];
+    if (!dates.length) {
+      fromSel.innerHTML = '';
+      toSel.innerHTML   = '';
+      errEl.textContent = 'No breach-reason dates are stored yet.';
+      return;
+    }
+    const opts = dates.map(d => `<option value="${d}">${d}</option>`).join('');
+    fromSel.innerHTML = opts;
+    toSel.innerHTML   = opts;
+    fromSel.value = dates[0];                 // earliest stored reason
+    toSel.value   = dates[dates.length - 1];  // latest stored reason
+    btn.disabled = false;
+  } catch (e) {
+    errEl.textContent = 'Could not load dates: ' + e.message;
+  }
 }
 
 function closeRangeModal() {
