@@ -3489,9 +3489,9 @@ async function openRangeModal() {
       return;
     }
     // Start with nothing selected — user picks From then To.
-    // Open on the month of the most recent available date.
-    const latest = reportDatesArr[reportDatesArr.length - 1];
-    const [y, m] = latest.split('-').map(Number);
+    // Open on the month of the OLDEST available date in the DB.
+    const oldest = reportDatesArr[0];
+    const [y, m] = oldest.split('-').map(Number);
     rptCalYear = y; rptCalMonth = m - 1;
     renderReportCal();
     updateRangeSummary();
