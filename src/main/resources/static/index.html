@@ -1112,12 +1112,43 @@
       #sla-main    { padding: 0 12px; }
       .sla-topbar  { padding: 0 12px; }
     }
+
+    /* ---- Report range calendar (inline, in the download modal) ---- */
+    .rpt-cal { border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; background:#fff; }
+    .rpt-cal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+    .rpt-cal-title { font-weight:700; font-size:.9rem; color:#172b4d; }
+    .rpt-cal-nav {
+      border:none; background:#f3f4f6; width:28px; height:28px; border-radius:6px;
+      cursor:pointer; font-size:1rem; color:#374151; line-height:1;
+    }
+    .rpt-cal-nav:hover:not(:disabled) { background:#e5e7eb; }
+    .rpt-cal-nav:disabled { opacity:.35; cursor:not-allowed; }
+    .rpt-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+    .rpt-cal-dow { text-align:center; font-size:.66rem; font-weight:700; color:#9ca3af; padding:3px 0; }
+    .rpt-cal-day {
+      aspect-ratio:1/1; border:none; border-radius:6px; font-size:.8rem;
+      background:transparent; color:#d1d5db; cursor:default;
+      display:flex; align-items:center; justify-content:center; padding:0;
+    }
+    .rpt-cal-day.rpt-empty { visibility:hidden; }
+    /* not available — visible but greyed, not clickable */
+    .rpt-cal-day.rpt-na    { background:#f3f4f6; color:#9ca3af; cursor:not-allowed; }
+    /* available — blue */
+    .rpt-cal-day.rpt-avail { background:#e7f0ff; color:#1d4ed8; font-weight:600; cursor:pointer; }
+    .rpt-cal-day.rpt-avail:hover { background:#cfe0ff; }
+    /* selected range — green (endpoints + in-between, incl. gap days) */
+    .rpt-cal-day.rpt-sel       { background:#16a34a; color:#fff; font-weight:700; cursor:pointer; }
+    .rpt-cal-day.rpt-sel.rpt-na{ cursor:not-allowed; }
+    .rpt-cal-day.rpt-sel-edge  { box-shadow:0 0 0 2px #14532d inset; }
+    .rpt-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:9px; font-size:.7rem; color:#6b7280; }
+    .rpt-sw { display:inline-block; width:11px; height:11px; border-radius:3px; vertical-align:-1px; margin-right:4px; }
+    .rpt-sw-avail { background:#e7f0ff; border:1px solid #1d4ed8; }
+    .rpt-sw-sel   { background:#16a34a; }
+    .rpt-sw-na    { background:#f3f4f6; border:1px solid #d1d5db; }
+    .rpt-range-summary { font-size:.78rem; color:#172b4d; margin-top:9px; font-weight:600; }
   </style>
   <!-- SheetJS — client-side Excel (.xlsx) generation -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <!-- flatpickr — calendar date picker for the SLA report (only DB dates enabled) -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
   <!-- Tailwind CSS — utility layer for SLA dashboard (preflight off to protect existing styles) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config = { corePlugins: { preflight: false } };</script>
@@ -1370,21 +1401,29 @@
     <div class="modal-err" id="sla-range-err"></div>
 
     <div class="modal-field">
-      <label>From Date</label>
-      <input type="text" id="sla-range-from" placeholder="Pick a date" readonly />
-    </div>
-    <div class="modal-field">
-      <label>To Date</label>
-      <input type="text" id="sla-range-to" placeholder="Pick a date" readonly />
+      <label>Select Date Range</label>
+      <div class="rpt-cal">
+        <div class="rpt-cal-header">
+          <button type="button" class="rpt-cal-nav" id="rpt-cal-prev" onclick="reportCalPrev()">&#8249;</button>
+          <span class="rpt-cal-title" id="rpt-cal-title"></span>
+          <button type="button" class="rpt-cal-nav" id="rpt-cal-next" onclick="reportCalNext()">&#8250;</button>
+        </div>
+        <div class="rpt-cal-grid" id="rpt-cal-grid"></div>
+      </div>
+      <div class="rpt-legend">
+        <span><i class="rpt-sw rpt-sw-avail"></i>Available</span>
+        <span><i class="rpt-sw rpt-sw-sel"></i>Selected range</span>
+        <span><i class="rpt-sw rpt-sw-na"></i>Not available</span>
+      </div>
+      <div class="rpt-range-summary" id="rpt-range-summary">Pick a start date, then an end date.</div>
     </div>
 
     <div class="modal-hint">
       Builds one Excel workbook with an <b>Overall</b> sheet for the whole range,
       an <b>Open Breached</b> snapshot, and <b>one sheet per day</b> of resolved
       SLA breaches — each ticket shown with its logged breach reason.
-      In the calendar, only dates that already have a logged breach reason are
-      selectable (others are disabled); in-between days with no reason are still
-      included in the export.
+      Click a blue (available) start date then end date; in-between days with no
+      reason are still included in the export.
     </div>
 
     <div class="modal-actions">
@@ -3409,8 +3448,16 @@ function safeSheetName(name) {
 
 // ---- Date-range breach report (one sheet per day + Open + Overall) ----
 
-// flatpickr instances for the report's From/To calendars (re-created on each open)
-let fpRangeFrom = null, fpRangeTo = null;
+// ---- Inline range calendar for the report modal ----
+// Only dates present in the DB are selectable (blue); others render greyed
+// (not available). The picked From→To range fills green, gap days included.
+const RPT_MONTHS = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+let reportDatesArr = [];          // ["YYYY-MM-DD", ...] ascending, from DB
+let reportDateSet  = new Set();   // same, for O(1) lookup
+let reportFrom     = null;        // "YYYY-MM-DD" or null
+let reportTo       = null;
+let rptCalYear, rptCalMonth;      // currently displayed month (0-indexed)
 
 function setRangeErr(msg) {
   const el = document.getElementById('sla-range-err');
@@ -3420,36 +3467,132 @@ function setRangeErr(msg) {
 
 async function openRangeModal() {
   if (!activeTeam) { alert('Select a team first.'); return; }
-  const fromEl = document.getElementById('sla-range-from');
-  const toEl   = document.getElementById('sla-range-to');
-  const btn    = document.getElementById('sla-range-download-btn');
+  const btn = document.getElementById('sla-range-download-btn');
 
   setRangeErr('');
-  fromEl.value = '';
-  toEl.value   = '';
+  reportFrom = reportTo = null;
   btn.disabled = true;
   document.getElementById('sla-range-modal').style.display = 'flex';
+  document.getElementById('rpt-cal-title').textContent = '';
+  document.getElementById('rpt-cal-grid').innerHTML =
+    '<div style="grid-column:1/8;text-align:center;padding:22px;color:#9ca3af;font-size:.8rem;">Loading…</div>';
 
   try {
-    const res   = await fetch('/api/sla/report/dates');
-    const data  = await res.json();
-    const dates = (data && data.dates) || [];   // ["YYYY-MM-DD", ...] ascending
-    if (!dates.length) {
+    const res  = await fetch('/api/sla/report/dates');
+    const data = await res.json();
+    reportDatesArr = (data && data.dates) || [];   // ascending
+    reportDateSet  = new Set(reportDatesArr);
+    if (!reportDatesArr.length) {
       setRangeErr('No breach-reason dates are stored yet.');
+      document.getElementById('rpt-cal-grid').innerHTML = '';
+      updateRangeSummary();
       return;
     }
-
-    if (fpRangeFrom) fpRangeFrom.destroy();
-    if (fpRangeTo)   fpRangeTo.destroy();
-
-    // Only DB dates are clickable; every other day is shown disabled/greyed.
-    const common = { dateFormat: 'Y-m-d', enable: dates, disableMobile: true };
-    fpRangeFrom = flatpickr(fromEl, { ...common, defaultDate: dates[0] });
-    fpRangeTo   = flatpickr(toEl,   { ...common, defaultDate: dates[dates.length - 1] });
+    // Default selection = first → last stored reason date
+    reportFrom = reportDatesArr[0];
+    reportTo   = reportDatesArr[reportDatesArr.length - 1];
+    const [y, m] = reportFrom.split('-').map(Number);
+    rptCalYear = y; rptCalMonth = m - 1;
+    renderReportCal();
+    updateRangeSummary();
     btn.disabled = false;
   } catch (e) {
     setRangeErr('Could not load dates: ' + e.message);
   }
+}
+
+function renderReportCal() {
+  const grid  = document.getElementById('rpt-cal-grid');
+  const title = document.getElementById('rpt-cal-title');
+  const pad   = n => String(n).padStart(2, '0');
+
+  title.textContent = RPT_MONTHS[rptCalMonth] + ' ' + rptCalYear;
+  grid.innerHTML = '';
+  ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'rpt-cal-dow';
+    el.textContent = d;
+    grid.appendChild(el);
+  });
+
+  // First cell = Sunday of the week containing the 1st
+  const first = new Date(rptCalYear, rptCalMonth, 1);
+  const cur   = new Date(first);
+  cur.setDate(first.getDate() - first.getDay());
+
+  for (let i = 0; i < 42; i++) {
+    const ds       = `${cur.getFullYear()}-${pad(cur.getMonth() + 1)}-${pad(cur.getDate())}`;
+    const otherMon = cur.getMonth() !== rptCalMonth;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'rpt-cal-day';
+    btn.textContent = cur.getDate();
+
+    if (otherMon) {
+      btn.classList.add('rpt-empty');
+    } else {
+      const avail   = reportDateSet.has(ds);
+      const inRange = reportFrom && reportTo && ds >= reportFrom && ds <= reportTo;
+      if (inRange) {
+        btn.classList.add('rpt-sel');
+        if (!avail) btn.classList.add('rpt-na');   // gap day inside range
+        if (ds === reportFrom || ds === reportTo) btn.classList.add('rpt-sel-edge');
+      } else if (avail) {
+        btn.classList.add('rpt-avail');
+      } else {
+        btn.classList.add('rpt-na');
+      }
+      if (avail) {
+        const captured = ds;
+        btn.addEventListener('click', () => onReportDayClick(captured));
+      }
+    }
+    grid.appendChild(btn);
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  // Disable month nav beyond the available data window
+  const [fy, fm] = reportDatesArr[0].split('-').map(Number);
+  const [ly, lm] = reportDatesArr[reportDatesArr.length - 1].split('-').map(Number);
+  document.getElementById('rpt-cal-prev').disabled =
+    (rptCalYear < fy) || (rptCalYear === fy && rptCalMonth <= fm - 1);
+  document.getElementById('rpt-cal-next').disabled =
+    (rptCalYear > ly) || (rptCalYear === ly && rptCalMonth >= lm - 1);
+}
+
+function onReportDayClick(ds) {
+  if (!reportFrom || (reportFrom && reportTo)) {
+    // Start a fresh range
+    reportFrom = ds; reportTo = null;
+  } else if (ds < reportFrom) {
+    reportFrom = ds; reportTo = null;   // clicked earlier → restart
+  } else {
+    reportTo = ds;                       // complete the range
+  }
+  setRangeErr('');
+  renderReportCal();
+  updateRangeSummary();
+}
+
+function updateRangeSummary() {
+  const el = document.getElementById('rpt-range-summary');
+  if (reportFrom && reportTo) {
+    const days = Math.round((Date.parse(reportTo) - Date.parse(reportFrom)) / 86400000) + 1;
+    el.textContent = `From ${reportFrom}  →  To ${reportTo}   (${days} day${days > 1 ? 's' : ''})`;
+  } else if (reportFrom) {
+    el.textContent = `From ${reportFrom}  →  pick an end date`;
+  } else {
+    el.textContent = 'Pick a start date, then an end date.';
+  }
+}
+
+function reportCalPrev() {
+  rptCalMonth--; if (rptCalMonth < 0) { rptCalMonth = 11; rptCalYear--; }
+  renderReportCal();
+}
+function reportCalNext() {
+  rptCalMonth++; if (rptCalMonth > 11) { rptCalMonth = 0; rptCalYear++; }
+  renderReportCal();
 }
 
 function closeRangeModal() {
@@ -3457,12 +3600,12 @@ function closeRangeModal() {
 }
 
 async function downloadRangeReport() {
-  const from  = document.getElementById('sla-range-from').value;
-  const to    = document.getElementById('sla-range-to').value;
+  const from = reportFrom;
+  const to   = reportTo;
   setRangeErr('');
 
   if (!activeTeam)   { setRangeErr('Select a team first.'); return; }
-  if (!from || !to)  { setRangeErr('Pick both From and To dates.'); return; }
+  if (!from || !to)  { setRangeErr('Pick both a start and end date.'); return; }
   if (from > to)     { setRangeErr("'From' date must be on or before 'To' date."); return; }
 
   const btn  = document.getElementById('sla-range-download-btn');
