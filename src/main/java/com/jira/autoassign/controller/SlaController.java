@@ -233,13 +233,26 @@ public class SlaController {
         // Open breaches — point-in-time snapshot, attributed to who held the ticket at breach time
         List<JsonNode> openBreached = jiraClient.getOpenSlaTickets(t.getJql(), fieldId);
 
-        // One block per calendar day in the clamped range: resolved/closed breaches updated that day
+        // Single ranged query, then bucket each ticket to a day by its `updated` date
+        // (one Jira search for the whole range instead of one search per day).
+        List<JsonNode> rangeResolved =
+            jiraClient.getResolvedSlaTicketsInRange(t.getJql(), fieldId, effFrom, effTo);
+
+        // Pre-seed every day in the range so empty days still get a (header-only) sheet.
+        Map<String, List<JsonNode>> byDay = new LinkedHashMap<>();
+        for (LocalDate d = effFrom; !d.isAfter(effTo); d = d.plusDays(1))
+            byDay.put(d.toString(), new ArrayList<>());
+
+        for (JsonNode tk : rangeResolved) {
+            String dayKey = updatedDateKey(tk.path("fields").path("updated").asText(""));
+            if (dayKey != null && byDay.containsKey(dayKey)) byDay.get(dayKey).add(tk);
+        }
+
         List<Map<String, Object>> dayBlocks = new ArrayList<>();
-        for (LocalDate d = effFrom; !d.isAfter(effTo); d = d.plusDays(1)) {
-            List<JsonNode> resolved = jiraClient.getResolvedSlaTickets(t.getJql(), fieldId, d.toString());
+        for (Map.Entry<String, List<JsonNode>> e : byDay.entrySet()) {
             Map<String, Object> block = new LinkedHashMap<>();
-            block.put("date",     d.toString());
-            block.put("resolved", groupByBreachOwner(resolved, fieldId, sevKey, false));
+            block.put("date",     e.getKey());
+            block.put("resolved", groupByBreachOwner(e.getValue(), fieldId, sevKey, false));
             dayBlocks.add(block);
         }
 
@@ -326,7 +339,9 @@ public class SlaController {
             String reassignedTo = null;
 
             if (doAttribution && breached && breachEpoch > 0) {
-                String ownerAtBreach = jiraClient.getAssigneeAtEpoch(issueKey, breachEpoch);
+                // Uses the inline changelog (expand=changelog) + cache; no per-ticket
+                // call unless the inline history is missing/truncated.
+                String ownerAtBreach = jiraClient.resolveBreachOwner(ticket, breachEpoch);
                 if (ownerAtBreach != null && !ownerAtBreach.equals(currentAccId)) {
                     Map<String, String> ownerInfo = jiraClient.getUserInfo(ownerAtBreach);
                     groupAccId   = ownerAtBreach;
@@ -477,5 +492,17 @@ public class SlaController {
         if (node.has("name"))  return node.path("name").asText("");
         if (node.has("value")) return node.path("value").asText("");
         return "";
+    }
+
+    /**
+     * Maps a Jira `updated` timestamp (e.g. "2026-06-01T14:23:45.000+0530") to its
+     * calendar-day key "YYYY-MM-DD". The leading 10 chars are the date in Jira's own
+     * reported offset — the same basis Jira uses for the `updated >= "date"` range
+     * filter — so tickets bucket to the same day Jira matched them on.
+     */
+    private static String updatedDateKey(String updatedIso) {
+        if (updatedIso == null || updatedIso.length() < 10) return null;
+        String day = updatedIso.substring(0, 10);
+        return day.matches("\\d{4}-\\d{2}-\\d{2}") ? day : null;
     }
 }

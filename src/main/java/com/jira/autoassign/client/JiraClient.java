@@ -28,6 +28,15 @@ public class JiraClient {
     /** Cached after first successful discovery — avoids repeated /rest/api/3/field calls. */
     private volatile String severityFieldKey = null;
 
+    /**
+     * Breach-owner attribution cache, keyed by "issueKey@breachEpochMs".
+     * A ticket's changelog up to a *past* breach instant never changes, so this is
+     * safe to cache for the app lifetime. Value is the accountId, or "" meaning
+     * "no assignment history at/before the breach" (so it isn't re-queried).
+     */
+    private final java.util.concurrent.ConcurrentHashMap<String, String> breachOwnerCache
+        = new java.util.concurrent.ConcurrentHashMap<>();
+
     public JiraClient(RestTemplate restTemplate, JiraProperties props, JiraConfigService configService) {
         this.restTemplate  = restTemplate;
         this.props         = props;
@@ -125,21 +134,27 @@ public class JiraClient {
      * Jira Cloud caps each page at 100; this loops until every page is fetched.
      */
     private List<JsonNode> searchTicketsWithFields(String jql, String fields) {
+        return searchTicketsWithFields(jql, fields, null);
+    }
+
+    /**
+     * Same as the two-arg version, but optionally asks Jira to expand extra data
+     * inline (e.g. "changelog") so callers avoid a follow-up per-issue request.
+     */
+    private List<JsonNode> searchTicketsWithFields(String jql, String fields, String expand) {
         List<JsonNode> all = new ArrayList<>();
         final int PAGE_SIZE = 100;
         int startAt = 0;
 
         while (true) {
-            URI uri = UriComponentsBuilder
+            UriComponentsBuilder builder = UriComponentsBuilder
                 .fromHttpUrl(baseUrl() + "/rest/api/3/search/jql")
                 .queryParam("jql",        "{jql}")
                 .queryParam("maxResults", PAGE_SIZE)
                 .queryParam("startAt",    startAt)
-                .queryParam("fields",     fields)
-                .build()
-                .expand(jql)
-                .encode()
-                .toUri();
+                .queryParam("fields",     fields);
+            if (expand != null && !expand.isBlank()) builder.queryParam("expand", expand);
+            URI uri = builder.build().expand(jql).encode().toUri();
 
             ResponseEntity<JsonNode> response = restTemplate.exchange(
                 uri, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
@@ -198,7 +213,9 @@ public class JiraClient {
         String sevKey = discoverSeverityFieldKey();
         String fields = "summary,assignee,status," + slaFieldId
                         + (sevKey != null ? "," + sevKey : "");
-        return searchTicketsWithFields(jql, fields);
+        // expand=changelog returns each issue's history inline, so breach
+        // attribution (resolveBreachOwner) can skip the per-ticket changelog call.
+        return searchTicketsWithFields(jql, fields, "changelog");
     }
 
     /**
@@ -209,16 +226,7 @@ public class JiraClient {
      *              is respected. For other dates, uses an inclusive day range filter.
      */
     public List<JsonNode> getResolvedSlaTickets(String baseJql, String slaFieldId, String date) {
-        String base = baseJql
-            .replaceAll("(?i)\\s+AND\\s+Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
-            .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)\\s+AND\\s+", "")
-            .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
-            .replaceAll("(?i)\\s+AND\\s+status\\s+in\\s*\\([^)]+\\)", "")
-            .replaceAll("(?i)status\\s+in\\s*\\([^)]+\\)\\s+AND\\s+", "")
-            .replaceAll("(?i)\\s+AND\\s+\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY", "")
-            .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY\\s+AND\\s+", "")
-            .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY", "")
-            .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
+        String base = stripForResolved(baseJql);
 
         // Build the date filter — scope to one calendar day only.
         // Use `updated` so CLOSED tickets without a resolutiondate are included.
@@ -253,6 +261,50 @@ public class JiraClient {
         String fields = "summary,assignee,status," + slaFieldId
                         + (sevKey != null ? "," + sevKey : "");
         return searchTicketsWithFields(jql, fields);
+    }
+
+    /**
+     * Fetches ALL resolved/closed/cancelled SLA breaches whose `updated` falls in
+     * the inclusive day range [from, to] — in ONE search instead of one query per
+     * day. Includes the `updated` field so the caller can bucket each ticket to a
+     * day. Used by the date-range report download.
+     */
+    public List<JsonNode> getResolvedSlaTicketsInRange(String baseJql, String slaFieldId,
+                                                       LocalDate from, LocalDate to) {
+        String base = stripForResolved(baseJql);
+
+        LocalDate next = to.plusDays(1);  // exclusive upper bound
+        String dateFilter = " AND updated >= \"" + from + "\" AND updated < \"" + next + "\"";
+
+        String cfNum           = (slaFieldId != null) ? slaFieldId.replace("customfield_", "") : "";
+        String slaBreachFilter = cfNum.isEmpty() ? "" : " AND cf[" + cfNum + "] = breached()";
+
+        String jql = base
+            + " AND status in (\"Resolved\",\"Closed\",\"Cancelled\")"
+            + slaBreachFilter
+            + dateFilter
+            + " ORDER BY updated DESC";
+        log.info("[SLA] Resolved range query {}..{}: {}", from, to, jql);
+
+        String sevKey = discoverSeverityFieldKey();
+        String fields = "summary,assignee,status,updated," + slaFieldId
+                        + (sevKey != null ? "," + sevKey : "");
+        return searchTicketsWithFields(jql, fields);
+    }
+
+    /** Strips the unassigned/status/escalation/order-by clauses from a team's base JQL
+     *  so resolved-breach queries can re-scope to their own status + date filters. */
+    private static String stripForResolved(String baseJql) {
+        return baseJql
+            .replaceAll("(?i)\\s+AND\\s+Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
+            .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)\\s+AND\\s+", "")
+            .replaceAll("(?i)Assignee\\s+in\\s*\\(\\s*EMPTY\\s*\\)", "")
+            .replaceAll("(?i)\\s+AND\\s+status\\s+in\\s*\\([^)]+\\)", "")
+            .replaceAll("(?i)status\\s+in\\s*\\([^)]+\\)\\s+AND\\s+", "")
+            .replaceAll("(?i)\\s+AND\\s+\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY", "")
+            .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY\\s+AND\\s+", "")
+            .replaceAll("(?i)\"Escalation Path\\[Dropdown\\]\"\\s+is\\s+EMPTY", "")
+            .replaceAll("(?i)\\s+ORDER\\s+BY.*$", "");
     }
 
     /** @deprecated Use getOpenSlaTickets + getResolvedSlaTickets instead */
@@ -501,43 +553,112 @@ public class JiraClient {
     }
 
     /**
+     * Resolves the breach owner for one ticket — the accountId assigned at the breach
+     * instant. Uses, in order: the attribution cache → the inline changelog from the
+     * search response (expand=changelog, only when complete/untruncated) → a per-ticket
+     * changelog fetch. The result is cached by issueKey+epoch (immutable history).
+     * Pass a ticket node from getOpenSlaTickets so the inline changelog is available.
+     */
+    public String resolveBreachOwner(JsonNode ticket, long epochMs) {
+        String issueKey = ticket.path("key").asText("");
+        if (issueKey.isEmpty() || epochMs <= 0) return null;
+
+        String cacheKey = issueKey + "@" + epochMs;
+        String cached = breachOwnerCache.get(cacheKey);
+        if (cached != null) return cached.isEmpty() ? null : cached;
+
+        String owner;
+        JsonNode changelog = ticket.path("changelog");
+        JsonNode histories = changelog.path("histories");
+        int total = changelog.path("total").asInt(-1);
+        // Trust the inline changelog only if it's the complete history (not truncated).
+        if (histories.isArray() && total >= 0 && total <= histories.size()) {
+            owner = assigneeAtEpochFromHistories(histories, epochMs);
+        } else {
+            owner = getAssigneeAtEpoch(issueKey, epochMs);  // fetch full changelog
+        }
+
+        breachOwnerCache.put(cacheKey, owner == null ? "" : owner);
+        return owner;
+    }
+
+    /**
      * Returns the accountId of whoever was assigned to the ticket AT the given epoch time.
-     * Walks the changelog (chronological order) and returns the last assignment
-     * that occurred at or before epochMs.
-     * Returns null if changelog cannot be fetched or no assignment history exists.
+     * Fetches the per-ticket changelog (with 429 backoff) and returns the last assignment
+     * at or before epochMs. Returns null if changelog cannot be fetched or none exists.
      */
     public String getAssigneeAtEpoch(String issueKey, long epochMs) {
         String url = baseUrl() + "/rest/api/3/issue/" + issueKey + "/changelog";
         try {
-            ResponseEntity<JsonNode> response = restTemplate.exchange(
-                url, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+            ResponseEntity<JsonNode> response = getJsonWithRetry(url);
             JsonNode body = response.getBody();
             if (body == null || !body.has("values")) return null;
-
-            String result = null;
-            for (JsonNode entry : body.get("values")) {
-                String createdStr = entry.path("created").asText("");
-                if (createdStr.isEmpty()) continue;
-                long entryMs;
-                try {
-                    entryMs = java.time.OffsetDateTime.parse(createdStr)
-                                  .toInstant().toEpochMilli();
-                } catch (Exception ex) { continue; }
-
-                if (entryMs > epochMs) break; // past breach time — stop
-
-                for (JsonNode item : entry.path("items")) {
-                    if ("assignee".equals(item.path("field").asText())) {
-                        String toId = item.path("to").asText(null);
-                        if (toId != null && !toId.isBlank()) result = toId;
-                    }
-                }
-            }
-            return result;
+            return assigneeAtEpochFromHistories(body.get("values"), epochMs);
         } catch (Exception e) {
             log.warn("[{}] Could not fetch changelog for breach attribution: {}", issueKey, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Reads a changelog history array (each entry: { created, items:[{field,to}] }) and
+     * returns the accountId of the last non-null 'assignee' change at/before epochMs.
+     * Order-independent: picks the assignee change with the greatest created &lt;= epoch.
+     * Unassignment events (to == null) are ignored, matching prior behavior.
+     */
+    private String assigneeAtEpochFromHistories(JsonNode histories, long epochMs) {
+        String result = null;
+        long   bestMs = Long.MIN_VALUE;
+        for (JsonNode entry : histories) {
+            String createdStr = entry.path("created").asText("");
+            if (createdStr.isEmpty()) continue;
+            long entryMs;
+            try {
+                entryMs = java.time.OffsetDateTime.parse(createdStr).toInstant().toEpochMilli();
+            } catch (Exception ex) { continue; }
+            if (entryMs > epochMs) continue;  // change happened after the breach
+
+            for (JsonNode item : entry.path("items")) {
+                if ("assignee".equals(item.path("field").asText())) {
+                    String toId = item.path("to").asText(null);
+                    if (toId != null && !toId.isBlank() && entryMs >= bestMs) {
+                        bestMs = entryMs;
+                        result = toId;
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    /** GET returning JSON with Retry-After-aware backoff on HTTP 429 (rate limit). */
+    private ResponseEntity<JsonNode> getJsonWithRetry(String url) {
+        final int maxRetries = 3;
+        for (int attempt = 0; ; attempt++) {
+            try {
+                return restTemplate.exchange(
+                    url, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+            } catch (org.springframework.web.client.HttpClientErrorException e) {
+                if (e.getStatusCode().value() == 429 && attempt < maxRetries) {
+                    long waitMs = retryAfterMs(e);
+                    log.warn("[Jira] 429 rate limited on GET — waiting {}ms (retry {}/{})",
+                        waitMs, attempt + 1, maxRetries);
+                    sleep(waitMs);
+                } else {
+                    throw e;
+                }
+            }
+        }
+    }
+
+    /** Reads the Retry-After header (seconds) from a 429 response; defaults to 5s. */
+    private long retryAfterMs(org.springframework.web.client.HttpClientErrorException e) {
+        try {
+            String ra = (e.getResponseHeaders() != null)
+                ? e.getResponseHeaders().getFirst("Retry-After") : null;
+            if (ra != null && ra.matches("\\d+")) return Long.parseLong(ra) * 1000L;
+        } catch (Exception ignored) {}
+        return 5000L;
     }
 
     /** In-memory cache: accountId → { email, displayName }. Avoids repeated /user calls. */

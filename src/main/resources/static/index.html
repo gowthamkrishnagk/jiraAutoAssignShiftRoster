@@ -2786,6 +2786,9 @@ let slaActiveTab = 'open';  // 'open' | 'resolved'
 let slaAllData        = { open: [], resolved: [] }; // full dataset from last fetch
 let commentedTickets  = {};  // { "SAC-123": "Aria Escalation" } — from DB, persists across refresh
 let slaLoadToken = 0;       // incremented on every loadSla() call — stale responses abort
+let slaCollapsedKeys = new Set(); // person keys (email||name) the user collapsed — survives re-render
+let slaPollTimer = null;    // background auto-refresh interval handle
+const SLA_POLL_MS = 60000;  // auto-refresh cadence while the SLA tab is open & visible
 
 // Severity colour map built from real Jira data: { "Critical": {bg,color,border}, ... }
 // Populated once via /api/sla/severity-options; empty = use default grey
@@ -2818,6 +2821,24 @@ async function loadSeverityOptions() {
 
 let adminMode = false;
 
+// Background auto-refresh: re-fetch the SLA list quietly every SLA_POLL_MS while
+// the tab is open AND the browser tab is visible (paused otherwise to save calls).
+function startSlaPoll() {
+  stopSlaPoll();
+  slaPollTimer = setInterval(() => {
+    if (slaMode && activeTeam && document.visibilityState === 'visible') {
+      loadSla(true);  // quiet refresh — keeps spinner/filter/expanded state
+    }
+  }, SLA_POLL_MS);
+}
+function stopSlaPoll() {
+  if (slaPollTimer) { clearInterval(slaPollTimer); slaPollTimer = null; }
+}
+// When the user returns to the browser tab, refresh immediately so they see latest.
+document.addEventListener('visibilitychange', () => {
+  if (slaMode && activeTeam && document.visibilityState === 'visible') loadSla(true);
+});
+
 function toggleSlaMode() {
   slaMode = !slaMode;
   if (slaMode) adminMode = false;  // mutually exclusive
@@ -2831,7 +2852,9 @@ function toggleSlaMode() {
   if (slaMode) {
     initSlaCalendar();
     loadSlaConfig().then(() => loadSeverityOptions()).then(() => loadSla());
+    startSlaPoll();
   } else {
+    stopSlaPoll();
     // Returning to auto-assign — reload for the currently active team
     // (team-view-content may be stale if team was switched while in SLA mode)
     resetUpload();
@@ -2853,6 +2876,7 @@ function toggleAdminMode() {
   document.getElementById('admin-view-content').style.display = adminMode ? 'block' : 'none';
 
   if (adminMode) {
+    stopSlaPoll();   // leaving SLA view → stop background refresh
     loadAndRenderAdmin();
     loadSlaConfig();
   } else {
@@ -3011,9 +3035,10 @@ function updateMetricCards(data) {
   document.getElementById('sla-resolved-badge').textContent = resolvedCount || '0';
 }
 
-async function loadSla() {
+async function loadSla(quiet = false) {
   // Snapshot the team and claim a token — any response from a previous/stale
   // call (different token) will be silently dropped to prevent overwriting.
+  // quiet=true is a background auto-refresh: no spinner, keep filter/scroll/expanded.
   const myToken   = ++slaLoadToken;
   const teamId    = activeTeam;         // capture NOW before any awaits
   const queryDate = slaDate;            // capture date too — calendar click mid-fetch must not bleed in
@@ -3028,14 +3053,20 @@ async function loadSla() {
     return;
   }
 
-  // Reset assignee filter so stale orderfallout name doesn't bleed into SAC view
+  // Reset assignee filter so stale orderfallout name doesn't bleed into SAC view.
+  // On a quiet background refresh keep whatever the user has selected.
   const filterSel = document.getElementById('sla-assignee-filter');
-  if (filterSel) filterSel.value = '';
+  if (filterSel && !quiet) filterSel.value = '';
 
-  mainEl.innerHTML = `<div style="text-align:center;padding:48px;">
-    <div class="spin" style="margin:0 auto;width:28px;height:28px;border-width:3px;"></div>
-    <p style="margin-top:16px;color:#5e6c84;font-size:.88rem;">Fetching SLA data from Jira…</p>
-  </div>`;
+  if (quiet) {
+    const ft = document.getElementById('sla-fetch-time');
+    if (ft) ft.textContent = 'Updating…';
+  } else {
+    mainEl.innerHTML = `<div style="text-align:center;padding:48px;">
+      <div class="spin" style="margin:0 auto;width:28px;height:28px;border-width:3px;"></div>
+      <p style="margin-top:16px;color:#5e6c84;font-size:.88rem;">Fetching SLA data from Jira…</p>
+    </div>`;
+  }
 
   try {
     const url = `/api/sla?team=${encodeURIComponent(teamId)}` + (queryDate ? `&date=${encodeURIComponent(queryDate)}` : '');
@@ -3075,7 +3106,13 @@ async function loadSla() {
 
     updateMetricCards(slaAllData);
     populateAssigneeFilter([...slaAllData.open, ...slaAllData.resolved]);
-    renderSlaTabContent(slaAllData);
+    // Honor an active assignee filter (preserved across quiet auto-refresh)
+    const selKey = (filterSel && filterSel.value) ? filterSel.value : '';
+    const toRender = selKey
+      ? { open:     slaAllData.open.filter(a     => (a.email||a.name) === selKey),
+          resolved: slaAllData.resolved.filter(a => (a.email||a.name) === selKey) }
+      : slaAllData;
+    renderSlaTabContent(toRender);
 
   } catch (e) {
     if (myToken !== slaLoadToken) return; // stale error — don't overwrite newer result
@@ -3287,6 +3324,7 @@ function renderSlaTabContent(data) {
   breachedAssignees.forEach(a => {
     const name    = a.name  || a.email || 'Unknown';
     const email   = a.email || '';
+    const pkey    = email || name;   // identity for preserving collapse state
     const count   = a.tickets.length;
     const initials = avatarInitials(name);
     const bgColor  = avatarColor(name);
@@ -3312,6 +3350,7 @@ function renderSlaTabContent(data) {
       const isOpen  = chevron.classList.contains('open');
       body.style.display    = isOpen ? 'none' : '';
       chevron.classList.toggle('open', !isOpen);
+      if (isOpen) slaCollapsedKeys.add(pkey); else slaCollapsedKeys.delete(pkey);
     });
     card.appendChild(header);
 
@@ -3378,6 +3417,13 @@ function renderSlaTabContent(data) {
           }).join('')}
         </tbody>
       </table>`;
+    // Restore collapsed state (cards default open) so a quiet refresh doesn't
+    // re-expand what the user collapsed.
+    if (slaCollapsedKeys.has(pkey)) {
+      body.style.display = 'none';
+      header.querySelector('.sla-collapse-chevron').classList.remove('open');
+    }
+
     card.appendChild(body);
     mainEl.appendChild(card);
   });
