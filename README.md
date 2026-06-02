@@ -26,8 +26,8 @@ A Spring Boot web application that automatically manages Jira ticket assignments
 - **Inline Calendar** — click any past date to instantly fetch that day's resolved breaches; defaults to today
 - **Breach Attribution** — for open tickets, changelog is consulted to attribute the breach to who held the ticket at the breach time (not just current assignee)
 - **Severity Tagging** — severity labels fetched live from Jira with dynamic colour coding
-- **Breach Reason Comments** — select a pre-configured reason and post it as a Jira comment directly from the dashboard
-- **Excel Download** — download the full breach report (open + resolved) as `.xlsx`
+- **Breach Reason Comments** — select a pre-configured reason and post it as a Jira comment directly from the dashboard; reasons are retained for a rolling **45 days**
+- **Download Report** — pick a from/to range on an inline calendar (only dates with stored reasons are selectable) and export an `.xlsx` with an Overall sheet, an Open Breached snapshot, and one sheet per day
 - **Assignee Filter** — client-side filter by person across all cards
 - **Professional UI** — Tailwind CSS + custom CSS, CSS dot indicators (no emoji), SVG icons
 
@@ -150,6 +150,7 @@ Tables are created automatically on first boot — no SQL needed.
 | `assignment_log` | Audit trail of every ticket assignment |
 | `jira_config` | Jira email, API token, SLA field ID (single-row) |
 | `breach_reason` | Admin-managed list of breach reason labels |
+| `breach_comment` | Posted breach reasons per ticket; retained 45 days (daily cleanup) |
 
 Two default teams are seeded on first startup:
 
@@ -231,6 +232,8 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE jiraassign TO jiraass
 | `POST` | `/api/sla/config` | Save SLA field ID `{slaFieldId}` |
 | `POST` | `/api/sla/comment` | Post breach reason `{issueKey, reason}` |
 | `GET` | `/api/sla/severity-options` | Severity option labels in Jira order |
+| `GET` | `/api/sla/report/dates` | Distinct dates with a stored breach reason (last 45 days) |
+| `GET` | `/api/sla/report?team={id}&from=YYYY-MM-DD&to=YYYY-MM-DD` | Date-range breach report: open snapshot + per-day resolved breaches |
 
 ### Settings & Breach Reasons
 
