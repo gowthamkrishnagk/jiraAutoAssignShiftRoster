@@ -1379,6 +1379,7 @@
       Builds one Excel workbook with an <b>Overall</b> sheet for the whole range,
       an <b>Open Breached</b> snapshot, and <b>one sheet per day</b> of resolved
       SLA breaches — each ticket shown with its logged breach reason.
+      Days are limited to the range that has breach-reason data in the database.
     </div>
 
     <div class="modal-actions">
@@ -1420,17 +1421,11 @@
         </svg>
         Refresh
       </button>
-      <button class="sla-action-btn sla-download-btn" id="sla-download-btn" onclick="downloadBreachReport()">
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
-          <path d="M7.47 10.78a.75.75 0 0 0 1.06 0l3.75-3.75a.75.75 0 0 0-1.06-1.06L8.75 8.44V1.75a.75.75 0 0 0-1.5 0v6.69L4.78 5.97a.75.75 0 0 0-1.06 1.06l3.75 3.75zM2.75 13.5a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75z"/>
-        </svg>
-        Excel
-      </button>
       <button class="sla-action-btn sla-download-btn" id="sla-range-btn" onclick="openRangeModal()" title="Download a date-range breach report — one sheet per day + overall">
         <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
           <path d="M4.75 1a.75.75 0 0 1 .75.75V2h5v-.25a.75.75 0 0 1 1.5 0V2h.25A1.75 1.75 0 0 1 14 3.75v8.5A1.75 1.75 0 0 1 12.25 14h-8.5A1.75 1.75 0 0 1 2 12.25v-8.5A1.75 1.75 0 0 1 3.75 2H4v-.25A.75.75 0 0 1 4.75 1zM3.5 5.5v6.75c0 .14.11.25.25.25h8.5a.25.25 0 0 0 .25-.25V5.5h-9z"/>
         </svg>
-        Report
+        Download Report
       </button>
       <span id="sla-fetch-time" class="sla-hint"></span>
     </div>
@@ -3407,22 +3402,6 @@ function safeSheetName(name) {
   return s.length > 31 ? s.slice(0, 31) : s;
 }
 
-function downloadBreachReport() {
-  if (!slaAllData || (!slaAllData.open.length && !slaAllData.resolved.length)) {
-    alert('No data to download. Please load the SLA report first.');
-    return;
-  }
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, slaSheet(slaAllData.open),     'Open Breached');
-  XLSX.utils.book_append_sheet(wb, slaSheet(slaAllData.resolved), 'Resolved Breached');
-
-  // File name: BreachReport_TeamName_YYYY-MM-DD.xlsx
-  const team    = (activeTeam ? (teams.find(t => t.id === activeTeam) || {}).name || activeTeam : 'All');
-  const dateStr = slaDate || todayISO();
-  XLSX.writeFile(wb, `BreachReport_${team}_${dateStr}.xlsx`);
-}
-
 // ---- Date-range breach report (one sheet per day + Open + Overall) ----
 
 function openRangeModal() {
@@ -3484,6 +3463,7 @@ async function downloadRangeReport() {
 
     const team = (teams.find(t => t.id === activeTeam) || {}).name || activeTeam;
     XLSX.writeFile(wb, `SLA_BreachReport_${team}_${data.from}_to_${data.to}.xlsx`);
+    if (data.note) alert(data.note);
     closeRangeModal();
   } catch (e) {
     errEl.textContent = 'Error: ' + e.message;

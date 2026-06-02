@@ -195,23 +195,44 @@ public class SlaController {
         if (toDate.isBefore(fromDate))
             return ResponseEntity.badRequest().body(Map.of("error", "'To' date is before 'From' date."));
 
-        long span = toDate.toEpochDay() - fromDate.toEpochDay() + 1;
+        // Breach reasons drive the report window. Reasons are wiped on the 1st of each
+        // month, so the DB only holds recent ones — we emit day sheets only for the
+        // dates we actually have reason data for (by commentedAt timestamp).
+        List<BreachComment> comments = commentRepo.findAll();
+        if (comments.isEmpty())
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", "No breach reason data in the database yet."));
+
+        Map<String, String> commentedTickets = new LinkedHashMap<>();
+        LocalDate minReason = null, maxReason = null;
+        for (BreachComment bc : comments) {
+            commentedTickets.put(bc.getIssueKey(), bc.getReason());
+            LocalDate d = bc.getCommentedAt().toLocalDate();
+            if (minReason == null || d.isBefore(minReason)) minReason = d;
+            if (maxReason == null || d.isAfter(maxReason))  maxReason = d;
+        }
+
+        // Clamp the requested range to the dates the DB has reasons for.
+        LocalDate effFrom = fromDate.isBefore(minReason) ? minReason : fromDate;
+        LocalDate effTo   = toDate.isAfter(maxReason)    ? maxReason : toDate;
+        if (effTo.isBefore(effFrom))
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "No breach reason data in the selected range. "
+                       + "Reasons are available " + minReason + " to " + maxReason + "."));
+
+        long span = effTo.toEpochDay() - effFrom.toEpochDay() + 1;
         if (span > 92)
             return ResponseEntity.badRequest()
                 .body(Map.of("error", "Range too large (" + span + " days). Maximum is 92 days."));
 
         String sevKey = jiraClient.discoverSeverityFieldKey();
 
-        // Breach reasons (same DB source as the live dashboard) — { "SAC-123": "Reason" }
-        Map<String, String> commentedTickets = new LinkedHashMap<>();
-        commentRepo.findAll().forEach(bc -> commentedTickets.put(bc.getIssueKey(), bc.getReason()));
-
         // Open breaches — point-in-time snapshot, attributed to who held the ticket at breach time
         List<JsonNode> openBreached = jiraClient.getOpenSlaTickets(t.getJql(), fieldId);
 
-        // One block per calendar day: resolved/closed breaches updated that day
+        // One block per calendar day in the clamped range: resolved/closed breaches updated that day
         List<Map<String, Object>> dayBlocks = new ArrayList<>();
-        for (LocalDate d = fromDate; !d.isAfter(toDate); d = d.plusDays(1)) {
+        for (LocalDate d = effFrom; !d.isAfter(effTo); d = d.plusDays(1)) {
             List<JsonNode> resolved = jiraClient.getResolvedSlaTickets(t.getJql(), fieldId, d.toString());
             Map<String, Object> block = new LinkedHashMap<>();
             block.put("date",     d.toString());
@@ -219,12 +240,18 @@ public class SlaController {
             dayBlocks.add(block);
         }
 
-        log.info("[SLA] Report team={} {}..{} ({} days) open={} ",
-            team, fromDate, toDate, span, openBreached.size());
+        boolean clamped = !effFrom.equals(fromDate) || !effTo.equals(toDate);
+        log.info("[SLA] Report team={} requested {}..{} effective {}..{} ({} days) open={}",
+            team, fromDate, toDate, effFrom, effTo, span, openBreached.size());
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("from",             fromDate.toString());
-        result.put("to",               toDate.toString());
+        result.put("from",             effFrom.toString());
+        result.put("to",               effTo.toString());
+        result.put("reasonDataFrom",   minReason.toString());
+        result.put("reasonDataTo",     maxReason.toString());
+        if (clamped)
+            result.put("note", "Range adjusted to the dates with breach-reason data ("
+                             + minReason + " to " + maxReason + ").");
         result.put("open",             groupByBreachOwner(openBreached, fieldId, sevKey, true));
         result.put("days",             dayBlocks);
         result.put("commentedTickets", commentedTickets);
