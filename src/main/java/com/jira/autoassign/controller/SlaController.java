@@ -196,8 +196,10 @@ public class SlaController {
             return ResponseEntity.badRequest().body(Map.of("error", "'To' date is before 'From' date."));
 
         // Breach reasons drive the report window. Reasons are wiped on the 1st of each
-        // month, so the DB only holds recent ones — we emit day sheets only for the
-        // dates we actually have reason data for (by commentedAt timestamp).
+        // month, so the DB only holds recent ones. We clamp the range to the FIRST and
+        // LAST logged reason date (by commentedAt). Every day in between is still
+        // emitted — including gap days where nobody logged a reason (those just show
+        // breached tickets with blank reason cells), so no dates are skipped.
         List<BreachComment> comments = commentRepo.findAll();
         if (comments.isEmpty())
             return ResponseEntity.badRequest()
@@ -212,7 +214,8 @@ public class SlaController {
             if (maxReason == null || d.isAfter(maxReason))  maxReason = d;
         }
 
-        // Clamp the requested range to the dates the DB has reasons for.
+        // Clamp only the two ends to the first/last logged reason — the span in
+        // between (gap days included) is reported in full.
         LocalDate effFrom = fromDate.isBefore(minReason) ? minReason : fromDate;
         LocalDate effTo   = toDate.isAfter(maxReason)    ? maxReason : toDate;
         if (effTo.isBefore(effFrom))
@@ -250,8 +253,9 @@ public class SlaController {
         result.put("reasonDataFrom",   minReason.toString());
         result.put("reasonDataTo",     maxReason.toString());
         if (clamped)
-            result.put("note", "Range adjusted to the dates with breach-reason data ("
-                             + minReason + " to " + maxReason + ").");
+            result.put("note", "Range adjusted to the logged breach-reason window — first reason "
+                             + minReason + " to last reason " + maxReason
+                             + ". All days in between are included.");
         result.put("open",             groupByBreachOwner(openBreached, fieldId, sevKey, true));
         result.put("days",             dayBlocks);
         result.put("commentedTickets", commentedTickets);

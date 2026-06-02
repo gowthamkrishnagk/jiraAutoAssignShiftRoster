@@ -1379,7 +1379,8 @@
       Builds one Excel workbook with an <b>Overall</b> sheet for the whole range,
       an <b>Open Breached</b> snapshot, and <b>one sheet per day</b> of resolved
       SLA breaches — each ticket shown with its logged breach reason.
-      Days are limited to the range that has breach-reason data in the database.
+      Days run from the first to the last logged breach reason; in-between days
+      with no reason are still included.
     </div>
 
     <div class="modal-actions">
