@@ -1137,13 +1137,13 @@
     .rpt-cal-day.rpt-avail { background:#bcd6ff; color:#13388f; font-weight:700; cursor:pointer; }
     .rpt-cal-day.rpt-avail:hover { background:#9dc1ff; }
     /* selected range — green (endpoints + in-between, incl. gap days) */
-    .rpt-cal-day.rpt-sel       { background:#16a34a; color:#fff; font-weight:700; cursor:pointer; }
+    .rpt-cal-day.rpt-sel       { background:#86efac; color:#14532d; font-weight:700; cursor:pointer; }
     .rpt-cal-day.rpt-sel.rpt-na{ cursor:not-allowed; }
-    .rpt-cal-day.rpt-sel-edge  { box-shadow:0 0 0 2px #14532d inset; }
+    .rpt-cal-day.rpt-sel-edge  { box-shadow:0 0 0 2px #16a34a inset; }
     .rpt-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:9px; font-size:.7rem; color:#6b7280; }
     .rpt-sw { display:inline-block; width:11px; height:11px; border-radius:3px; vertical-align:-1px; margin-right:4px; }
     .rpt-sw-avail { background:#bcd6ff; border:1px solid #1d4ed8; }
-    .rpt-sw-sel   { background:#16a34a; }
+    .rpt-sw-sel   { background:#86efac; border:1px solid #16a34a; }
     .rpt-sw-na    { background:#f3f4f6; border:1px solid #d1d5db; }
     .rpt-range-summary { font-size:.78rem; color:#172b4d; margin-top:9px; font-weight:600; }
   </style>
@@ -3533,7 +3533,8 @@ function renderReportCal() {
     } else {
       const avail   = reportDateSet.has(ds);
       const inRange = reportFrom && reportTo && ds >= reportFrom && ds <= reportTo;
-      if (inRange) {
+      const fromOnly = reportFrom && !reportTo && ds === reportFrom;  // start picked, end pending
+      if (inRange || fromOnly) {
         btn.classList.add('rpt-sel');
         if (!avail) btn.classList.add('rpt-na');   // gap day inside range
         if (ds === reportFrom || ds === reportTo) btn.classList.add('rpt-sel-edge');
