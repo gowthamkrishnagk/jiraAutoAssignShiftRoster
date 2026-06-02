@@ -1360,6 +1360,34 @@
   </div>
 </div>
 
+<!-- SLA Range Report Modal -->
+<div class="modal-backdrop" id="sla-range-modal" onclick="if(event.target===this)closeRangeModal()">
+  <div class="modal-box" style="max-width:420px;">
+    <div class="modal-title">📊 Download SLA Breach Report</div>
+    <div class="modal-err" id="sla-range-err"></div>
+
+    <div class="modal-field">
+      <label>From Date</label>
+      <input type="date" id="sla-range-from" />
+    </div>
+    <div class="modal-field">
+      <label>To Date</label>
+      <input type="date" id="sla-range-to" />
+    </div>
+
+    <div class="modal-hint">
+      Builds one Excel workbook with an <b>Overall</b> sheet for the whole range,
+      an <b>Open Breached</b> snapshot, and <b>one sheet per day</b> of resolved
+      SLA breaches — each ticket shown with its logged breach reason.
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" id="sla-range-download-btn" onclick="downloadRangeReport()">Download Excel</button>
+      <button class="btn-cancel" onclick="closeRangeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============================================================ -->
 <!-- SLA DASHBOARD (hidden until SLA mode is toggled)          -->
 <!-- ============================================================ -->
@@ -1397,6 +1425,12 @@
           <path d="M7.47 10.78a.75.75 0 0 0 1.06 0l3.75-3.75a.75.75 0 0 0-1.06-1.06L8.75 8.44V1.75a.75.75 0 0 0-1.5 0v6.69L4.78 5.97a.75.75 0 0 0-1.06 1.06l3.75 3.75zM2.75 13.5a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75z"/>
         </svg>
         Excel
+      </button>
+      <button class="sla-action-btn sla-download-btn" id="sla-range-btn" onclick="openRangeModal()" title="Download a date-range breach report — one sheet per day + overall">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+          <path d="M4.75 1a.75.75 0 0 1 .75.75V2h5v-.25a.75.75 0 0 1 1.5 0V2h.25A1.75 1.75 0 0 1 14 3.75v8.5A1.75 1.75 0 0 1 12.25 14h-8.5A1.75 1.75 0 0 1 2 12.25v-8.5A1.75 1.75 0 0 1 3.75 2H4v-.25A.75.75 0 0 1 4.75 1zM3.5 5.5v6.75c0 .14.11.25.25.25h8.5a.25.25 0 0 0 .25-.25V5.5h-9z"/>
+        </svg>
+        Report
       </button>
       <span id="sla-fetch-time" class="sla-hint"></span>
     </div>
@@ -3307,75 +3341,156 @@ function avatarColor(name) {
 }
 
 // ---- Excel download ----
+
+// Shared column layout for every breach-export sheet.
+const SLA_EXPORT_COLS = ['Assignee', 'Email', 'Ticket', 'Summary', 'Ticket Status',
+                         'Severity', 'SLA Status', 'Remaining / Completed At',
+                         'Breach Time', 'Reassigned To', 'Breach Reason'];
+
+function slaStatusLabel(sla) {
+  if (!sla || !sla.available) return 'N/A';
+  switch (sla.status) {
+    case 'breached':           return 'Breached (Open)';
+    case 'completed_breached': return 'Breached (Resolved)';
+    case 'paused':             return 'Paused';
+    case 'ongoing':            return 'Ongoing';
+    case 'completed':          return 'Met';
+    default:                   return sla.status || 'N/A';
+  }
+}
+
+// Flatten an assignee-grouped list into export rows (no header). commentedMap maps
+// ticket key → breach reason; falls back to the global commentedTickets if omitted.
+function slaRowsBody(assignees, commentedMap) {
+  const reasons = commentedMap || commentedTickets;
+  const rows = [];
+  (assignees || []).forEach(a => {
+    (a.tickets || []).forEach(t => {
+      const sla = t.sla || {};
+      const timeCol = sla.remaining   ? sla.remaining
+                    : sla.completedAt ? sla.completedAt
+                    : '';
+      rows.push([
+        a.name  || '',
+        a.email || '',
+        t.key          || '',
+        t.summary      || '',
+        t.status       || '',
+        t.severity     || '',
+        slaStatusLabel(sla),
+        timeCol,
+        sla.breachTime || '',
+        t.reassignedTo || '',
+        reasons[t.key] || ''
+      ]);
+    });
+  });
+  return rows;
+}
+
+// Build a styled worksheet (header + rows) from one or more assignee lists.
+function slaSheet(assigneeLists, commentedMap) {
+  const lists = Array.isArray(assigneeLists) && Array.isArray(assigneeLists[0])
+              ? assigneeLists            // array of lists → merge
+              : [assigneeLists || []];   // single list
+  let body = [];
+  lists.forEach(list => { body = body.concat(slaRowsBody(list, commentedMap)); });
+  const rows = [SLA_EXPORT_COLS, ...body];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  styleSheet(ws, SLA_EXPORT_COLS.length);
+  return ws;
+}
+
+// Excel sheet names cap at 31 chars and forbid : \ / ? * [ ]
+function safeSheetName(name) {
+  const s = String(name).replace(/[\\\/\?\*\[\]:]/g, '-');
+  return s.length > 31 ? s.slice(0, 31) : s;
+}
+
 function downloadBreachReport() {
   if (!slaAllData || (!slaAllData.open.length && !slaAllData.resolved.length)) {
     alert('No data to download. Please load the SLA report first.');
     return;
   }
 
-  const COLS = ['Assignee', 'Email', 'Ticket', 'Summary', 'Ticket Status',
-                'Severity', 'SLA Status', 'Remaining / Completed At',
-                'Breach Time', 'Reassigned To', 'Breach Reason'];
-
-  function slaStatusLabel(sla) {
-    if (!sla || !sla.available) return 'N/A';
-    switch (sla.status) {
-      case 'breached':           return 'Breached (Open)';
-      case 'completed_breached': return 'Breached (Resolved)';
-      case 'paused':             return 'Paused';
-      case 'ongoing':            return 'Ongoing';
-      case 'completed':          return 'Met';
-      default:                   return sla.status || 'N/A';
-    }
-  }
-
-  function toRows(assignees) {
-    const rows = [COLS];
-    (assignees || []).forEach(a => {
-      (a.tickets || []).forEach(t => {
-        const sla = t.sla || {};
-        const timeCol = sla.remaining    ? sla.remaining
-                      : sla.completedAt  ? sla.completedAt
-                      : '';
-        const breachCol = sla.breachTime || '';
-        rows.push([
-          a.name  || '',
-          a.email || '',
-          t.key        || '',
-          t.summary    || '',
-          t.status     || '',
-          t.severity   || '',
-          slaStatusLabel(sla),
-          timeCol,
-          breachCol,
-          t.reassignedTo || '',
-          commentedTickets[t.key] || ''
-        ]);
-      });
-    });
-    return rows;
-  }
-
   const wb = XLSX.utils.book_new();
-
-  // Sheet 1 — Open breached
-  const openRows = toRows(slaAllData.open);
-  const ws1 = XLSX.utils.aoa_to_sheet(openRows);
-  styleSheet(ws1, openRows[0].length);
-  XLSX.utils.book_append_sheet(wb, ws1, 'Open Breached');
-
-  // Sheet 2 — Resolved breached
-  const resolvedRows = toRows(slaAllData.resolved);
-  const ws2 = XLSX.utils.aoa_to_sheet(resolvedRows);
-  styleSheet(ws2, resolvedRows[0].length);
-  XLSX.utils.book_append_sheet(wb, ws2, 'Resolved Breached');
+  XLSX.utils.book_append_sheet(wb, slaSheet(slaAllData.open),     'Open Breached');
+  XLSX.utils.book_append_sheet(wb, slaSheet(slaAllData.resolved), 'Resolved Breached');
 
   // File name: BreachReport_TeamName_YYYY-MM-DD.xlsx
-  const team     = (activeTeam ? (teams.find(t => t.id === activeTeam) || {}).name || activeTeam : 'All');
-  const dateStr  = slaDate || todayISO();
-  const fileName = `BreachReport_${team}_${dateStr}.xlsx`;
+  const team    = (activeTeam ? (teams.find(t => t.id === activeTeam) || {}).name || activeTeam : 'All');
+  const dateStr = slaDate || todayISO();
+  XLSX.writeFile(wb, `BreachReport_${team}_${dateStr}.xlsx`);
+}
 
-  XLSX.writeFile(wb, fileName);
+// ---- Date-range breach report (one sheet per day + Open + Overall) ----
+
+function openRangeModal() {
+  if (!activeTeam) { alert('Select a team first.'); return; }
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  document.getElementById('sla-range-from').value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+  document.getElementById('sla-range-to').value   = slaDate || todayISO();
+  document.getElementById('sla-range-err').textContent = '';
+  document.getElementById('sla-range-modal').style.display = 'flex';
+}
+
+function closeRangeModal() {
+  document.getElementById('sla-range-modal').style.display = 'none';
+}
+
+async function downloadRangeReport() {
+  const from  = document.getElementById('sla-range-from').value;
+  const to    = document.getElementById('sla-range-to').value;
+  const errEl = document.getElementById('sla-range-err');
+  errEl.textContent = '';
+
+  if (!activeTeam)   { errEl.textContent = 'Select a team first.'; return; }
+  if (!from || !to)  { errEl.textContent = 'Pick both From and To dates.'; return; }
+  if (from > to)     { errEl.textContent = "'From' date must be on or before 'To' date."; return; }
+
+  const btn  = document.getElementById('sla-range-download-btn');
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  try {
+    const res  = await fetch(`/api/sla/report?team=${encodeURIComponent(activeTeam)}`
+                           + `&from=${from}&to=${to}`);
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      errEl.textContent = data.error === 'sla_not_configured'
+        ? 'SLA field is not configured yet (set it in the Admin tab).'
+        : (data.error || 'Failed to generate report.');
+      return;
+    }
+
+    const reasons = data.commentedTickets || {};
+    const days    = data.days || [];
+    const wb      = XLSX.utils.book_new();
+
+    // Overall — every resolved breach across the whole range
+    const allResolved = days.map(d => d.resolved || []);
+    XLSX.utils.book_append_sheet(wb, slaSheet(allResolved, reasons),
+      safeSheetName(`Overall ${data.from}_${data.to}`));
+
+    // Open breached snapshot (point-in-time, not per-day)
+    XLSX.utils.book_append_sheet(wb, slaSheet(data.open || [], reasons), 'Open Breached');
+
+    // One sheet per day — empty days still get a header-only sheet
+    days.forEach(d => {
+      XLSX.utils.book_append_sheet(wb, slaSheet(d.resolved || [], reasons),
+        safeSheetName(d.date));
+    });
+
+    const team = (teams.find(t => t.id === activeTeam) || {}).name || activeTeam;
+    XLSX.writeFile(wb, `SLA_BreachReport_${team}_${data.from}_to_${data.to}.xlsx`);
+    closeRangeModal();
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
 }
 
 // Apply column widths, bold headers with fill, and borders to all cells

@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.*;
 
 /**
@@ -150,6 +151,82 @@ public class SlaController {
         // Resolved: skip attribution — too many tickets; use current assignee
         result.put("open",             groupByBreachOwner(openBreached,     fieldId, sevKey, true));
         result.put("resolved",         groupByBreachOwner(resolvedBreached, fieldId, sevKey, false));
+        result.put("commentedTickets", commentedTickets);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Date-range breach report — backs the "Download SLA Report" Excel export.
+     *
+     * GET /api/sla/report?team={id}&from=YYYY-MM-DD&to=YYYY-MM-DD
+     *
+     * Returns:
+     *   {
+     *     "from": "...", "to": "...",
+     *     "open":  [ ...grouped open breached snapshot... ],   // point-in-time, not per-day
+     *     "days":  [ { "date": "YYYY-MM-DD", "resolved": [ ...grouped... ] }, ... ],
+     *     "commentedTickets": { "SAC-123": "Aria Escalation", ... }
+     *   }
+     *
+     * One Jira search per day in the range (resolved/closed breaches scoped to that
+     * calendar day by `updated` date), plus one snapshot query for open breaches.
+     * The frontend turns this into one sheet per day + an Open Breached sheet +
+     * an Overall sheet for the whole range.
+     */
+    @GetMapping("/sla/report")
+    public ResponseEntity<?> getSlaReport(@RequestParam String team,
+                                          @RequestParam String from,
+                                          @RequestParam String to) {
+
+        Team t = teamRepository.findById(team).orElse(null);
+        if (t == null) return ResponseEntity.notFound().build();
+
+        String fieldId = configService.getSlaFieldId();
+        if (fieldId == null || fieldId.isBlank())
+            return ResponseEntity.ok(Map.of("error", "sla_not_configured"));
+
+        LocalDate fromDate, toDate;
+        try {
+            fromDate = LocalDate.parse(from);   // expects YYYY-MM-DD
+            toDate   = LocalDate.parse(to);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid date — use YYYY-MM-DD."));
+        }
+        if (toDate.isBefore(fromDate))
+            return ResponseEntity.badRequest().body(Map.of("error", "'To' date is before 'From' date."));
+
+        long span = toDate.toEpochDay() - fromDate.toEpochDay() + 1;
+        if (span > 92)
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", "Range too large (" + span + " days). Maximum is 92 days."));
+
+        String sevKey = jiraClient.discoverSeverityFieldKey();
+
+        // Breach reasons (same DB source as the live dashboard) — { "SAC-123": "Reason" }
+        Map<String, String> commentedTickets = new LinkedHashMap<>();
+        commentRepo.findAll().forEach(bc -> commentedTickets.put(bc.getIssueKey(), bc.getReason()));
+
+        // Open breaches — point-in-time snapshot, attributed to who held the ticket at breach time
+        List<JsonNode> openBreached = jiraClient.getOpenSlaTickets(t.getJql(), fieldId);
+
+        // One block per calendar day: resolved/closed breaches updated that day
+        List<Map<String, Object>> dayBlocks = new ArrayList<>();
+        for (LocalDate d = fromDate; !d.isAfter(toDate); d = d.plusDays(1)) {
+            List<JsonNode> resolved = jiraClient.getResolvedSlaTickets(t.getJql(), fieldId, d.toString());
+            Map<String, Object> block = new LinkedHashMap<>();
+            block.put("date",     d.toString());
+            block.put("resolved", groupByBreachOwner(resolved, fieldId, sevKey, false));
+            dayBlocks.add(block);
+        }
+
+        log.info("[SLA] Report team={} {}..{} ({} days) open={} ",
+            team, fromDate, toDate, span, openBreached.size());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("from",             fromDate.toString());
+        result.put("to",               toDate.toString());
+        result.put("open",             groupByBreachOwner(openBreached, fieldId, sevKey, true));
+        result.put("days",             dayBlocks);
         result.put("commentedTickets", commentedTickets);
         return ResponseEntity.ok(result);
     }
