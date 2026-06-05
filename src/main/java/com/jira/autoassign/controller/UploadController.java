@@ -311,8 +311,11 @@ public class UploadController {
      */
     private static void putCover(Map<String, Object> m, ShiftRoster s) {
         boolean covered = s.getCoverEmail() != null && !s.getCoverEmail().isBlank();
-        m.put("covered",   covered);
-        m.put("coverName", covered ? ShiftAssignService.displayNameFromEmail(s.getCoverEmail()) : null);
+        m.put("covered",    covered);
+        m.put("coverEmail", covered ? s.getCoverEmail() : null);
+        m.put("coverName",  covered ? ShiftAssignService.displayNameFromEmail(s.getCoverEmail()) : null);
+        // Display name of the actual shift owner (what the UI shows as the row title).
+        m.put("ownerName",  ShiftAssignService.displayNameFromEmail(s.getEmail()));
     }
 
     /** Identity for deduping shift rows in the Today panel: same person + same shift window. */

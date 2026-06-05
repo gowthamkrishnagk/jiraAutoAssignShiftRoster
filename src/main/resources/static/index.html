@@ -251,6 +251,10 @@
     .ts-dot-upcoming { background: #0052cc; }
     .ts-info { flex: 1; min-width: 0; }
     .ts-email { font-weight: 600; font-size: .88rem; }
+    .ts-uses  { font-size: .74rem; color: #5e6c84; margin-top: 1px; }
+    .ts-uses .ts-uses-label { color: #97a0af; }
+    .ts-uses .ts-uses-email { font-weight: 600; color: #42526e; }
+    .ts-uses.is-cover .ts-uses-email { color: #6d28d9; }
     .ts-time  { font-size: .76rem; color: #5e6c84; margin-top: 1px; }
     .ts-badge {
       font-size: .68rem; font-weight: 700; padding: 2px 8px;
@@ -2508,10 +2512,13 @@ function renderTodayShift(rows) {
     if (!items.length) return '';
     let s = `<div class="ts-section-label">${label}</div>`;
     items.forEach(r => {
+      const ownerName = r.ownerName || nameFromEmail(r.email);
+      const usesEmail = r.covered ? (r.coverEmail || r.email) : r.email;
       s += `<div class="ts-card ${cardCls}">
         <span class="ts-status-dot ${dotCls}"></span>
         <div class="ts-info">
-          <div class="ts-email">${tick ? '✓ ' : ''}${esc(r.email)}${r.covered ? `<span class="ts-cover-badge" title="Tickets are routed to a cover; ${esc(r.coverName||'someone')} is covering">🛡 covered</span>` : ''}</div>
+          <div class="ts-email">${tick ? '✓ ' : ''}${esc(ownerName)}${r.covered ? `<span class="ts-cover-badge" title="On shift: ${esc(ownerName)} — tickets handled by ${esc(usesEmail)}">🛡 covered</span>` : ''}</div>
+          <div class="ts-uses${r.covered ? ' is-cover' : ''}"><span class="ts-uses-label">uses: </span><span class="ts-uses-email">${esc(usesEmail)}</span></div>
           <div class="ts-time">${r.start} – ${r.end}</div>
         </div>
         <span class="ts-badge ${badgeCls}">${badgeText}</span>
