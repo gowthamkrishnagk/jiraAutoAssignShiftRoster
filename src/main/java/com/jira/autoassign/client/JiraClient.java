@@ -28,6 +28,9 @@ public class JiraClient {
     /** Cached after first successful discovery — avoids repeated /rest/api/3/field calls. */
     private volatile String severityFieldKey = null;
 
+    /** Cached accountId of the API-token owner — i.e. this app's own Jira identity. */
+    private volatile String myAccountId = null;
+
     /**
      * Breach-owner attribution cache, keyed by "issueKey@breachEpochMs".
      * A ticket's changelog up to a *past* breach instant never changes, so this is
@@ -90,6 +93,32 @@ public class JiraClient {
     // -----------------------------------------------------------------------
     // User lookup
     // -----------------------------------------------------------------------
+
+    /**
+     * Returns the accountId of the API-token owner — this app's own Jira identity.
+     * Lets callers tell the app's own assignments apart from a human's manual
+     * reassignment. Cached for the lifetime of the app; null if it can't be resolved.
+     */
+    public String getMyAccountId() {
+        if (myAccountId != null) return myAccountId;
+        try {
+            ResponseEntity<JsonNode> resp = restTemplate.exchange(
+                baseUrl() + "/rest/api/3/myself",
+                HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+            JsonNode body = resp.getBody();
+            if (body != null) {
+                String id = body.path("accountId").asText(null);
+                if (id != null && !id.isBlank()) {
+                    myAccountId = id;
+                    log.info("[Jira] App identity accountId: {}", id);
+                    return myAccountId;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[Jira] Could not resolve app's own accountId via /myself: {}", e.getMessage());
+        }
+        return null;
+    }
 
     public String getAccountId(String email) {
         String url = UriComponentsBuilder
@@ -548,6 +577,39 @@ public class JiraClient {
             }
         } catch (Exception e) {
             log.warn("Could not fetch changelog for {}: {}", issueKey, e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Returns the accountId of whoever made the most recent assignee change on the ticket
+     * (the changelog author), or null if there is no assignee history or it can't be read.
+     * Lets the sweep tell the app's own assignments apart from a human's manual reassignment.
+     */
+    public String getLastAssigneeChangeAuthor(String issueKey) {
+        String url = baseUrl() + "/rest/api/3/issue/" + issueKey + "/changelog";
+        try {
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                url, HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+
+            JsonNode body = response.getBody();
+            if (body == null || !body.has("values")) return null;
+
+            List<JsonNode> entries = new ArrayList<>();
+            body.get("values").forEach(entries::add);
+            Collections.reverse(entries); // most recent first
+
+            for (JsonNode entry : entries) {
+                if (!entry.has("items")) continue;
+                for (JsonNode item : entry.get("items")) {
+                    if ("assignee".equals(item.path("field").asText())) {
+                        String author = entry.path("author").path("accountId").asText(null);
+                        return (author != null && !author.isBlank()) ? author : null;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not fetch changelog author for {}: {}", issueKey, e.getMessage());
         }
         return null;
     }

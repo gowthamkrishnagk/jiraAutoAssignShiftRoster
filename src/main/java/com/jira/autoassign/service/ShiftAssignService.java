@@ -342,6 +342,11 @@ public class ShiftAssignService {
         // Collect ALL reassignments across every off-shift person → one batched webhook
         List<Map<String, String>> allReassigned = new ArrayList<>();
 
+        // This app's own Jira identity — used to tell its own assignments apart from a
+        // human's manual reassignment. Null (e.g. /myself failed) disables the guard,
+        // falling back to the previous always-sweep behavior.
+        String appAccountId = jiraClient.getMyAccountId();
+
         for (String offEmail : offShiftEmails) {
             try {
                 String offAccountId = jiraClient.getAccountId(offEmail);
@@ -354,6 +359,20 @@ public class ShiftAssignService {
                 for (JsonNode ticket : theirTickets) {
                     String issueKey = ticket.get("key").asText();
                     String summary  = ticket.get("fields").path("summary").asText("");
+
+                    // Respect manual reassignments: if a human (any account other than this
+                    // app's own) last moved this ticket onto the off-shift person, leave it
+                    // there instead of sweeping it back. Otherwise the app and the human
+                    // ping-pong the assignee every tick — re-firing the Teams webhook each
+                    // time. The app's own handover assignments (author == app) still sweep.
+                    if (appAccountId != null) {
+                        String lastAuthor = jiraClient.getLastAssigneeChangeAuthor(issueKey);
+                        if (lastAuthor != null && !lastAuthor.equals(appAccountId)) {
+                            log.info("[{}] [{}] last reassigned manually (author {} ≠ app) — leaving with {}",
+                                teamName, issueKey, lastAuthor, offEmail);
+                            continue;
+                        }
+                    }
 
                     if (team.isDryRun()) {
                         if (!workIds.isEmpty()) {
