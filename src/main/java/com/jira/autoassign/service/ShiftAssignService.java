@@ -318,10 +318,22 @@ public class ShiftAssignService {
         // --- Step 3: reassign off-shift people's tickets to active shift ---
         // Paused people are excluded: they are still on shift, just temporarily paused —
         // don't reassign their tickets while they are paused.
+        //
+        // Active swap/cover targets are also excluded: a swap deliberately routes the
+        // rostered owner's tickets to a substitute, so for the duration of that shift the
+        // substitute is effectively on duty today. Treating them as "off-shift" here would
+        // let the sweep claw those tickets straight back — undoing the swap within a tick.
+        // (The rostered owner remains the displayed/credited assignee; only the receiving
+        // email changes.)
+        Set<String> activeCoverTargets = coverByOwner.values().stream()
+            .map(c -> c.toLowerCase().trim())
+            .collect(Collectors.toSet());
+
         List<String> allRosterEmails = repository.findAllEmailsInRange(teamId, today, yesterday);
         List<String> offShiftEmails  = allRosterEmails.stream()
             .filter(e -> !activeEmails.contains(e))
             .filter(e -> !paused.contains(e))
+            .filter(e -> !activeCoverTargets.contains(e.toLowerCase().trim()))
             .collect(Collectors.toList());
 
         log.info("[{}] Off-shift sweep — people to check: {}",
