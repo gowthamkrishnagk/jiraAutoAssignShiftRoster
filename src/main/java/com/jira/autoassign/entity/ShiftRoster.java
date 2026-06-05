@@ -30,6 +30,14 @@ public class ShiftRoster {
     @Column(name = "shift_end", nullable = false)
     private LocalTime shiftEnd;
 
+    /**
+     * Optional "cover" substitute. When set, the owner ({@link #email}) is still
+     * displayed and logged, but tickets are actually assigned to this person in Jira
+     * (used when the owner's Jira account is locked). Null = no cover.
+     */
+    @Column(name = "cover_email")
+    private String coverEmail;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -45,6 +53,8 @@ public class ShiftRoster {
     public void setShiftStart(LocalTime v)   { this.shiftStart = v; }
     public LocalTime getShiftEnd()           { return shiftEnd; }
     public void setShiftEnd(LocalTime v)     { this.shiftEnd = v; }
+    public String getCoverEmail()            { return coverEmail; }
+    public void setCoverEmail(String v)      { this.coverEmail = v; }
     public LocalDateTime getCreatedAt()      { return createdAt; }
     public void setCreatedAt(LocalDateTime v){ this.createdAt = v; }
 }

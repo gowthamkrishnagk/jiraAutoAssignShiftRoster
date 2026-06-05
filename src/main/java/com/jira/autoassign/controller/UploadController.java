@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -265,6 +266,7 @@ public class UploadController {
                 m.put("end",   s.getShiftEnd().toString());
                 // Definitely started (it started yesterday); check only pause state
                 m.put("status", paused.contains(s.getEmail().toLowerCase().trim()) ? "break" : "active");
+                putCover(m, s);
                 result.add(m);
             }
         }
@@ -295,11 +297,22 @@ public class UploadController {
                 status = "active";
             }
             m.put("status", status);
+            putCover(m, s);
             result.add(m);
         }
 
         result.sort(Comparator.comparingInt(m -> statusOrder((String) m.get("status"))));
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Adds cover state to a Today-panel row. The substitute's email is never exposed —
+     * only a boolean and the substitute's display name (for the manage-cover dialog).
+     */
+    private static void putCover(Map<String, Object> m, ShiftRoster s) {
+        boolean covered = s.getCoverEmail() != null && !s.getCoverEmail().isBlank();
+        m.put("covered",   covered);
+        m.put("coverName", covered ? ShiftAssignService.displayNameFromEmail(s.getCoverEmail()) : null);
     }
 
     /** Identity for deduping shift rows in the Today panel: same person + same shift window. */
@@ -328,6 +341,62 @@ public class UploadController {
         try {
             shiftAssignService.removeShiftRow(id, teamId);
             return ResponseEntity.ok(Map.of("removed", true, "id", id));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Add a single shift row for today (used by "Add to today's shift")
+    // -----------------------------------------------------------------------
+
+    @PostMapping("/shift/add")
+    public ResponseEntity<?> addShiftRow(@RequestBody Map<String, Object> body) {
+        Object rawEmail = body.get("email");
+        Object rawStart = body.get("start");
+        Object rawEnd   = body.get("end");
+        Object rawTeam  = body.get("teamId");
+
+        if (rawEmail == null || rawEmail.toString().isBlank())
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing 'email'"));
+        if (rawStart == null || rawEnd == null)
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing 'start' or 'end'"));
+
+        String teamId = rawTeam != null ? rawTeam.toString() : "orderfallout";
+        try {
+            LocalTime start = LocalTime.parse(rawStart.toString());
+            LocalTime end   = LocalTime.parse(rawEnd.toString());
+            Map<String, Object> result =
+                shiftAssignService.addShiftRow(teamId, rawEmail.toString(), start, end);
+            return ResponseEntity.ok(result);
+        } catch (DateTimeParseException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "start/end must be HH:mm time values"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Cover a shift row — owner stays displayed, tickets route to a substitute
+    // -----------------------------------------------------------------------
+
+    @PostMapping("/shift/cover")
+    public ResponseEntity<?> coverShiftRow(@RequestBody Map<String, Object> body) {
+        Object rawId    = body.get("id");
+        Object rawCover = body.get("coverEmail");   // blank/absent → clear the cover
+        Object rawTeam  = body.get("teamId");
+
+        if (rawId == null)
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing 'id'"));
+
+        String teamId = rawTeam != null ? rawTeam.toString() : "orderfallout";
+        try {
+            Long id = Long.parseLong(rawId.toString());
+            String cover = rawCover == null ? "" : rawCover.toString();
+            Map<String, Object> result = shiftAssignService.setCover(id, cover, teamId);
+            return ResponseEntity.ok(result);
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "id must be a number"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

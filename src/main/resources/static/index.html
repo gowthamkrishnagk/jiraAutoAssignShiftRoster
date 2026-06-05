@@ -279,13 +279,21 @@
       box-shadow: 0 2px 6px rgba(9,30,66,.28);
     }
     .btn-edit-shift.active:hover { background: #253858; border-color: #253858; }
-    .ts-btn-break, .ts-btn-resume, .ts-btn-swap, .ts-btn-remove {
+    .ts-btn-break, .ts-btn-resume, .ts-btn-swap, .ts-btn-remove, .ts-btn-cover {
       display: inline-flex; align-items: center; gap: 5px;
       font-size: .74rem; font-weight: 600; padding: 5px 11px;
       border-radius: 5px; cursor: pointer; flex-shrink: 0; white-space: nowrap;
       -webkit-appearance: none; appearance: none;
       transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
       box-shadow: 0 1px 2px rgba(9,30,66,.07);
+    }
+    .ts-btn-cover  { background: #f5f3ff; color: #5b21b6; border: 1.5px solid #c4b5fd; }
+    .ts-btn-cover:hover  { background: #7c3aed; color: #fff; border-color: #7c3aed; box-shadow: 0 2px 5px rgba(124,58,237,.35); }
+    .ts-btn-cover.on { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+    .ts-cover-badge {
+      display: inline-flex; align-items: center; gap: 3px; margin-left: 7px;
+      font-size: .66rem; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+      background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; vertical-align: middle;
     }
     .ts-btn-break  { background: #fff7ed; color: #92400e; border: 1.5px solid #fcd34d; }
     .ts-btn-break:hover  { background: #f59e0b; color: #fff; border-color: #f59e0b; box-shadow: 0 2px 5px rgba(245,158,11,.35); }
@@ -1394,6 +1402,61 @@
   </div>
 </div>
 
+<!-- Add to Today's Shift Modal -->
+<div class="modal-backdrop" id="add-shift-modal" onclick="if(event.target===this)closeAddShiftModal()">
+  <div class="modal-box" style="max-width:420px;">
+    <div class="modal-title">＋ Add to Today's Shift</div>
+    <div class="modal-err" id="add-shift-err"></div>
+
+    <div class="modal-field">
+      <label>Assignee email</label>
+      <input type="email" id="add-shift-email" list="add-shift-emails" placeholder="name@example.com" autocomplete="off">
+      <datalist id="add-shift-emails"></datalist>
+    </div>
+
+    <div style="display:flex;gap:10px;">
+      <div class="modal-field" style="flex:1;">
+        <label>Shift start</label>
+        <input type="time" id="add-shift-start" value="09:00">
+      </div>
+      <div class="modal-field" style="flex:1;">
+        <label>Shift end</label>
+        <input type="time" id="add-shift-end" value="18:00">
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" id="add-shift-confirm-btn" onclick="doAddShift()">Add</button>
+      <button class="btn-cancel" onclick="closeAddShiftModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cover Shift Modal -->
+<div class="modal-backdrop" id="cover-modal" onclick="if(event.target===this)closeCoverModal()">
+  <div class="modal-box" style="max-width:440px;">
+    <div class="modal-title">🛡 Cover shift</div>
+    <div class="modal-err" id="cover-err"></div>
+    <p style="font-size:.8rem;color:#5e6c84;line-height:1.55;margin:-6px 0 14px;">
+      The shift stays under <strong id="cover-owner-display"></strong>. Tickets are assigned to
+      the cover person in Jira, and each one is commented as worked by
+      <strong id="cover-owner-name"></strong>.
+    </p>
+
+    <div class="modal-field">
+      <label>Cover person email</label>
+      <input type="email" id="cover-email" list="cover-emails" placeholder="substitute@example.com" autocomplete="off">
+      <datalist id="cover-emails"></datalist>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" id="cover-apply-btn" onclick="doSetCover(false)">Apply cover</button>
+      <button class="btn-cancel" id="cover-remove-btn" onclick="doSetCover(true)" style="display:none;">Remove cover</button>
+      <button class="btn-cancel" onclick="closeCoverModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- SLA Range Report Modal -->
 <div class="modal-backdrop" id="sla-range-modal" onclick="if(event.target===this)closeRangeModal()">
   <div class="modal-box" style="max-width:420px;">
@@ -1787,6 +1850,10 @@
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
       <div class="card-title" style="margin-bottom:0;flex:1;">Today's Shift</div>
       <span id="status-ts" class="ts"></span>
+      <button class="btn-edit-shift" id="shift-add-btn" style="display:none;" onclick="openAddShiftModal()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        Add
+      </button>
       <button class="btn-edit-shift" id="shift-edit-btn" onclick="toggleShiftEditMode()">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
         Edit
@@ -2444,7 +2511,7 @@ function renderTodayShift(rows) {
       s += `<div class="ts-card ${cardCls}">
         <span class="ts-status-dot ${dotCls}"></span>
         <div class="ts-info">
-          <div class="ts-email">${tick ? '✓ ' : ''}${esc(r.email)}</div>
+          <div class="ts-email">${tick ? '✓ ' : ''}${esc(r.email)}${r.covered ? `<span class="ts-cover-badge" title="Tickets are routed to a cover; ${esc(r.coverName||'someone')} is covering">🛡 covered</span>` : ''}</div>
           <div class="ts-time">${r.start} – ${r.end}</div>
         </div>
         <span class="ts-badge ${badgeCls}">${badgeText}</span>
@@ -2463,6 +2530,7 @@ function renderTodayShift(rows) {
   html += section('Active', groups.active, 'ts-dot-active', 'ts-active', 'ts-badge-active', 'Active', false,
     r => `<button class="ts-btn-break" onclick="takeBreak('${esc(r.email)}')">☕ Break</button>`,
     r => `<button class="ts-btn-swap"   onclick="openSwapModal(${r.id},'${esc(r.email)}')">⇄ Swap</button>
+          <button class="ts-btn-cover${r.covered ? ' on' : ''}" onclick="openCoverModal(${r.id},'${esc(r.email)}',${!!r.covered},'${esc(r.coverName||'')}')">🛡 ${r.covered ? 'Cover ✓' : 'Cover'}</button>
           <button class="ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
 
@@ -2470,6 +2538,7 @@ function renderTodayShift(rows) {
   html += section('On Break', groups.break, 'ts-dot-break', 'ts-break', 'ts-badge-break', 'Break', false,
     r => `<button class="ts-btn-resume" onclick="resumeFromBreak('${esc(r.email)}')">▶ Resume</button>`,
     r => `<button class="ts-btn-swap"   onclick="openSwapModal(${r.id},'${esc(r.email)}')">⇄ Swap</button>
+          <button class="ts-btn-cover${r.covered ? ' on' : ''}" onclick="openCoverModal(${r.id},'${esc(r.email)}',${!!r.covered},'${esc(r.coverName||'')}')">🛡 ${r.covered ? 'Cover ✓' : 'Cover'}</button>
           <button class="ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
 
@@ -2477,6 +2546,7 @@ function renderTodayShift(rows) {
   html += section('Upcoming', groups.upcoming, 'ts-dot-upcoming', 'ts-upcoming', 'ts-badge-upcoming', 'Upcoming', false,
     null,
     r => `<button class="ts-btn-swap"   onclick="openSwapModal(${r.id},'${esc(r.email)}')">⇄ Swap</button>
+          <button class="ts-btn-cover${r.covered ? ' on' : ''}" onclick="openCoverModal(${r.id},'${esc(r.email)}',${!!r.covered},'${esc(r.coverName||'')}')">🛡 ${r.covered ? 'Cover ✓' : 'Cover'}</button>
           <button class="ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
 
@@ -2493,6 +2563,7 @@ function toggleShiftEditMode() {
   btn.innerHTML = shiftEditMode
     ? ICON_CHECK  + ' Done'
     : ICON_PENCIL + ' Edit';
+  document.getElementById('shift-add-btn').style.display = shiftEditMode ? 'inline-flex' : 'none';
   loadTodayShift();
 }
 
@@ -2522,6 +2593,137 @@ async function removeFromShift(id, email) {
   } else {
     const d = await res.json().catch(() => ({}));
     alert('Error: ' + (d.error || 'Remove failed'));
+  }
+}
+
+// ================================================================
+// ADD TO TODAY'S SHIFT
+// ================================================================
+async function openAddShiftModal() {
+  const teamId = activeTeam;
+  document.getElementById('add-shift-err').style.display = 'none';
+  document.getElementById('add-shift-err').textContent = '';
+  document.getElementById('add-shift-email').value = '';
+
+  // Populate the email datalist with people already in this month's roster.
+  const dl = document.getElementById('add-shift-emails');
+  dl.innerHTML = '';
+  try {
+    const url  = '/api/schedule' + (teamId ? '?team=' + encodeURIComponent(teamId) : '');
+    const rows = await (await fetch(url)).json();
+    if (activeTeam !== teamId) return;
+    [...new Set(rows.map(r => r.email))].sort().forEach(e => {
+      const o = document.createElement('option'); o.value = e; dl.appendChild(o);
+    });
+  } catch { /* datalist is optional — free-typing still works */ }
+
+  document.getElementById('add-shift-modal').style.display = 'flex';
+}
+
+function closeAddShiftModal() {
+  document.getElementById('add-shift-modal').style.display = 'none';
+}
+
+async function doAddShift() {
+  const errEl = document.getElementById('add-shift-err');
+  const email = document.getElementById('add-shift-email').value.trim();
+  const start = document.getElementById('add-shift-start').value;
+  const end   = document.getElementById('add-shift-end').value;
+
+  const showErr = msg => { errEl.textContent = msg; errEl.style.display = 'block'; };
+
+  if (!email) return showErr('Please enter an assignee email.');
+  if (!start || !end) return showErr('Please set both shift start and end times.');
+
+  const btn = document.getElementById('add-shift-confirm-btn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/shift/add', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, start, end, teamId: activeTeam })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok) {
+      closeAddShiftModal();
+      loadTodayShift();
+      loadSchedule();
+    } else {
+      showErr(d.error || 'Add failed');
+    }
+  } catch (e) {
+    showErr('Network error — please try again.');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ================================================================
+// COVER A SHIFT (owner stays shown; tickets route to a substitute)
+// ================================================================
+let coverRowId = null;
+
+function nameFromEmail(email) {
+  const local = (email || '').split('@')[0];
+  const name = local.split(/[._+\-]+/).filter(Boolean)
+    .map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
+  return name || email;
+}
+
+async function openCoverModal(id, ownerEmail, covered, coverName) {
+  const teamId = activeTeam;
+  coverRowId = id;
+  document.getElementById('cover-err').style.display = 'none';
+  document.getElementById('cover-err').textContent = '';
+  document.getElementById('cover-owner-display').textContent = ownerEmail;
+  document.getElementById('cover-owner-name').textContent = nameFromEmail(ownerEmail);
+  document.getElementById('cover-email').value = '';
+  document.getElementById('cover-remove-btn').style.display = covered ? 'inline-flex' : 'none';
+  document.getElementById('cover-apply-btn').textContent = covered ? 'Change cover' : 'Apply cover';
+
+  // Populate the email datalist from this month's roster, excluding the owner.
+  const dl = document.getElementById('cover-emails');
+  dl.innerHTML = '';
+  try {
+    const url  = '/api/schedule' + (teamId ? '?team=' + encodeURIComponent(teamId) : '');
+    const rows = await (await fetch(url)).json();
+    if (activeTeam !== teamId) return;
+    [...new Set(rows.map(r => r.email))].filter(e => e !== ownerEmail).sort().forEach(e => {
+      const o = document.createElement('option'); o.value = e; dl.appendChild(o);
+    });
+  } catch { /* datalist is optional */ }
+
+  document.getElementById('cover-modal').style.display = 'flex';
+}
+
+function closeCoverModal() {
+  document.getElementById('cover-modal').style.display = 'none';
+}
+
+async function doSetCover(remove) {
+  const errEl = document.getElementById('cover-err');
+  const showErr = msg => { errEl.textContent = msg; errEl.style.display = 'block'; };
+  const coverEmail = remove ? '' : document.getElementById('cover-email').value.trim();
+
+  if (!remove && !coverEmail) return showErr('Enter the cover person’s email.');
+
+  const btn = document.getElementById(remove ? 'cover-remove-btn' : 'cover-apply-btn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/shift/cover', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: coverRowId, coverEmail, teamId: activeTeam })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok) {
+      closeCoverModal();
+      loadTodayShift();
+    } else {
+      showErr(d.error || 'Cover update failed');
+    }
+  } catch (e) {
+    showErr('Network error — please try again.');
+  } finally {
+    btn.disabled = false;
   }
 }
 

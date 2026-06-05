@@ -156,15 +156,31 @@ public class ShiftAssignService {
             return;
         }
 
-        // Resolve emails → accountIds
+        // Owner email (lower) → cover substitute email. For "covered" rows the owner's
+        // Jira is locked, so tickets are assigned to the cover instead — but the owner
+        // stays the displayed/logged assignee and each ticket is commented in their name.
+        Map<String, String> coverByOwner = new HashMap<>();
+        for (ShiftRoster s : activeShifts) {
+            if (s.getCoverEmail() != null && !s.getCoverEmail().isBlank()) {
+                coverByOwner.put(s.getEmail().toLowerCase().trim(), s.getCoverEmail().trim());
+            }
+        }
+
+        // Resolve emails → accountIds. For covered owners we resolve the COVER's account
+        // (who actually receives the ticket) while keeping the owner email for display/log.
         List<String> accountIds     = new ArrayList<>();
-        List<String> resolvedEmails = new ArrayList<>();
+        List<String> resolvedEmails = new ArrayList<>();   // owner emails — display/log
+        List<String> resolvedCovers = new ArrayList<>();   // cover email, or null
         for (String email : activeEmails) {
+            String cover       = coverByOwner.get(email.toLowerCase().trim());
+            String assignEmail = cover != null ? cover : email;
             try {
-                accountIds.add(jiraClient.getAccountId(email));
+                accountIds.add(jiraClient.getAccountId(assignEmail));
                 resolvedEmails.add(email);
+                resolvedCovers.add(cover);
             } catch (Exception e) {
-                log.warn("[{}] Could not resolve Jira account for {}: {}", teamName, email, e.getMessage());
+                log.warn("[{}] Could not resolve Jira account for {}{}: {}", teamName, assignEmail,
+                    cover != null ? " (cover for " + email + ")" : "", e.getMessage());
             }
         }
 
@@ -184,11 +200,13 @@ public class ShiftAssignService {
         // across runs, regardless of the order the DB returns active shifts.
         List<String[]> pairs = new ArrayList<>();
         for (int i = 0; i < resolvedEmails.size(); i++) {
-            pairs.add(new String[]{ resolvedEmails.get(i), accountIds.get(i) });
+            // [owner email, accountId to assign, cover email or null]
+            pairs.add(new String[]{ resolvedEmails.get(i), accountIds.get(i), resolvedCovers.get(i) });
         }
         pairs.sort(Comparator.comparing((String[] p) -> p[0]));
         List<String> workEmails = pairs.stream().map(p -> p[0]).collect(Collectors.toList());
         List<String> workIds    = pairs.stream().map(p -> p[1]).collect(Collectors.toList());
+        List<String> workCovers = pairs.stream().map(p -> p[2]).collect(Collectors.toList()); // may hold null
         int workRr = rrIndex;
 
         // --- Step 2: assign unassigned tickets (team JQL) ---
@@ -211,7 +229,7 @@ public class ShiftAssignService {
                     workRr++;
                 }
             } else {
-                AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workRr);
+                AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workCovers, workRr);
                 if (res != null) {
                     assigned++;
                     workRr = res.nextWorkRr();
@@ -286,7 +304,7 @@ public class ShiftAssignService {
                     workRr++;
                 }
             } else {
-                AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workRr);
+                AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workCovers, workRr);
                 if (res != null) {
                     workRr = res.nextWorkRr();
                     logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, res.email()));
@@ -332,7 +350,7 @@ public class ShiftAssignService {
                             workRr++;
                         }
                     } else {
-                        AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workRr);
+                        AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workCovers, workRr);
                         if (res != null) {
                             workRr = res.nextWorkRr();
                             logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, res.email()));
@@ -385,14 +403,20 @@ public class ShiftAssignService {
      */
     private AssignResult tryAssignRoundRobin(String teamId, String teamName, String issueKey,
                                               List<String> workIds, List<String> workEmails,
-                                              int workRr) {
+                                              List<String> workCovers, int workRr) {
         while (!workIds.isEmpty()) {
             int    pos   = workRr % workIds.size();
             String accId = workIds.get(pos);
             String email = workEmails.get(pos);
-            log.info("[{}] [{}] -> {}", teamName, issueKey, email);
+            String cover = workCovers.get(pos);   // null unless this slot is under cover
+            log.info("[{}] [{}] -> {}{}", teamName, issueKey, email,
+                     cover != null ? " (assigned to cover " + cover + ")" : "");
 
             if (jiraClient.assignTicket(issueKey, accId)) {
+                // Under cover: credit the real shift owner by name on the ticket itself.
+                if (cover != null) {
+                    jiraClient.postComment(issueKey, coverComment(email));
+                }
                 return new AssignResult(email, accId, workRr + 1);
             }
 
@@ -404,6 +428,7 @@ public class ShiftAssignService {
             markUnavailable(teamId, email);
             workIds.remove(pos);
             workEmails.remove(pos);
+            workCovers.remove(pos);
             // Do NOT advance workRr: the same position now holds the next account
         }
 
@@ -586,6 +611,100 @@ public class ShiftAssignService {
         repository.deleteById(id);
         resumeEmail(teamId, row.getEmail());   // clear any lingering break state
         log.info("[{}] Removed from today's shift: {} (row {})", teamId, row.getEmail(), id);
+    }
+
+    /**
+     * Adds a single ShiftRoster row for TODAY (used by "Add to today's shift").
+     * Triggers an assignment run so a person added during an active shift
+     * immediately picks up tickets.
+     */
+    public Map<String, Object> addShiftRow(String teamId, String email, LocalTime start, LocalTime end) {
+        if (email == null || email.isBlank())
+            throw new IllegalArgumentException("Email is required");
+        if (start == null || end == null)
+            throw new IllegalArgumentException("Shift start and end are required");
+        teamRepository.findById(teamId)
+            .orElseThrow(() -> new IllegalArgumentException("Unknown team: " + teamId));
+
+        String cleanEmail = email.trim();
+        LocalDate today   = LocalDate.now();
+
+        ShiftRoster row = new ShiftRoster();
+        row.setTeamId(teamId);
+        row.setEmail(cleanEmail);
+        row.setShiftDate(today);
+        row.setShiftStart(start);
+        row.setShiftEnd(end);
+        row.setCreatedAt(LocalDateTime.now());
+        repository.save(row);
+
+        // Clear any stale break state so the new addition starts available.
+        resumeEmail(teamId, cleanEmail);
+
+        log.info("[{}] Added to today's shift: {} ({}–{}) (row {})",
+            teamId, cleanEmail, start, end, row.getId());
+
+        triggerAssignmentRun(teamId);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("added", true);
+        result.put("shift", shiftRowMap(row));
+        return result;
+    }
+
+    /**
+     * Puts a shift row "under cover" (or clears it). The owner stays the displayed and
+     * logged assignee, but while a cover is set tickets are assigned to coverEmail in Jira
+     * and each ticket is commented as worked by the owner. Pass a blank coverEmail to clear.
+     */
+    public Map<String, Object> setCover(Long id, String coverEmail, String teamId) {
+        ShiftRoster row = repository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Shift row not found: " + id));
+        if (!teamId.equals(row.getTeamId()))
+            throw new IllegalArgumentException("Shift does not belong to team: " + teamId);
+
+        String clean = coverEmail == null ? "" : coverEmail.trim();
+        if (clean.isBlank()) {
+            row.setCoverEmail(null);
+            repository.save(row);
+            log.info("[{}] Cover cleared on row {} ({})", teamId, id, row.getEmail());
+        } else {
+            if (clean.equalsIgnoreCase(row.getEmail().trim()))
+                throw new IllegalArgumentException("Cover cannot be the same person as the shift owner");
+            row.setCoverEmail(clean);
+            repository.save(row);
+            log.info("[{}] Cover set on row {}: {} → tickets assigned to {}", teamId, id, row.getEmail(), clean);
+        }
+
+        triggerAssignmentRun(teamId);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("covered",   row.getCoverEmail() != null);
+        result.put("coverName", row.getCoverEmail() != null ? displayNameFromEmail(row.getCoverEmail()) : null);
+        result.put("shift",     shiftRowMap(row));
+        return result;
+    }
+
+    /** Comment posted on tickets routed through a cover — credits the real shift owner by name. */
+    private static String coverComment(String ownerEmail) {
+        return "This ticket is worked by " + displayNameFromEmail(ownerEmail)
+             + ", the actual shift assignee.";
+    }
+
+    /** Derives a human display name from an email's local part, e.g. gowtham.krishna@x → "Gowtham Krishna". */
+    public static String displayNameFromEmail(String email) {
+        if (email == null || email.isBlank()) return "";
+        String local = email.trim();
+        int at = local.indexOf('@');
+        if (at > 0) local = local.substring(0, at);
+        StringBuilder sb = new StringBuilder();
+        for (String part : local.split("[._+\\-]+")) {
+            if (part.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) sb.append(part.substring(1).toLowerCase());
+        }
+        return sb.length() == 0 ? email.trim() : sb.toString();
     }
 
     // -----------------------------------------------------------------------
