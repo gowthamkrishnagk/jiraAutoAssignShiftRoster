@@ -283,7 +283,7 @@
       box-shadow: 0 2px 6px rgba(9,30,66,.28);
     }
     .btn-edit-shift.active:hover { background: #253858; border-color: #253858; }
-    .ts-btn-break, .ts-btn-resume, .ts-btn-swap, .ts-btn-remove, .ts-btn-cover {
+    .ts-btn-break, .ts-btn-resume, .ts-btn-swap, .ts-btn-remove {
       display: inline-flex; align-items: center; gap: 5px;
       font-size: .74rem; font-weight: 600; padding: 5px 11px;
       border-radius: 5px; cursor: pointer; flex-shrink: 0; white-space: nowrap;
@@ -291,9 +291,6 @@
       transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
       box-shadow: 0 1px 2px rgba(9,30,66,.07);
     }
-    .ts-btn-cover  { background: #f5f3ff; color: #5b21b6; border: 1.5px solid #c4b5fd; }
-    .ts-btn-cover:hover  { background: #7c3aed; color: #fff; border-color: #7c3aed; box-shadow: 0 2px 5px rgba(124,58,237,.35); }
-    .ts-btn-cover.on { background: #7c3aed; color: #fff; border-color: #7c3aed; }
     .ts-cover-badge {
       display: inline-flex; align-items: center; gap: 3px; margin-left: 7px;
       font-size: .66rem; font-weight: 700; padding: 1px 7px; border-radius: 999px;
@@ -1386,12 +1383,15 @@
     <div class="modal-err" id="swap-err"></div>
 
     <div class="modal-field">
-      <label>Current assignee</label>
-      <div id="swap-from-display" style="padding:8px 10px;background:#f4f5f7;border-radius:6px;font-size:.85rem;color:#172b4d;font-weight:600;"></div>
+      <label>On shift (name stays the same)</label>
+      <div style="padding:8px 10px;background:#f4f5f7;border-radius:6px;font-size:.85rem;color:#172b4d;">
+        <strong id="swap-owner-name"></strong>
+        <span id="swap-from-display" style="color:#5e6c84;font-size:.78rem;margin-left:6px;"></span>
+      </div>
     </div>
 
     <div class="modal-field">
-      <label>Assign to</label>
+      <label>Send Jira tickets to this email</label>
       <select id="swap-to-sel" onchange="updateSwapPreview()">
         <option value="">— select —</option>
       </select>
@@ -1432,31 +1432,6 @@
     <div class="modal-actions">
       <button class="btn" id="add-shift-confirm-btn" onclick="doAddShift()">Add</button>
       <button class="btn-cancel" onclick="closeAddShiftModal()">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<!-- Cover Shift Modal -->
-<div class="modal-backdrop" id="cover-modal" onclick="if(event.target===this)closeCoverModal()">
-  <div class="modal-box" style="max-width:440px;">
-    <div class="modal-title">🛡 Cover shift</div>
-    <div class="modal-err" id="cover-err"></div>
-    <p style="font-size:.8rem;color:#5e6c84;line-height:1.55;margin:-6px 0 14px;">
-      The shift stays under <strong id="cover-owner-display"></strong>. Tickets are assigned to
-      the cover person in Jira, and each one is commented as worked by
-      <strong id="cover-owner-name"></strong>.
-    </p>
-
-    <div class="modal-field">
-      <label>Cover person email</label>
-      <input type="email" id="cover-email" list="cover-emails" placeholder="substitute@example.com" autocomplete="off">
-      <datalist id="cover-emails"></datalist>
-    </div>
-
-    <div class="modal-actions">
-      <button class="btn" id="cover-apply-btn" onclick="doSetCover(false)">Apply cover</button>
-      <button class="btn-cancel" id="cover-remove-btn" onclick="doSetCover(true)" style="display:none;">Remove cover</button>
-      <button class="btn-cancel" onclick="closeCoverModal()">Cancel</button>
     </div>
   </div>
 </div>
@@ -2517,7 +2492,7 @@ function renderTodayShift(rows) {
       s += `<div class="ts-card ${cardCls}">
         <span class="ts-status-dot ${dotCls}"></span>
         <div class="ts-info">
-          <div class="ts-email">${tick ? '✓ ' : ''}${esc(ownerName)}${r.covered ? `<span class="ts-cover-badge" title="On shift: ${esc(ownerName)} — tickets handled by ${esc(usesEmail)}">🛡 covered</span>` : ''}</div>
+          <div class="ts-email">${tick ? '✓ ' : ''}${esc(ownerName)}${r.covered ? `<span class="ts-cover-badge" title="On shift: ${esc(ownerName)} — Jira tickets go to ${esc(usesEmail)}">⇄ swapped</span>` : ''}</div>
           <div class="ts-uses${r.covered ? ' is-cover' : ''}"><span class="ts-uses-label">uses: </span><span class="ts-uses-email">${esc(usesEmail)}</span></div>
           <div class="ts-time">${r.start} – ${r.end}</div>
         </div>
@@ -2536,24 +2511,21 @@ function renderTodayShift(rows) {
   // Active: Break always visible — Swap + Remove appear in edit mode
   html += section('Active', groups.active, 'ts-dot-active', 'ts-active', 'ts-badge-active', 'Active', false,
     r => `<button class="ts-btn-break" onclick="takeBreak('${esc(r.email)}')">☕ Break</button>`,
-    r => `<button class="ts-btn-swap"   onclick="openSwapModal(${r.id},'${esc(r.email)}')">⇄ Swap</button>
-          <button class="ts-btn-cover${r.covered ? ' on' : ''}" onclick="openCoverModal(${r.id},'${esc(r.email)}',${!!r.covered},'${esc(r.coverName||'')}')">🛡 ${r.covered ? 'Cover ✓' : 'Cover'}</button>
+    r => `<button class="ts-btn-swap" onclick="openSwapModal(${r.id},'${esc(r.email)}',${!!r.covered},'${esc(r.coverEmail||'')}')">⇄ ${r.covered ? 'Swapped' : 'Swap'}</button>
           <button class="ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
 
   // On Break: Resume always visible — Swap + Remove appear in edit mode
   html += section('On Break', groups.break, 'ts-dot-break', 'ts-break', 'ts-badge-break', 'Break', false,
     r => `<button class="ts-btn-resume" onclick="resumeFromBreak('${esc(r.email)}')">▶ Resume</button>`,
-    r => `<button class="ts-btn-swap"   onclick="openSwapModal(${r.id},'${esc(r.email)}')">⇄ Swap</button>
-          <button class="ts-btn-cover${r.covered ? ' on' : ''}" onclick="openCoverModal(${r.id},'${esc(r.email)}',${!!r.covered},'${esc(r.coverName||'')}')">🛡 ${r.covered ? 'Cover ✓' : 'Cover'}</button>
+    r => `<button class="ts-btn-swap" onclick="openSwapModal(${r.id},'${esc(r.email)}',${!!r.covered},'${esc(r.coverEmail||'')}')">⇄ ${r.covered ? 'Swapped' : 'Swap'}</button>
           <button class="ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
 
   // Upcoming: no permanent button — Swap + Remove appear in edit mode
   html += section('Upcoming', groups.upcoming, 'ts-dot-upcoming', 'ts-upcoming', 'ts-badge-upcoming', 'Upcoming', false,
     null,
-    r => `<button class="ts-btn-swap"   onclick="openSwapModal(${r.id},'${esc(r.email)}')">⇄ Swap</button>
-          <button class="ts-btn-cover${r.covered ? ' on' : ''}" onclick="openCoverModal(${r.id},'${esc(r.email)}',${!!r.covered},'${esc(r.coverName||'')}')">🛡 ${r.covered ? 'Cover ✓' : 'Cover'}</button>
+    r => `<button class="ts-btn-swap" onclick="openSwapModal(${r.id},'${esc(r.email)}',${!!r.covered},'${esc(r.coverEmail||'')}')">⇄ ${r.covered ? 'Swapped' : 'Swap'}</button>
           <button class="ts-btn-remove" onclick="removeFromShift(${r.id},'${esc(r.email)}')">✕ Remove</button>`
   );
 
@@ -2665,9 +2637,13 @@ async function doAddShift() {
 }
 
 // ================================================================
-// COVER A SHIFT (owner stays shown; tickets route to a substitute)
+// SHIFT SWAP — the rostered person's NAME stays on the shift; only the
+// email that actually receives Jira tickets changes (e.g. their Jira
+// is locked, so route tickets to a teammate). Each ticket is commented
+// as worked by the real shift person.
 // ================================================================
-let coverRowId = null;
+let swapRowId          = null;
+let swapModalOwnerEmail = '';
 
 function nameFromEmail(email) {
   const local = (email || '').split('@')[0];
@@ -2676,78 +2652,17 @@ function nameFromEmail(email) {
   return name || email;
 }
 
-async function openCoverModal(id, ownerEmail, covered, coverName) {
+async function openSwapModal(rowId, ownerEmail, swapped, currentSwapEmail) {
   const teamId = activeTeam;
-  coverRowId = id;
-  document.getElementById('cover-err').style.display = 'none';
-  document.getElementById('cover-err').textContent = '';
-  document.getElementById('cover-owner-display').textContent = ownerEmail;
-  document.getElementById('cover-owner-name').textContent = nameFromEmail(ownerEmail);
-  document.getElementById('cover-email').value = '';
-  document.getElementById('cover-remove-btn').style.display = covered ? 'inline-flex' : 'none';
-  document.getElementById('cover-apply-btn').textContent = covered ? 'Change cover' : 'Apply cover';
-
-  // Populate the email datalist from this month's roster, excluding the owner.
-  const dl = document.getElementById('cover-emails');
-  dl.innerHTML = '';
-  try {
-    const url  = '/api/schedule' + (teamId ? '?team=' + encodeURIComponent(teamId) : '');
-    const rows = await (await fetch(url)).json();
-    if (activeTeam !== teamId) return;
-    [...new Set(rows.map(r => r.email))].filter(e => e !== ownerEmail).sort().forEach(e => {
-      const o = document.createElement('option'); o.value = e; dl.appendChild(o);
-    });
-  } catch { /* datalist is optional */ }
-
-  document.getElementById('cover-modal').style.display = 'flex';
-}
-
-function closeCoverModal() {
-  document.getElementById('cover-modal').style.display = 'none';
-}
-
-async function doSetCover(remove) {
-  const errEl = document.getElementById('cover-err');
-  const showErr = msg => { errEl.textContent = msg; errEl.style.display = 'block'; };
-  const coverEmail = remove ? '' : document.getElementById('cover-email').value.trim();
-
-  if (!remove && !coverEmail) return showErr('Enter the cover person’s email.');
-
-  const btn = document.getElementById(remove ? 'cover-remove-btn' : 'cover-apply-btn');
-  btn.disabled = true;
-  try {
-    const res = await fetch('/api/shift/cover', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: coverRowId, coverEmail, teamId: activeTeam })
-    });
-    const d = await res.json().catch(() => ({}));
-    if (res.ok) {
-      closeCoverModal();
-      loadTodayShift();
-    } else {
-      showErr(d.error || 'Cover update failed');
-    }
-  } catch (e) {
-    showErr('Network error — please try again.');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-// ================================================================
-// SHIFT SWAP
-// ================================================================
-let swapRowId = null;
-
-async function openSwapModal(rowId, fromEmail) {
-  const teamId = activeTeam;
-  swapRowId = rowId;
+  swapRowId           = rowId;
+  swapModalOwnerEmail = ownerEmail;
 
   document.getElementById('swap-err').style.display = 'none';
   document.getElementById('swap-err').textContent = '';
   document.getElementById('swap-preview').style.display = 'none';
   document.getElementById('swap-confirm-btn').disabled = true;
-  document.getElementById('swap-from-display').textContent = fromEmail;
+  document.getElementById('swap-owner-name').textContent = nameFromEmail(ownerEmail);
+  document.getElementById('swap-from-display').textContent = ownerEmail;
 
   let emails = [];
   try {
@@ -2761,10 +2676,15 @@ async function openSwapModal(rowId, fromEmail) {
 
   const sel = document.getElementById('swap-to-sel');
   sel.innerHTML = '<option value="">— select —</option>';
-  emails.filter(e => e !== fromEmail).forEach(e => {
+  // Undo option only appears when a swap is already active.
+  if (swapped) {
+    sel.innerHTML += `<option value="__own__">↩ Use own email again (undo) — ${esc(ownerEmail)}</option>`;
+  }
+  emails.filter(e => e !== ownerEmail).forEach(e => {
     sel.innerHTML += `<option value="${esc(e)}">${esc(e)}</option>`;
   });
-  sel.value = '';
+  sel.value = swapped && currentSwapEmail ? currentSwapEmail : '';
+  updateSwapPreview();
 
   document.getElementById('swap-modal').style.display = 'flex';
 }
@@ -2774,41 +2694,49 @@ function closeSwapModal() {
 }
 
 function updateSwapPreview() {
-  const toEmail    = document.getElementById('swap-to-sel').value;
+  const val        = document.getElementById('swap-to-sel').value;
   const previewEl  = document.getElementById('swap-preview');
   const confirmBtn = document.getElementById('swap-confirm-btn');
 
   previewEl.style.display = 'none';
   confirmBtn.disabled = true;
-  if (!toEmail) return;
+  if (!val) return;
 
-  previewEl.innerHTML = `
-    <strong>After swap:</strong><br>
-    <span style="color:#5e6c84;">${esc(document.getElementById('swap-from-display').textContent)}</span>
-    &nbsp;→&nbsp; <span style="color:#0052cc;font-weight:600;">${esc(toEmail)}</span>
-  `;
+  const ownerName = nameFromEmail(swapModalOwnerEmail);
+  if (val === '__own__') {
+    previewEl.innerHTML =
+      `<strong>${esc(ownerName)}</strong> will use their own email again:<br>
+       <span style="color:#0052cc;font-weight:600;">${esc(swapModalOwnerEmail)}</span>`;
+  } else {
+    previewEl.innerHTML =
+      `<strong>${esc(ownerName)}</strong> stays on shift — Jira tickets go to:<br>
+       <span style="color:#0052cc;font-weight:600;">${esc(val)}</span>
+       <div style="margin-top:6px;color:#5e6c84;">Each ticket is commented as worked by ${esc(ownerName)}.</div>`;
+  }
   previewEl.style.display = 'block';
   confirmBtn.disabled = false;
 }
 
 async function doSwapAssignee() {
-  const teamId  = activeTeam;
-  const newEmail = document.getElementById('swap-to-sel').value;
-  const errEl   = document.getElementById('swap-err');
-  const btn     = document.getElementById('swap-confirm-btn');
+  const val   = document.getElementById('swap-to-sel').value;
+  const errEl = document.getElementById('swap-err');
+  const btn   = document.getElementById('swap-confirm-btn');
 
-  if (!swapRowId || !newEmail) return;
+  if (!swapRowId || !val) return;
+  // "__own__" clears the swap (owner uses their own email again).
+  const coverEmail = val === '__own__' ? '' : val;
+
   btn.disabled = true;
-  btn.textContent = 'Swapping…';
+  btn.textContent = 'Saving…';
   errEl.style.display = 'none';
 
   try {
-    const res  = await fetch('/api/shift/replace-email', {
+    const res  = await fetch('/api/shift/cover', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: swapRowId, newEmail, teamId })
+      body: JSON.stringify({ id: swapRowId, coverEmail, teamId: activeTeam })
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       errEl.textContent = data.error || 'Swap failed';
       errEl.style.display = 'block';
