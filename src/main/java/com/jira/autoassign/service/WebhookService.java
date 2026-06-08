@@ -210,6 +210,10 @@ public class WebhookService {
             payload.put("ticketKey",         ticket.getOrDefault("key", ""));
             payload.put("mentionEmail",      teamsEmail != null ? teamsEmail : "");
             payload.put("mentionName",       teamsName  != null ? teamsName  : "");
+            // hasMapping=true → an explicit B2B mapping exists; the flow should mention
+            // mentionEmail directly and SKIP the group auto-match. false → auto-match by
+            // assigneeNameKey against the Teams group members.
+            payload.put("hasMapping",        teamsEmail != null && !teamsEmail.isBlank());
             // Trimmed Jira identity for flow-side matching against Teams group members.
             payload.put("assigneeJiraEmail", ticket.getOrDefault("assigneeJiraEmail", ""));
             payload.put("assigneeNameKey",   ticket.getOrDefault("assigneeNameKey", ""));
@@ -246,6 +250,7 @@ public class WebhookService {
             payload.put("ticketKey",         sample.get("key"));
             payload.put("mentionEmail",      "test.user@example.com");
             payload.put("mentionName",       "Test User");
+            payload.put("hasMapping",        true);
             payload.put("assigneeJiraEmail", sample.get("assigneeJiraEmail"));
             payload.put("assigneeNameKey",   sample.get("assigneeNameKey"));
             payload.put("ticket",            sample);
