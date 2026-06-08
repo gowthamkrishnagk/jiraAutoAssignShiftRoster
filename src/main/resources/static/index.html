@@ -1851,6 +1851,50 @@
 </main>
 </div><!-- /#team-view-content -->
 
+<!-- B2B monitor view — shown instead of the shift-roster panels for monitor-only teams -->
+<div id="b2b-view-content" style="display:none;">
+<main>
+  <div class="card">
+    <div class="card-title">B2B Team Webhook</div>
+    <p style="color:#5e6c84;font-size:.85rem;margin:0 0 12px;">
+      Assignee-change, Matrixx/Aria support, and SLA breach-warning cards are posted to this Microsoft Teams webhook.
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <input id="b2b-wh-url" type="text" placeholder="https://prod-XX.logic.azure.com/workflows/..."
+        style="flex:1;min-width:280px;padding:8px 10px;border:1px solid #dfe1e6;border-radius:6px;font-size:.85rem;">
+      <button class="btn" onclick="saveB2bWebhook()">Save</button>
+      <button class="btn" onclick="testB2bWebhook()">Send test</button>
+    </div>
+    <div id="b2b-wh-msg" style="margin-top:8px;font-size:.85rem;"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Member Mapping (Jira → Teams)</div>
+    <p style="color:#5e6c84;font-size:.85rem;margin:0 0 12px;">
+      Map each Jira user to their Teams email for @mentions. Tick Matrixx / Aria to flag support-group members.
+      Matching falls back to the Jira display name when Jira hides the email.
+    </p>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem;">
+        <thead>
+          <tr style="text-align:left;color:#5e6c84;border-bottom:2px solid #f4f5f7;">
+            <th style="padding:8px;">Jira email</th>
+            <th style="padding:8px;">Jira name</th>
+            <th style="padding:8px;">Teams email</th>
+            <th style="padding:8px;">Teams name</th>
+            <th style="padding:8px;text-align:center;">Matrixx</th>
+            <th style="padding:8px;text-align:center;">Aria</th>
+            <th style="padding:8px;"></th>
+          </tr>
+        </thead>
+        <tbody id="b2b-members-body"></tbody>
+      </table>
+    </div>
+    <div id="b2b-members-msg" style="margin-top:10px;font-size:.85rem;"></div>
+  </div>
+</main>
+</div><!-- /#b2b-view-content -->
+
 <script>
 // ================================================================
 // TEAM STATE
@@ -1908,15 +1952,35 @@ function switchToTeam(teamId) {
 
   if (slaMode) {
     // Stay in SLA mode for the newly selected team — paint cache then revalidate
+    document.getElementById('b2b-view-content').style.display = 'none';
     document.getElementById('sla-assignee-filter').value = '';  // new team → clear filter
     showSlaForCurrent();
+  } else if (adminMode) {
+    document.getElementById('b2b-view-content').style.display = 'none';
+  } else if (isMonitorTeam(teamId)) {
+    showPrimaryView();
+    loadB2bPanel();
   } else {
+    showPrimaryView();
     resetUpload();
     loadDryRun();
     loadJql();
     loadStatus();
     loadSchedule();
   }
+}
+
+/** True when the given (or active) team is monitor-only — no auto-assignment. */
+function isMonitorTeam(teamId) {
+  const t = teams.find(x => x.id === (teamId || activeTeam));
+  return !!t && t.autoAssign === false;
+}
+
+/** Shows the correct primary panel (shift roster vs B2B monitor) for the active team. */
+function showPrimaryView() {
+  const monitor = isMonitorTeam();
+  document.getElementById('team-view-content').style.display = monitor ? 'none' : '';
+  document.getElementById('b2b-view-content').style.display  = monitor ? 'block' : 'none';
 }
 
 document.addEventListener('DOMContentLoaded', () => { initTeams(); loadSettingsStatus(); loadWebhookStatus(); });
@@ -3038,6 +3102,7 @@ function toggleSlaMode() {
   document.getElementById('team-view-content').style.display  = (slaMode || adminMode) ? 'none' : '';
   document.getElementById('sla-view-content').style.display   = slaMode   ? 'block' : 'none';
   document.getElementById('admin-view-content').style.display = 'none';
+  document.getElementById('b2b-view-content').style.display   = 'none';
 
   if (slaMode) {
     initSlaCalendar();
@@ -3048,8 +3113,17 @@ function toggleSlaMode() {
     startSlaPoll();
   } else {
     stopSlaPoll();
-    // Returning to auto-assign — reload for the currently active team
-    // (team-view-content may be stale if team was switched while in SLA mode)
+    // Returning to the team's primary view (shift roster, or B2B monitor for monitor-only teams)
+    enterPrimaryView();
+  }
+}
+
+/** Loads the correct primary panel for the active team after leaving SLA/Admin mode. */
+function enterPrimaryView() {
+  showPrimaryView();
+  if (isMonitorTeam()) {
+    loadB2bPanel();
+  } else {
     resetUpload();
     loadDryRun();
     loadJql();
@@ -3067,18 +3141,15 @@ function toggleAdminMode() {
   document.getElementById('team-view-content').style.display  = adminMode ? 'none' : '';
   document.getElementById('sla-view-content').style.display   = 'none';
   document.getElementById('admin-view-content').style.display = adminMode ? 'block' : 'none';
+  document.getElementById('b2b-view-content').style.display   = 'none';
 
   if (adminMode) {
     stopSlaPoll();   // leaving SLA view → stop background refresh
     loadAndRenderAdmin();
     loadSlaConfig();
   } else {
-    // Returning to auto-assign — reload for the currently active team
-    resetUpload();
-    loadDryRun();
-    loadJql();
-    loadTodayShift();
-    loadSchedule();
+    // Returning to the team's primary view (shift roster, or B2B monitor for monitor-only teams)
+    enterPrimaryView();
   }
 }
 
@@ -4075,6 +4146,150 @@ function severityTag(value) {
     ? `background:${c.bg};color:${c.color};border:1px solid ${c.border};`
     : 'background:#f4f5f7;color:#42526e;border:1px solid #dfe1e6;';
   return `<span class="sla-severity-tag" style="${style}">${esc(value)}</span>`;
+}
+
+// ================================================================
+// B2B MONITOR PANEL — webhook config + Jira→Teams member mapping
+// ================================================================
+let b2bMembers = [];
+
+function escA(s) { return esc(s == null ? '' : s).replace(/"/g, '&quot;'); }
+
+function b2bMsg(elId, text, ok) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = ok ? '#006644' : '#bf2600';
+}
+
+async function loadB2bPanel() {
+  await loadB2bWebhook();
+  await loadB2bMembers();
+}
+
+async function loadB2bWebhook() {
+  try {
+    const d = await (await fetch('/api/b2b/webhook-settings')).json();
+    document.getElementById('b2b-wh-url').value = d.webhookUrl || '';
+  } catch { /* ignore */ }
+}
+
+async function saveB2bWebhook() {
+  const url = document.getElementById('b2b-wh-url').value.trim();
+  try {
+    const r = await fetch('/api/b2b/webhook-settings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl: url })
+    });
+    const d = await r.json();
+    b2bMsg('b2b-wh-msg', r.ok ? 'Saved.' : (d.error || 'Save failed'), r.ok);
+  } catch (e) { b2bMsg('b2b-wh-msg', 'Network error: ' + e.message, false); }
+}
+
+async function testB2bWebhook() {
+  const url = document.getElementById('b2b-wh-url').value.trim();
+  b2bMsg('b2b-wh-msg', 'Sending test…', true);
+  try {
+    const r = await fetch('/api/b2b/webhook-settings/test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl: url })
+    });
+    const d = await r.json();
+    b2bMsg('b2b-wh-msg', r.ok ? ('Test sent (HTTP ' + d.httpStatus + ').') : (d.error || 'Test failed'), r.ok);
+  } catch (e) { b2bMsg('b2b-wh-msg', 'Network error: ' + e.message, false); }
+}
+
+async function loadB2bMembers() {
+  try { b2bMembers = await (await fetch('/api/b2b/members')).json(); }
+  catch { b2bMembers = []; }
+  renderB2bMembers();
+}
+
+const B2B_IN = 'width:100%;padding:6px 8px;border:1px solid #dfe1e6;border-radius:5px;font-size:.82rem;box-sizing:border-box;';
+
+function b2bCellInput(field, val) {
+  return `<input class="b2b-in" data-f="${field}" value="${escA(val)}" style="${B2B_IN}">`;
+}
+
+function memberRowHtml(m) {
+  const id = m.id;
+  return `<tr data-id="${id}" style="border-bottom:1px solid #f4f5f7;">
+    <td style="padding:6px;">${b2bCellInput('jiraEmail', m.jiraEmail)}</td>
+    <td style="padding:6px;">${b2bCellInput('jiraName', m.jiraName)}</td>
+    <td style="padding:6px;">${b2bCellInput('teamsEmail', m.teamsEmail)}</td>
+    <td style="padding:6px;">${b2bCellInput('teamsName', m.teamsName)}</td>
+    <td style="padding:6px;text-align:center;"><input type="checkbox" data-f="matrixxSupport" ${m.matrixxSupport ? 'checked' : ''}></td>
+    <td style="padding:6px;text-align:center;"><input type="checkbox" data-f="ariaSupport" ${m.ariaSupport ? 'checked' : ''}></td>
+    <td style="padding:6px;white-space:nowrap;">
+      <button class="btn-sm" onclick="saveMember(${id}, this)">Save</button>
+      <button class="btn-sm btn-remove" onclick="deleteMember(${id}, this)">✕</button>
+    </td>
+  </tr>`;
+}
+
+function addRowHtml() {
+  return `<tr id="b2b-add-row" style="border-top:2px solid #f4f5f7;background:#fafbfc;">
+    <td style="padding:6px;">${b2bCellInput('jiraEmail', '')}</td>
+    <td style="padding:6px;">${b2bCellInput('jiraName', '')}</td>
+    <td style="padding:6px;">${b2bCellInput('teamsEmail', '')}</td>
+    <td style="padding:6px;">${b2bCellInput('teamsName', '')}</td>
+    <td style="padding:6px;text-align:center;"><input type="checkbox" data-f="matrixxSupport"></td>
+    <td style="padding:6px;text-align:center;"><input type="checkbox" data-f="ariaSupport"></td>
+    <td style="padding:6px;"><button class="btn-sm" onclick="addMember(this)">+ Add</button></td>
+  </tr>`;
+}
+
+function renderB2bMembers() {
+  const body = document.getElementById('b2b-members-body');
+  if (!body) return;
+  body.innerHTML = b2bMembers.map(memberRowHtml).join('') + addRowHtml();
+}
+
+function readRow(rowEl) {
+  const data = {};
+  rowEl.querySelectorAll('[data-f]').forEach(inp => {
+    data[inp.dataset.f] = inp.type === 'checkbox' ? inp.checked : inp.value.trim();
+  });
+  return data;
+}
+
+async function addMember(btn) {
+  const row  = btn.closest('tr');
+  const data = readRow(row);
+  if (!data.jiraEmail && !data.jiraName) { b2bMsg('b2b-members-msg', 'Jira email or name is required.', false); return; }
+  if (!data.teamsEmail) { b2bMsg('b2b-members-msg', 'Teams email is required.', false); return; }
+  try {
+    const r = await fetch('/api/b2b/members', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    const d = await r.json();
+    if (!r.ok) { b2bMsg('b2b-members-msg', d.error || 'Add failed', false); return; }
+    b2bMsg('b2b-members-msg', 'Member added.', true);
+    loadB2bMembers();
+  } catch (e) { b2bMsg('b2b-members-msg', 'Network error: ' + e.message, false); }
+}
+
+async function saveMember(id, btn) {
+  const data = readRow(btn.closest('tr'));
+  try {
+    const r = await fetch('/api/b2b/members/' + id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    const d = await r.json();
+    b2bMsg('b2b-members-msg', r.ok ? 'Saved.' : (d.error || 'Save failed'), r.ok);
+  } catch (e) { b2bMsg('b2b-members-msg', 'Network error: ' + e.message, false); }
+}
+
+async function deleteMember(id, btn) {
+  if (!confirm('Remove this member mapping?')) return;
+  try {
+    const r = await fetch('/api/b2b/members/' + id, { method: 'DELETE' });
+    if (!r.ok) { const d = await r.json(); b2bMsg('b2b-members-msg', d.error || 'Delete failed', false); return; }
+    b2bMsg('b2b-members-msg', 'Member removed.', true);
+    loadB2bMembers();
+  } catch (e) { b2bMsg('b2b-members-msg', 'Network error: ' + e.message, false); }
 }
 </script>
 </body>

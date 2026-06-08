@@ -28,6 +28,9 @@ public class JiraClient {
     /** Cached after first successful discovery — avoids repeated /rest/api/3/field calls. */
     private volatile String severityFieldKey = null;
 
+    /** Cached Escalation Path[Dropdown] field key (e.g. "customfield_10052"). */
+    private volatile String escalationPathFieldKey = null;
+
     /**
      * Breach-owner attribution cache, keyed by "issueKey@breachEpochMs".
      * A ticket's changelog up to a *past* breach instant never changes, so this is
@@ -71,6 +74,33 @@ public class JiraClient {
         return null;
     }
 
+    /**
+     * Returns the Jira field key for the "Escalation Path" dropdown (e.g. "customfield_10052").
+     * Discovers it once via /rest/api/3/field and caches for the lifetime of the app.
+     */
+    public String discoverEscalationPathFieldKey() {
+        if (escalationPathFieldKey != null) return escalationPathFieldKey;
+        try {
+            ResponseEntity<JsonNode> resp = restTemplate.exchange(
+                baseUrl() + "/rest/api/3/field",
+                HttpMethod.GET, new HttpEntity<>(authHeaders()), JsonNode.class);
+            if (resp.getBody() != null) {
+                for (JsonNode f : resp.getBody()) {
+                    String name = f.path("name").asText("").toLowerCase();
+                    String id   = f.path("id").asText("");
+                    if (name.equals("escalation path") || name.equals("escalation path[dropdown]")) {
+                        escalationPathFieldKey = id;
+                        log.info("[B2B] Discovered escalation path field key: {}", id);
+                        return escalationPathFieldKey;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[B2B] Could not discover escalation path field key: {}", e.getMessage());
+        }
+        return null;
+    }
+
     // -----------------------------------------------------------------------
     // Auth
     // -----------------------------------------------------------------------
@@ -86,6 +116,9 @@ public class JiraClient {
     }
 
     private String baseUrl() { return configService.getUrl(); }
+
+    /** Browse URL for a Jira issue, e.g. https://lla.atlassian.net/browse/SAC-123. */
+    public String browseUrl(String issueKey) { return baseUrl() + "/browse/" + issueKey; }
 
     // -----------------------------------------------------------------------
     // User lookup
@@ -440,6 +473,61 @@ public class JiraClient {
             return breached ? "⚠ Breached" : "✓ Met";
         }
         return "";
+    }
+
+    // -----------------------------------------------------------------------
+    // B2B monitor queries — caller supplies the full JQL (no assignee stripping;
+    // B2B watches all matching tickets regardless of who they're assigned to).
+    // -----------------------------------------------------------------------
+
+    /**
+     * Fetches every ticket matching the given JQL with the fields B2B needs:
+     * summary, assignee, status, the SLA custom field, and the Escalation Path field.
+     */
+    public List<JsonNode> getB2bTickets(String jql) {
+        StringBuilder fields = new StringBuilder("summary,assignee,status");
+        String slaFieldId = configService.getSlaFieldId();
+        if (slaFieldId != null && !slaFieldId.isBlank()) fields.append(",").append(slaFieldId);
+        String escKey = discoverEscalationPathFieldKey();
+        if (escKey != null && !escKey.isBlank()) fields.append(",").append(escKey);
+        log.debug("[B2B] Fetching tickets by JQL: {} (fields={})", jql, fields);
+        return searchTicketsWithFields(jql, fields.toString());
+    }
+
+    /** Reads the Escalation Path dropdown value from a ticket node, or "" if unset. */
+    public String extractEscalationPath(JsonNode ticket) {
+        String escKey = discoverEscalationPathFieldKey();
+        if (escKey == null || escKey.isBlank()) return "";
+        JsonNode node = ticket.path("fields").path(escKey);
+        if (node.isMissingNode() || node.isNull()) return "";
+        if (node.isTextual()) return node.asText("");
+        if (node.has("value")) return node.path("value").asText("");
+        if (node.has("name"))  return node.path("name").asText("");
+        return "";
+    }
+
+    /** Ongoing SLA snapshot for the 15-minute breach-warning check. */
+    public record SlaOngoing(boolean available, boolean breached, long remainingMillis) {}
+
+    /**
+     * Extracts the ongoing SLA cycle's remaining millis and breach flag from a ticket.
+     * Returns available=false when no SLA field/ongoing cycle is present (e.g. already
+     * completed or not started) — those cases never trigger a pre-breach warning.
+     */
+    public SlaOngoing extractSlaOngoing(JsonNode ticket) {
+        String slaFieldId = configService.getSlaFieldId();
+        if (slaFieldId == null || slaFieldId.isBlank()) return new SlaOngoing(false, false, 0L);
+
+        JsonNode slaNode = ticket.path("fields").path(slaFieldId);
+        if (slaNode.isMissingNode() || slaNode.isNull()) return new SlaOngoing(false, false, 0L);
+
+        JsonNode ongoing = slaNode.path("ongoingCycle");
+        if (ongoing.isMissingNode() || ongoing.isNull()) return new SlaOngoing(false, false, 0L);
+
+        boolean breached = ongoing.path("breached").asBoolean(false);
+        long    millis   = ongoing.path("remainingTime").path("millis").asLong(0);
+        if (millis < 0) breached = true;
+        return new SlaOngoing(true, breached, millis);
     }
 
     /** Shared JQL stripping used by assignee-based queries. */

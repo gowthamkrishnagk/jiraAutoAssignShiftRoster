@@ -178,6 +178,160 @@ public class WebhookService {
     }
 
     // -----------------------------------------------------------------------
+    // B2B single-ticket @mention card → separate B2B webhook URL
+    // -----------------------------------------------------------------------
+
+    /**
+     * Builds a single-ticket Adaptive Card with an optional Teams @mention and POSTs
+     * it to the configured B2B webhook URL. Used for all three B2B notifications
+     * (reassignment, Matrixx/Aria support needed, SLA breach warning).
+     *
+     * @param title       card banner title
+     * @param mentionText body line, may contain "&lt;at&gt;Name&lt;/at&gt;" if a mapped member exists
+     * @param teamsEmail  Teams id/UPN for the @mention; blank/null → no mention entity
+     * @param teamsName   Teams display name for the @mention
+     * @param ticket      map with key, url, summary, context, sla
+     */
+    public void fireB2bCard(String title, String mentionText,
+                            String teamsEmail, String teamsName,
+                            Map<String, String> ticket) {
+        String webhookUrl = jiraConfigService.getB2bWebhookUrl();
+        if (webhookUrl == null || webhookUrl.isBlank()) {
+            log.warn("[B2B] No B2B webhook URL configured — skipping notification for {}",
+                ticket.get("key"));
+            return;
+        }
+        try {
+            String cardJson = mapper.writeValueAsString(
+                buildB2bCard(title, mentionText, teamsEmail, teamsName, ticket));
+
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("timestamp",    LocalDateTime.now().format(FMT));
+            payload.put("ticketKey",    ticket.getOrDefault("key", ""));
+            payload.put("mentionEmail", teamsEmail != null ? teamsEmail : "");
+            payload.put("mentionName",  teamsName  != null ? teamsName  : "");
+            payload.put("ticket",       ticket);
+            payload.put("adaptiveCard", cardJson);
+
+            String body = mapper.writeValueAsString(payload);
+            sendAsyncDelayed(webhookUrl, body, "b2b", ticket.getOrDefault("key", "") + " — " + title, 0);
+        } catch (Exception e) {
+            log.error("[B2B] Failed to build/send card for {}: {}", ticket.get("key"), e.getMessage());
+        }
+    }
+
+    /** Test the B2B webhook with a single sample @mention card. */
+    public int testB2bWebhook(String url) {
+        if (url == null || url.isBlank()) return -1;
+        String jiraBase = jiraConfigService.getUrl();
+        Map<String, String> sample = new LinkedHashMap<>();
+        sample.put("key",     "SAC-9999");
+        sample.put("url",     jiraBase + "/browse/SAC-9999");
+        sample.put("summary", "B2B test ticket — verifying the B2B webhook and @mention rendering");
+        sample.put("context", "Assignee: Test User");
+        sample.put("sla",     "1h 30m remaining");
+        try {
+            String cardJson = mapper.writeValueAsString(buildB2bCard(
+                "🔔 B2B Webhook Test",
+                "<at>Test User</at> — this is a B2B test message.",
+                "test.user@example.com", "Test User", sample));
+
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("timestamp",    LocalDateTime.now().format(FMT));
+            payload.put("ticketKey",    sample.get("key"));
+            payload.put("mentionEmail", "test.user@example.com");
+            payload.put("mentionName",  "Test User");
+            payload.put("ticket",       sample);
+            payload.put("adaptiveCard", cardJson);
+
+            String reqBody = mapper.writeValueAsString(payload);
+            HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(reqBody))
+                .timeout(Duration.ofSeconds(15))
+                .build();
+            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            log.info("[b2b-webhook-test] POST {} → HTTP {}", url, resp.statusCode());
+            return resp.statusCode();
+        } catch (Exception e) {
+            log.warn("[b2b-webhook-test] Failed: {}", e.getMessage());
+            return -1;
+        }
+    }
+
+    private Map<String, Object> buildB2bCard(String title, String mentionText,
+                                             String teamsEmail, String teamsName,
+                                             Map<String, String> ticket) {
+        String key     = ticket.getOrDefault("key",     "");
+        String url     = ticket.getOrDefault("url",     "");
+        String summary = ticket.getOrDefault("summary", "");
+        String context = ticket.getOrDefault("context", "");
+        String sla     = ticket.getOrDefault("sla",     "");
+        boolean mention = teamsEmail != null && !teamsEmail.isBlank();
+
+        List<Map<String, Object>> body = new ArrayList<>();
+
+        // Banner
+        Map<String, Object> banner = new LinkedHashMap<>();
+        banner.put("type",  "Container");
+        banner.put("style", "emphasis");
+        banner.put("bleed", true);
+        banner.put("items", List.of(
+            tb(title, "Bolder", "Accent", "Large", true),
+            tb("🕐 " + LocalDateTime.now().format(FMT), null, "Accent", "Small", false)
+        ));
+        body.add(banner);
+
+        // Ticket detail
+        List<Map<String, Object>> items = new ArrayList<>();
+        items.add(tb("[" + key + "](" + url + ")  ↗", "Bolder", "Accent", "Medium", false));
+        if (!summary.isBlank()) {
+            Map<String, Object> summaryText = tb(summary, null, null, "Small", true);
+            summaryText.put("isSubtle", true);
+            items.add(summaryText);
+        }
+        if (!context.isBlank()) items.add(tb(context, "Bolder", null, "Small", true));
+        if (!sla.isBlank()) {
+            String slaColor = sla.contains("Breach") ? "Attention" : "Good";
+            String slaIcon  = sla.contains("Breach") ? "🔴" : "🟢";
+            items.add(tb("SLA:  " + slaIcon + "  " + sla, "Bolder", slaColor, "Small", false));
+        }
+        Map<String, Object> mentionBlock = tb(mentionText, "Bolder", null, "Default", true);
+        mentionBlock.put("spacing", "Medium");
+        items.add(mentionBlock);
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("type",      "Container");
+        detail.put("separator", true);
+        detail.put("spacing",   "Medium");
+        detail.put("items",     items);
+        body.add(detail);
+
+        // Root
+        Map<String, Object> adaptiveCard = new LinkedHashMap<>();
+        adaptiveCard.put("type",    "AdaptiveCard");
+        adaptiveCard.put("$schema", "http://adaptivecards.io/schemas/adaptive-card.json");
+        adaptiveCard.put("version", "1.5");
+
+        Map<String, Object> msteams = new LinkedHashMap<>();
+        msteams.put("width", "Full");
+        if (mention) {
+            Map<String, Object> mentioned = new LinkedHashMap<>();
+            mentioned.put("id",   teamsEmail);
+            mentioned.put("name", teamsName);
+            Map<String, Object> entity = new LinkedHashMap<>();
+            entity.put("type",      "mention");
+            entity.put("text",      "<at>" + teamsName + "</at>");
+            entity.put("mentioned", mentioned);
+            msteams.put("entities", List.of(entity));
+        }
+        adaptiveCard.put("msteams", msteams);
+        adaptiveCard.put("body",    body);
+        return adaptiveCard;
+    }
+
+    // -----------------------------------------------------------------------
     // Build fully responsive Adaptive Card — Container per ticket
     //
     // Adapts to any screen width (mobile / tablet / desktop):

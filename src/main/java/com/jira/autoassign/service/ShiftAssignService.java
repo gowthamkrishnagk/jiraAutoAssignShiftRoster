@@ -82,7 +82,11 @@ public class ShiftAssignService {
     // -----------------------------------------------------------------------
 
     public void runAllTeams() {
-        List<Team> teams = teamRepository.findAll();
+        // Monitor-only teams (e.g. B2B) are never auto-assigned — they're handled
+        // separately by B2bNotifyService.
+        List<Team> teams = teamRepository.findAll().stream()
+            .filter(Team::isAutoAssign)
+            .collect(Collectors.toList());
         if (teams.isEmpty()) return;
 
         log.info("Starting parallel assignment run for {} team(s): {}",

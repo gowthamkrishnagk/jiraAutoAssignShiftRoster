@@ -24,6 +24,9 @@ public class JiraConfig {
     @Column(name = "webhook_url", columnDefinition = "TEXT")
     private String webhookUrl;
 
+    @Column(name = "b2b_webhook_url", columnDefinition = "TEXT")
+    private String b2bWebhookUrl;
+
     public Long getId()                    { return id; }
     public String getJiraEmail()           { return jiraEmail; }
     public void   setJiraEmail(String v)   { this.jiraEmail = v; }
@@ -33,4 +36,6 @@ public class JiraConfig {
     public void   setSlaFieldId(String v)  { this.slaFieldId = v; }
     public String getWebhookUrl()          { return webhookUrl; }
     public void   setWebhookUrl(String v)  { this.webhookUrl = v; }
+    public String getB2bWebhookUrl()         { return b2bWebhookUrl; }
+    public void   setB2bWebhookUrl(String v) { this.b2bWebhookUrl = v; }
 }

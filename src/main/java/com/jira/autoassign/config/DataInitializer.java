@@ -60,5 +60,16 @@ public class DataInitializer implements ApplicationRunner {
             teamRepository.save(new Team("sac", "SAC Team", sacJql));
             log.info("Seeded team: SAC Team");
         }
+
+        // Monitor-only team: watched for assignee changes / support needs / SLA warnings,
+        // never auto-assigned (autoAssign = false).
+        if (!teamRepository.existsById("b2b")) {
+            String b2bJql = "project = SAC AND \"Account type[Dropdown]\" = \"B2B\" "
+                + "AND \"Reporting Area[Dropdown]\" != \"Order Fallout\" "
+                + "AND status not in (Resolved, Closed, Cancelled, \"Waiting for customer\") "
+                + "ORDER BY created DESC";
+            teamRepository.save(new Team("b2b", "B2B", b2bJql, false));
+            log.info("Seeded team: B2B (monitor-only)");
+        }
     }
 }

@@ -61,6 +61,7 @@ public class UploadController {
                 m.put("name",   t.getName());
                 m.put("jql",    t.getJql() != null ? t.getJql() : "");
                 m.put("dryRun", t.isDryRun());
+                m.put("autoAssign", t.isAutoAssign());
                 return m;
             }).collect(Collectors.toList())
         );
