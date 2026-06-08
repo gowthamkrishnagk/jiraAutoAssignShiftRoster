@@ -206,12 +206,15 @@ public class WebhookService {
                 buildB2bCard(title, mentionText, teamsEmail, teamsName, ticket));
 
             Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("timestamp",    LocalDateTime.now().format(FMT));
-            payload.put("ticketKey",    ticket.getOrDefault("key", ""));
-            payload.put("mentionEmail", teamsEmail != null ? teamsEmail : "");
-            payload.put("mentionName",  teamsName  != null ? teamsName  : "");
-            payload.put("ticket",       ticket);
-            payload.put("adaptiveCard", cardJson);
+            payload.put("timestamp",         LocalDateTime.now().format(FMT));
+            payload.put("ticketKey",         ticket.getOrDefault("key", ""));
+            payload.put("mentionEmail",      teamsEmail != null ? teamsEmail : "");
+            payload.put("mentionName",       teamsName  != null ? teamsName  : "");
+            // Trimmed Jira identity for flow-side matching against Teams group members.
+            payload.put("assigneeJiraEmail", ticket.getOrDefault("assigneeJiraEmail", ""));
+            payload.put("assigneeNameKey",   ticket.getOrDefault("assigneeNameKey", ""));
+            payload.put("ticket",            ticket);
+            payload.put("adaptiveCard",      cardJson);
 
             String body = mapper.writeValueAsString(payload);
             sendAsyncDelayed(webhookUrl, body, "b2b", ticket.getOrDefault("key", "") + " — " + title, 0);
@@ -230,6 +233,8 @@ public class WebhookService {
         sample.put("summary", "B2B test ticket — verifying the B2B webhook and @mention rendering");
         sample.put("context", "Assignee: Test User");
         sample.put("sla",     "1h 30m remaining");
+        sample.put("assigneeJiraEmail", "testUser@libertypr.com");
+        sample.put("assigneeNameKey",   "testuser");
         try {
             String cardJson = mapper.writeValueAsString(buildB2bCard(
                 "🔔 B2B Webhook Test",
@@ -237,12 +242,14 @@ public class WebhookService {
                 "test.user@example.com", "Test User", sample));
 
             Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("timestamp",    LocalDateTime.now().format(FMT));
-            payload.put("ticketKey",    sample.get("key"));
-            payload.put("mentionEmail", "test.user@example.com");
-            payload.put("mentionName",  "Test User");
-            payload.put("ticket",       sample);
-            payload.put("adaptiveCard", cardJson);
+            payload.put("timestamp",         LocalDateTime.now().format(FMT));
+            payload.put("ticketKey",         sample.get("key"));
+            payload.put("mentionEmail",      "test.user@example.com");
+            payload.put("mentionName",       "Test User");
+            payload.put("assigneeJiraEmail", sample.get("assigneeJiraEmail"));
+            payload.put("assigneeNameKey",   sample.get("assigneeNameKey"));
+            payload.put("ticket",            sample);
+            payload.put("adaptiveCard",      cardJson);
 
             String reqBody = mapper.writeValueAsString(payload);
             HttpRequest req = HttpRequest.newBuilder()

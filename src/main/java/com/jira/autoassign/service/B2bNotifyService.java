@@ -100,6 +100,12 @@ public class B2bNotifyService {
         String currentName  = unassigned ? "" : assignee.path("displayName").asText(currentEmail);
         boolean hasAssignee = !currentAccId.isBlank();
 
+        // Normalized key for matching the assignee to a Teams group member in Power Automate:
+        // the Jira email local-part (before @), stripped to lowercase alphanumerics
+        // (e.g. "sujiM@libertypr.com" -> "sujim"). Falls back to the display name when the
+        // email is hidden. Match this against each group member's normalized display name.
+        String nameKey = normalizeKey(currentEmail, currentName);
+
         String escalation = jiraClient.extractEscalationPath(ticket);
         JiraClient.SlaOngoing sla = jiraClient.extractSlaOngoing(ticket);
         String slaFriendly = jiraClient.extractSlaRemaining(ticket);
@@ -118,7 +124,7 @@ public class B2bNotifyService {
         if (assigneeChanged) {
             String from = st.getAssigneeName() != null && !st.getAssigneeName().isBlank()
                 ? st.getAssigneeName() : "Unassigned";
-            Map<String, String> t = ticketMap(issueKey, summary, "Reassigned: " + from + " → " + currentName, slaFriendly);
+            Map<String, String> t = ticketMap(issueKey, summary, "Reassigned: " + from + " → " + currentName, slaFriendly, currentEmail, nameKey);
             String body = mention.has()
                 ? "<at>" + mention.name() + "</at> — this is a B2B ticket, please work on it as priority."
                 : mention.name() + " — this is a B2B ticket, please work on it as priority.";
@@ -143,7 +149,7 @@ public class B2bNotifyService {
         if (hasAssignee && !supportType.equals(st.getSupportNotified())) {
             if (!supportType.equals("NONE")) {
                 String label = supportType.equals("MATRIXX") ? "Matrixx" : "Aria";
-                Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly);
+                Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey);
                 String nameTag = mention.has() ? "<at>" + mention.name() + "</at>" : mention.name();
                 String body = "Hi " + nameTag + " — this B2B ticket needs " + label
                     + " support, please check this on priority.";
@@ -158,7 +164,7 @@ public class B2bNotifyService {
         boolean inWarnWindow = hasAssignee && sla.available() && !sla.breached()
             && sla.remainingMillis() > 0 && sla.remainingMillis() <= SLA_WARN_WINDOW_MS;
         if (inWarnWindow && !st.isSlaWarned()) {
-            Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly);
+            Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey);
             String nameTag = mention.has() ? "<at>" + mention.name() + "</at>" : mention.name();
             String body = nameTag + " — heads up: this B2B ticket's SLA will breach within ~15 minutes.";
             log.info("[{}] {} SLA breach warning ({} left) — notifying {}",
@@ -208,13 +214,28 @@ public class B2bNotifyService {
         return new Mention("", fallbackName == null ? "" : fallbackName, false);
     }
 
-    private Map<String, String> ticketMap(String key, String summary, String context, String sla) {
+    private Map<String, String> ticketMap(String key, String summary, String context, String sla,
+                                          String assigneeJiraEmail, String assigneeNameKey) {
         Map<String, String> t = new LinkedHashMap<>();
-        t.put("key",     key);
-        t.put("url",     jiraClient.browseUrl(key));
-        t.put("summary", summary);
-        t.put("context", context);
-        t.put("sla",     sla == null ? "" : sla);
+        t.put("key",              key);
+        t.put("url",              jiraClient.browseUrl(key));
+        t.put("summary",          summary);
+        t.put("context",          context);
+        t.put("sla",              sla == null ? "" : sla);
+        t.put("assigneeJiraEmail", assigneeJiraEmail == null ? "" : assigneeJiraEmail);
+        t.put("assigneeNameKey",   assigneeNameKey == null ? "" : assigneeNameKey);
         return t;
+    }
+
+    /**
+     * Normalizes a Jira identity into a match key: the email local-part (before @) if an
+     * email is present, otherwise the display name — lowercased and stripped to alphanumerics.
+     * e.g. "sujiM@libertypr.com" -> "sujim", "Suji M" -> "sujim".
+     */
+    private static String normalizeKey(String email, String displayName) {
+        String base = (email != null && email.contains("@"))
+            ? email.substring(0, email.indexOf('@'))
+            : (displayName == null ? "" : displayName);
+        return base.toLowerCase().replaceAll("[^a-z0-9]", "");
     }
 }
