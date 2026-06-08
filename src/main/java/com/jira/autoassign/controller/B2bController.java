@@ -134,7 +134,21 @@ public class B2bController {
         if (url == null || url.isBlank())
             return ResponseEntity.badRequest().body(Map.of("error", "No B2B webhook URL configured"));
 
-        int status = webhookService.testB2bWebhook(url);
+        // Who to @mention in the test: the email typed in the B2B tab, else the first
+        // mapped member's Teams email, else none (card posts with a plain name).
+        String mentionEmail = body.getOrDefault("mentionEmail", "").trim();
+        String mentionName  = body.getOrDefault("mentionName",  "").trim();
+        if (mentionEmail.isEmpty()) {
+            B2bMember first = memberRepository.findAll().stream()
+                .filter(m -> m.getTeamsEmail() != null && !m.getTeamsEmail().isBlank())
+                .findFirst().orElse(null);
+            if (first != null) {
+                mentionEmail = first.getTeamsEmail();
+                mentionName  = first.getTeamsName() != null ? first.getTeamsName() : first.getJiraName();
+            }
+        }
+
+        int status = webhookService.testB2bWebhook(url, mentionEmail, mentionName);
         if (status >= 200 && status < 300) {
             return ResponseEntity.ok(Map.of("success", true, "httpStatus", status));
         } else if (status == -1) {

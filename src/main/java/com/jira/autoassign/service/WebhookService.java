@@ -253,27 +253,35 @@ public class WebhookService {
         return payload;
     }
 
-    /** Test the B2B webhook with a single sample @mention card. */
-    public int testB2bWebhook(String url) {
+    /** Test the B2B webhook with a single sample card. If a real mapped person is
+     *  supplied (mentionEmail), the card @mentions them so the flow's token step can
+     *  resolve a real user; otherwise it posts with a plain name (no forced mention). */
+    public int testB2bWebhook(String url, String mentionEmail, String mentionName) {
         if (url == null || url.isBlank()) return -1;
+        boolean hasReal = mentionEmail != null && !mentionEmail.isBlank();
+        String name = (mentionName != null && !mentionName.isBlank()) ? mentionName : "Test User";
+        String email = hasReal ? mentionEmail.trim() : "";
+
         String jiraBase = jiraConfigService.getUrl();
         Map<String, String> sample = new LinkedHashMap<>();
         sample.put("key",     "SAC-9999");
         sample.put("url",     jiraBase + "/browse/SAC-9999");
         sample.put("summary", "B2B test ticket — verifying the B2B webhook and @mention rendering");
-        sample.put("context", "Assignee: Test User");
+        sample.put("context", "Assignee: " + name);
         sample.put("sla",     "1h 30m remaining");
-        sample.put("assigneeJiraEmail", "testUser@libertypr.com");
-        sample.put("assigneeNameKey",   "testuser");
-        sample.put("assigneeNameSearch", "test");
+        String norm = name.trim().toLowerCase();
+        sample.put("assigneeJiraEmail",  "");
+        sample.put("assigneeNameKey",    norm.replaceAll("[^a-z0-9]", ""));
+        sample.put("assigneeNameSearch", norm.split("[^a-z]+")[0]);
         try {
+            String mentionText = hasReal
+                ? "<at>" + name + "</at> — this is a B2B test message."
+                : name + " — this is a B2B test message.";
             Map<String, Object> card = buildB2bCard(
-                "🔔 B2B Webhook Test",
-                "<at>Test User</at> — this is a B2B test message.",
-                "test.user@example.com", "Test User", sample);
+                "🔔 B2B Webhook Test", mentionText, email, name, sample);
             Map<String, Object> payload = teamsMessagePayload(card,
                 "🔔 B2B Webhook Test", "this is a B2B test message.",
-                "test.user@example.com", "Test User", sample);
+                email, name, sample);
             String reqBody = mapper.writeValueAsString(payload);
             HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))

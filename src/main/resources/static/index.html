@@ -1871,6 +1871,10 @@
       <input id="b2b-wh-url" type="text" placeholder="https://prod-XX.logic.azure.com/workflows/..."
         style="flex:1;min-width:280px;padding:8px 10px;border:1px solid #dfe1e6;border-radius:6px;font-size:.85rem;">
       <button class="btn" onclick="saveB2bWebhook()">Save</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
+      <input id="b2b-test-mention" type="text" placeholder="Test @mention email (e.g. you@prodapt.com)"
+        style="flex:1;min-width:280px;padding:8px 10px;border:1px solid #dfe1e6;border-radius:6px;font-size:.85rem;">
       <button class="btn" onclick="testB2bWebhook()">Send test</button>
     </div>
     <div id="b2b-wh-msg" style="margin-top:8px;font-size:.85rem;"></div>
@@ -4213,11 +4217,12 @@ async function saveB2bWebhook() {
 
 async function testB2bWebhook() {
   const url = document.getElementById('b2b-wh-url').value.trim();
+  const mentionEmail = document.getElementById('b2b-test-mention').value.trim();
   b2bMsg('b2b-wh-msg', 'Sending test…', true);
   try {
     const r = await fetch('/api/b2b/webhook-settings/test', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ webhookUrl: url })
+      body: JSON.stringify({ webhookUrl: url, mentionEmail })
     });
     const d = await r.json();
     b2bMsg('b2b-wh-msg', r.ok ? ('Test sent (HTTP ' + d.httpStatus + ').') : (d.error || 'Test failed'), r.ok);
