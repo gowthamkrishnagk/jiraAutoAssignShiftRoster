@@ -221,7 +221,8 @@ public class WebhookService {
      */
     private Map<String, Object> teamsMessagePayload(Map<String, Object> card,
                                                     String teamsEmail, String teamsName,
-                                                    Map<String, String> ticket) {
+                                                    Map<String, String> ticket)
+            throws com.fasterxml.jackson.core.JsonProcessingException {
         Map<String, Object> attachment = new LinkedHashMap<>();
         attachment.put("contentType", "application/vnd.microsoft.card.adaptive");
         attachment.put("content",     card);
@@ -238,6 +239,10 @@ public class WebhookService {
         payload.put("assigneeJiraEmail", ticket.getOrDefault("assigneeJiraEmail", ""));
         payload.put("assigneeNameKey",   ticket.getOrDefault("assigneeNameKey", ""));
         payload.put("ticket",            ticket);
+        // card  = Adaptive Card as a JSON object; adaptiveCard = same card as a JSON string.
+        // Either can be dropped straight into a "Post card in a chat or channel" action.
+        payload.put("card",              card);
+        payload.put("adaptiveCard",      mapper.writeValueAsString(card));
         return payload;
     }
 
