@@ -4,9 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jira.autoassign.client.JiraClient;
 import com.jira.autoassign.entity.B2bAssignState;
 import com.jira.autoassign.entity.B2bMember;
+import com.jira.autoassign.entity.B2bNotifyLog;
 import com.jira.autoassign.entity.Team;
 import com.jira.autoassign.repository.B2bAssignStateRepository;
 import com.jira.autoassign.repository.B2bMemberRepository;
+import com.jira.autoassign.repository.B2bNotifyLogRepository;
 import com.jira.autoassign.repository.TeamRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,18 +47,21 @@ public class B2bNotifyService {
     private final B2bAssignStateRepository   stateRepository;
     private final WebhookService             webhookService;
     private final JiraConfigService          jiraConfigService;
+    private final B2bNotifyLogRepository     logRepository;
 
     public B2bNotifyService(JiraClient jiraClient, TeamRepository teamRepository,
                             B2bMemberRepository memberRepository,
                             B2bAssignStateRepository stateRepository,
                             WebhookService webhookService,
-                            JiraConfigService jiraConfigService) {
+                            JiraConfigService jiraConfigService,
+                            B2bNotifyLogRepository logRepository) {
         this.jiraClient        = jiraClient;
         this.teamRepository    = teamRepository;
         this.memberRepository  = memberRepository;
         this.stateRepository   = stateRepository;
         this.webhookService    = webhookService;
         this.jiraConfigService = jiraConfigService;
+        this.logRepository     = logRepository;
     }
 
     /** Resolved Teams @mention target for an assignee. */
@@ -139,6 +144,7 @@ public class B2bNotifyService {
                 : mention.name() + " — " + message;
             log.info("[{}] {} reassigned {} → {} — notifying", team.getName(), issueKey, from, currentName);
             webhookService.fireB2bCard("🔔 B2B Ticket Reassigned", body, message, mention.email(), mention.name(), t);
+            logNotify(issueKey, "Reassigned", currentName, from + " → " + currentName, mention.has());
             // New assignee context — let support / SLA warnings fire again.
             st.setSupportNotified("NONE");
             st.setSlaWarned(false);
@@ -166,6 +172,7 @@ public class B2bNotifyService {
                 log.info("[{}] {} needs {} support — notifying {}", team.getName(), issueKey, label, currentName);
                 webhookService.fireB2bCard("🛠 B2B Ticket Needs " + label + " Support",
                     body, message, mention.email(), mention.name(), t);
+                logNotify(issueKey, label + " Support", currentName, "Needs " + label + " support", mention.has());
             }
             st.setSupportNotified(supportType); // also covers silent reset to NONE
         }
@@ -181,6 +188,7 @@ public class B2bNotifyService {
             log.info("[{}] {} SLA breach warning ({} left) — notifying {}",
                 team.getName(), issueKey, slaFriendly, currentName);
             webhookService.fireB2bCard("⏰ B2B SLA Breach Warning", body, message, mention.email(), mention.name(), t);
+            logNotify(issueKey, "SLA Warning", currentName, slaFriendly, mention.has());
             st.setSlaWarned(true);
         } else if (st.isSlaWarned() && sla.available() && !sla.breached()
                    && sla.remainingMillis() > SLA_WARN_WINDOW_MS) {
@@ -196,6 +204,7 @@ public class B2bNotifyService {
             String body = nameTag + " — " + message;
             log.info("[{}] {} SLA breached — notifying {}", team.getName(), issueKey, currentName);
             webhookService.fireB2bCard("🔴 B2B SLA Breached", body, message, mention.email(), mention.name(), t);
+            logNotify(issueKey, "SLA Breached", currentName, slaFriendly, mention.has());
             st.setSlaBreachNotified(true);
         }
 
@@ -203,10 +212,26 @@ public class B2bNotifyService {
         stateRepository.save(st);
     }
 
-    /** Purges per-ticket dedupe state not touched in the given number of days. */
+    /** Records a fired notification for the B2B history list. Never throws. */
+    private void logNotify(String issueKey, String type, String assignee, String detail, boolean mentioned) {
+        try {
+            logRepository.save(new B2bNotifyLog(issueKey, type, assignee, detail, mentioned));
+        } catch (Exception e) {
+            log.warn("[B2B] Could not record notify-log for {}: {}", issueKey, e.getMessage());
+        }
+    }
+
+    /** Last 20 B2B notifications, newest first. */
+    public List<B2bNotifyLog> recentNotifications() {
+        return logRepository.findTop20ByOrderByCreatedAtDesc();
+    }
+
+    /** Purges per-ticket dedupe state and notify-log entries older than the given days. */
     public void purgeOldState(int days) {
         int removed = stateRepository.deleteByUpdatedAtBefore(LocalDateTime.now().minusDays(days));
         if (removed > 0) log.info("Purged {} B2B dedupe-state row(s) older than {} days.", removed, days);
+        int logs = logRepository.deleteByCreatedAtBefore(LocalDateTime.now().minusDays(days));
+        if (logs > 0) log.info("Purged {} B2B notify-log row(s) older than {} days.", logs, days);
     }
 
     /** Match a Jira assignee to a mapped member by email first, then by display name. */

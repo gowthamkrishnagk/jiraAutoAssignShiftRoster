@@ -1926,6 +1926,11 @@
       </div>
     </details>
   </div>
+
+  <div class="card">
+    <div class="card-title">Recent B2B Notifications (last 20)</div>
+    <div id="b2b-history" style="overflow-x:auto;font-size:.85rem;"><div class="spin"></div></div>
+  </div>
 </main>
 </div><!-- /#b2b-view-content -->
 
@@ -4202,6 +4207,40 @@ async function loadB2bPanel() {
   if (jqlEl) jqlEl.textContent = (t && t.jql) ? t.jql : '(not set)';
   await loadB2bWebhook();
   await loadB2bMembers();
+  await loadB2bHistory();
+}
+
+async function loadB2bHistory() {
+  const host = document.getElementById('b2b-history');
+  if (!host) return;
+  let rows = [];
+  try { rows = await (await fetch('/api/b2b/history')).json(); }
+  catch { host.innerHTML = '<p style="color:#bf2600;">Could not load history.</p>'; return; }
+  if (!rows.length) {
+    host.innerHTML = '<p style="color:#5e6c84;padding:6px 0;">No notifications yet.</p>';
+    return;
+  }
+  const typeColor = t => /Breach/i.test(t) ? '#bf2600' : (/Warning/i.test(t) ? '#974F0C'
+                       : /Support/i.test(t) ? '#0747a6' : '#006644');
+  host.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;">
+      <thead><tr style="text-align:left;color:#5e6c84;border-bottom:2px solid #f4f5f7;">
+        <th style="padding:6px;">Time</th><th style="padding:6px;">Type</th>
+        <th style="padding:6px;">Ticket</th><th style="padding:6px;">Assignee</th>
+        <th style="padding:6px;">Detail</th><th style="padding:6px;text-align:center;">@</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr style="border-bottom:1px solid #f4f5f7;">
+            <td style="padding:6px;white-space:nowrap;color:#5e6c84;">${esc(r.time)}</td>
+            <td style="padding:6px;font-weight:600;color:${typeColor(r.type||'')};">${esc(r.type)}</td>
+            <td style="padding:6px;">${esc(r.issueKey)}</td>
+            <td style="padding:6px;">${esc(r.assignee)}</td>
+            <td style="padding:6px;color:#42526e;">${esc(r.detail)}</td>
+            <td style="padding:6px;text-align:center;">${r.mentioned ? '✅' : '—'}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
 }
 
 let b2bWebhookFull = '';   // full saved URL, kept in memory for Edit

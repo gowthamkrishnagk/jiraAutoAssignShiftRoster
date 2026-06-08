@@ -1,12 +1,15 @@
 package com.jira.autoassign.controller;
 
 import com.jira.autoassign.entity.B2bMember;
+import com.jira.autoassign.entity.B2bNotifyLog;
 import com.jira.autoassign.repository.B2bMemberRepository;
+import com.jira.autoassign.service.B2bNotifyService;
 import com.jira.autoassign.service.JiraConfigService;
 import com.jira.autoassign.service.WebhookService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,16 +24,37 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/b2b")
 public class B2bController {
 
+    private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
     private final B2bMemberRepository memberRepository;
     private final JiraConfigService   configService;
     private final WebhookService      webhookService;
+    private final B2bNotifyService    notifyService;
 
     public B2bController(B2bMemberRepository memberRepository,
                          JiraConfigService configService,
-                         WebhookService webhookService) {
+                         WebhookService webhookService,
+                         B2bNotifyService notifyService) {
         this.memberRepository = memberRepository;
         this.configService    = configService;
         this.webhookService   = webhookService;
+        this.notifyService    = notifyService;
+    }
+
+    // ----------------------------------------------------------------------- history
+
+    @GetMapping("/history")
+    public ResponseEntity<List<Map<String, Object>>> history() {
+        return ResponseEntity.ok(notifyService.recentNotifications().stream().map(l -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("time",      l.getCreatedAt() != null ? l.getCreatedAt().format(TS) : "");
+            m.put("type",      l.getType());
+            m.put("issueKey",  l.getIssueKey());
+            m.put("assignee",  l.getAssignee());
+            m.put("detail",    l.getDetail());
+            m.put("mentioned", l.isMentioned());
+            return m;
+        }).collect(Collectors.toList()));
     }
 
     // ----------------------------------------------------------------------- members
