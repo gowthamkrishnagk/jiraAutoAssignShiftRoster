@@ -26,7 +26,7 @@ public class Team {
      * Monitor-only teams (e.g. B2B) set this to false: they are never assigned,
      * only watched for assignee changes / support needs / SLA warnings.
      */
-    @Column(name = "auto_assign", nullable = false)
+    @Column(name = "auto_assign", nullable = false, columnDefinition = "boolean default true")
     private boolean autoAssign = true;
 
     public Team() {}
