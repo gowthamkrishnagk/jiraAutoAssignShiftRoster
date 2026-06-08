@@ -142,6 +142,7 @@ public class B2bNotifyService {
             // New assignee context — let support / SLA warnings fire again.
             st.setSupportNotified("NONE");
             st.setSlaWarned(false);
+            st.setSlaBreachNotified(false);
         }
         st.setAccountId(currentAccId);
         st.setAssigneeName(currentName);
@@ -185,6 +186,17 @@ public class B2bNotifyService {
                    && sla.remainingMillis() > SLA_WARN_WINDOW_MS) {
             // SLA pushed back out of the window (paused/extended) — allow a future warning.
             st.setSlaWarned(false);
+        }
+
+        // --- 4. SLA breached (already over) ---
+        if (hasAssignee && sla.available() && sla.breached() && !st.isSlaBreachNotified()) {
+            Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey, nameSearch);
+            String nameTag = mention.has() ? "<at>" + mention.name() + "</at>" : mention.name();
+            String message = "this B2B ticket's SLA has BREACHED — please action it immediately.";
+            String body = nameTag + " — " + message;
+            log.info("[{}] {} SLA breached — notifying {}", team.getName(), issueKey, currentName);
+            webhookService.fireB2bCard("🔴 B2B SLA Breached", body, message, mention.email(), mention.name(), t);
+            st.setSlaBreachNotified(true);
         }
 
         st.setUpdatedAt(LocalDateTime.now());
