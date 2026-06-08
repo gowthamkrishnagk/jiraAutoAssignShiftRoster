@@ -88,7 +88,13 @@ public class UploadController {
             return ResponseEntity.status(404).body(Map.of("error", "Team not found"));
         String jql  = body.get("jql");
         String name = body.get("name");
-        if (jql  != null && !jql.isBlank())  team.setJql(jql.trim());
+        // Monitor-only teams (B2B) have a fixed JQL — never editable via the API.
+        if (jql != null && !jql.isBlank()) {
+            if (!team.isAutoAssign())
+                return ResponseEntity.badRequest()
+                    .body(Map.of("error", "JQL is fixed for monitor-only teams and cannot be edited"));
+            team.setJql(jql.trim());
+        }
         if (name != null && !name.isBlank()) team.setName(name.trim());
         return ResponseEntity.ok(Map.of("id", team.getId(), "name", team.getName(), "jql", team.getJql()));
     }

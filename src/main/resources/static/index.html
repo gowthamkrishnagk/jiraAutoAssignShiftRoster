@@ -1855,6 +1855,14 @@
 <div id="b2b-view-content" style="display:none;">
 <main>
   <div class="card">
+    <div class="card-title">Ticket Query (JQL)</div>
+    <p style="color:#5e6c84;font-size:.85rem;margin:0 0 10px;">
+      Fixed for the B2B monitor team — not editable.
+    </p>
+    <pre class="jql-view-text" id="b2b-jql-text">(loading…)</pre>
+  </div>
+
+  <div class="card">
     <div class="card-title">B2B Team Webhook</div>
     <p style="color:#5e6c84;font-size:.85rem;margin:0 0 12px;">
       Assignee-change, Matrixx/Aria support, and SLA breach-warning cards are posted to this Microsoft Teams webhook.
@@ -4163,6 +4171,9 @@ function b2bMsg(elId, text, ok) {
 }
 
 async function loadB2bPanel() {
+  const t = teams.find(x => x.id === activeTeam);
+  const jqlEl = document.getElementById('b2b-jql-text');
+  if (jqlEl) jqlEl.textContent = (t && t.jql) ? t.jql : '(not set)';
   await loadB2bWebhook();
   await loadB2bMembers();
 }
