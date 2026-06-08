@@ -203,31 +203,42 @@ public class WebhookService {
         }
         try {
             Map<String, Object> card = buildB2bCard(title, mentionText, teamsEmail, teamsName, ticket);
-            String cardJson = mapper.writeValueAsString(card);
-
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("timestamp",         LocalDateTime.now().format(FMT));
-            payload.put("ticketKey",         ticket.getOrDefault("key", ""));
-            payload.put("mentionEmail",      teamsEmail != null ? teamsEmail : "");
-            payload.put("mentionName",       teamsName  != null ? teamsName  : "");
-            // hasMapping=true → an explicit B2B mapping exists; the flow should mention
-            // mentionEmail directly and SKIP the group auto-match. false → auto-match by
-            // assigneeNameKey against the Teams group members.
-            payload.put("hasMapping",        teamsEmail != null && !teamsEmail.isBlank());
-            // Trimmed Jira identity for flow-side matching against Teams group members.
-            payload.put("assigneeJiraEmail", ticket.getOrDefault("assigneeJiraEmail", ""));
-            payload.put("assigneeNameKey",   ticket.getOrDefault("assigneeNameKey", ""));
-            payload.put("ticket",            ticket);
-            // card  = the Adaptive Card as a JSON object (pass to "Post adaptive card" directly)
-            // adaptiveCard = the same card as a JSON string (for Compose / parse-then-pass flows)
-            payload.put("card",              card);
-            payload.put("adaptiveCard",      cardJson);
-
+            Map<String, Object> payload = teamsMessagePayload(card, teamsEmail, teamsName, ticket);
             String body = mapper.writeValueAsString(payload);
             sendAsyncDelayed(webhookUrl, body, "b2b", ticket.getOrDefault("key", "") + " — " + title, 0);
         } catch (Exception e) {
             log.error("[B2B] Failed to build/send card for {}: {}", ticket.get("key"), e.getMessage());
         }
+    }
+
+    /**
+     * Wraps the Adaptive Card in the Teams "Workflows" incoming-webhook message format:
+     * { "type":"message", "attachments":[ { contentType, content:<card> } ] }.
+     * The "When a Teams webhook request is received" template posts attachments[0].content
+     * directly, so the embedded msteams.entities @mention renders as-is.
+     * Extra top-level fields are ignored by that template but kept for flows that build
+     * their own mention (mapping override / group auto-match).
+     */
+    private Map<String, Object> teamsMessagePayload(Map<String, Object> card,
+                                                    String teamsEmail, String teamsName,
+                                                    Map<String, String> ticket) {
+        Map<String, Object> attachment = new LinkedHashMap<>();
+        attachment.put("contentType", "application/vnd.microsoft.card.adaptive");
+        attachment.put("content",     card);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type",              "message");
+        payload.put("attachments",       List.of(attachment));
+        // --- extras (ignored by the simple template; useful for custom flows) ---
+        payload.put("timestamp",         LocalDateTime.now().format(FMT));
+        payload.put("ticketKey",         ticket.getOrDefault("key", ""));
+        payload.put("mentionEmail",      teamsEmail != null ? teamsEmail : "");
+        payload.put("mentionName",       teamsName  != null ? teamsName  : "");
+        payload.put("hasMapping",        teamsEmail != null && !teamsEmail.isBlank());
+        payload.put("assigneeJiraEmail", ticket.getOrDefault("assigneeJiraEmail", ""));
+        payload.put("assigneeNameKey",   ticket.getOrDefault("assigneeNameKey", ""));
+        payload.put("ticket",            ticket);
+        return payload;
     }
 
     /** Test the B2B webhook with a single sample @mention card. */
@@ -247,20 +258,8 @@ public class WebhookService {
                 "🔔 B2B Webhook Test",
                 "<at>Test User</at> — this is a B2B test message.",
                 "test.user@example.com", "Test User", sample);
-            String cardJson = mapper.writeValueAsString(card);
-
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("timestamp",         LocalDateTime.now().format(FMT));
-            payload.put("ticketKey",         sample.get("key"));
-            payload.put("mentionEmail",      "test.user@example.com");
-            payload.put("mentionName",       "Test User");
-            payload.put("hasMapping",        true);
-            payload.put("assigneeJiraEmail", sample.get("assigneeJiraEmail"));
-            payload.put("assigneeNameKey",   sample.get("assigneeNameKey"));
-            payload.put("ticket",            sample);
-            payload.put("card",              card);
-            payload.put("adaptiveCard",      cardJson);
-
+            Map<String, Object> payload =
+                teamsMessagePayload(card, "test.user@example.com", "Test User", sample);
             String reqBody = mapper.writeValueAsString(payload);
             HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
