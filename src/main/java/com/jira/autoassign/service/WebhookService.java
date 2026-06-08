@@ -242,9 +242,10 @@ public class WebhookService {
         payload.put("mentionEmail",      teamsEmail != null ? teamsEmail : "");
         payload.put("mentionName",       teamsName  != null ? teamsName  : "");
         payload.put("hasMapping",        teamsEmail != null && !teamsEmail.isBlank());
-        payload.put("assigneeJiraEmail", ticket.getOrDefault("assigneeJiraEmail", ""));
-        payload.put("assigneeNameKey",   ticket.getOrDefault("assigneeNameKey", ""));
-        payload.put("ticket",            ticket);
+        payload.put("assigneeJiraEmail",  ticket.getOrDefault("assigneeJiraEmail", ""));
+        payload.put("assigneeNameKey",    ticket.getOrDefault("assigneeNameKey", ""));
+        payload.put("assigneeNameSearch", ticket.getOrDefault("assigneeNameSearch", ""));
+        payload.put("ticket",             ticket);
         // card  = Adaptive Card as a JSON object; adaptiveCard = same card as a JSON string.
         // Either can be dropped straight into a "Post card in a chat or channel" action.
         payload.put("card",              card);
@@ -264,6 +265,7 @@ public class WebhookService {
         sample.put("sla",     "1h 30m remaining");
         sample.put("assigneeJiraEmail", "testUser@libertypr.com");
         sample.put("assigneeNameKey",   "testuser");
+        sample.put("assigneeNameSearch", "test");
         try {
             Map<String, Object> card = buildB2bCard(
                 "🔔 B2B Webhook Test",

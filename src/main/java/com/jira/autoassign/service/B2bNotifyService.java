@@ -109,6 +109,11 @@ public class B2bNotifyService {
         // email is hidden. Match this against each group member's normalized display name.
         String nameKey = normalizeKey(currentEmail, currentName);
 
+        // First-name fragment for a forgiving startswith() search of the Teams group
+        // (e.g. "sujiM" / "suji.mahindran" / "Suji Mahindran" -> "suji"). Lets the flow
+        // match "suji@prodapt.com" or "suji.mahindran@prodapt.com" off one Jira name.
+        String nameSearch = firstNameFragment(currentEmail, currentName);
+
         String escalation = jiraClient.extractEscalationPath(ticket);
         JiraClient.SlaOngoing sla = jiraClient.extractSlaOngoing(ticket);
         String slaFriendly = jiraClient.extractSlaRemaining(ticket);
@@ -127,7 +132,7 @@ public class B2bNotifyService {
         if (assigneeChanged) {
             String from = st.getAssigneeName() != null && !st.getAssigneeName().isBlank()
                 ? st.getAssigneeName() : "Unassigned";
-            Map<String, String> t = ticketMap(issueKey, summary, "Reassigned: " + from + " → " + currentName, slaFriendly, currentEmail, nameKey);
+            Map<String, String> t = ticketMap(issueKey, summary, "Reassigned: " + from + " → " + currentName, slaFriendly, currentEmail, nameKey, nameSearch);
             String message = "this is a B2B ticket, please work on it as priority.";
             String body = mention.has()
                 ? "<at>" + mention.name() + "</at> — " + message
@@ -153,7 +158,7 @@ public class B2bNotifyService {
         if (hasAssignee && !supportType.equals(st.getSupportNotified())) {
             if (!supportType.equals("NONE")) {
                 String label = supportType.equals("MATRIXX") ? "Matrixx" : "Aria";
-                Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey);
+                Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey, nameSearch);
                 String nameTag = mention.has() ? "<at>" + mention.name() + "</at>" : mention.name();
                 String message = "this B2B ticket needs " + label + " support, please check this on priority.";
                 String body = "Hi " + nameTag + " — " + message;
@@ -168,7 +173,7 @@ public class B2bNotifyService {
         boolean inWarnWindow = hasAssignee && sla.available() && !sla.breached()
             && sla.remainingMillis() > 0 && sla.remainingMillis() <= SLA_WARN_WINDOW_MS;
         if (inWarnWindow && !st.isSlaWarned()) {
-            Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey);
+            Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey, nameSearch);
             String nameTag = mention.has() ? "<at>" + mention.name() + "</at>" : mention.name();
             String message = "heads up — this B2B ticket's SLA will breach within ~15 minutes.";
             String body = nameTag + " — " + message;
@@ -238,15 +243,17 @@ public class B2bNotifyService {
     }
 
     private Map<String, String> ticketMap(String key, String summary, String context, String sla,
-                                          String assigneeJiraEmail, String assigneeNameKey) {
+                                          String assigneeJiraEmail, String assigneeNameKey,
+                                          String assigneeNameSearch) {
         Map<String, String> t = new LinkedHashMap<>();
-        t.put("key",              key);
-        t.put("url",              jiraClient.browseUrl(key));
-        t.put("summary",          summary);
-        t.put("context",          context);
-        t.put("sla",              sla == null ? "" : sla);
-        t.put("assigneeJiraEmail", assigneeJiraEmail == null ? "" : assigneeJiraEmail);
-        t.put("assigneeNameKey",   assigneeNameKey == null ? "" : assigneeNameKey);
+        t.put("key",               key);
+        t.put("url",               jiraClient.browseUrl(key));
+        t.put("summary",           summary);
+        t.put("context",           context);
+        t.put("sla",               sla == null ? "" : sla);
+        t.put("assigneeJiraEmail",  assigneeJiraEmail  == null ? "" : assigneeJiraEmail);
+        t.put("assigneeNameKey",    assigneeNameKey    == null ? "" : assigneeNameKey);
+        t.put("assigneeNameSearch", assigneeNameSearch == null ? "" : assigneeNameSearch);
         return t;
     }
 
@@ -260,5 +267,23 @@ public class B2bNotifyService {
             ? email.substring(0, email.indexOf('@'))
             : (displayName == null ? "" : displayName);
         return base.toLowerCase().replaceAll("[^a-z0-9]", "");
+    }
+
+    /**
+     * Best-effort first-name fragment for a forgiving startswith() group search.
+     * Takes the email local-part (or display name), splits on separators (._-+ space)
+     * and camelCase boundaries, and returns the first token, lowercased letters only.
+     * e.g. "sujiM" -> "suji", "suji.mahindran" -> "suji", "Suji Mahindran" -> "suji",
+     *      "ramkumar" -> "ramkumar".
+     */
+    private static String firstNameFragment(String email, String displayName) {
+        String base = (email != null && email.contains("@"))
+            ? email.substring(0, email.indexOf('@'))
+            : (displayName == null ? "" : displayName);
+        if (base.isBlank()) return "";
+        String firstToken = base.split("[._+\\-\\s]+")[0];
+        // split camelCase: boundary before an uppercase that follows a lowercase/digit
+        firstToken = firstToken.replaceAll("(?<=[a-z0-9])(?=[A-Z])", " ").split(" ")[0];
+        return firstToken.toLowerCase().replaceAll("[^a-z]", "");
     }
 }

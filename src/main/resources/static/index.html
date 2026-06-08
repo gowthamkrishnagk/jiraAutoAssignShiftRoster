@@ -1899,6 +1899,20 @@
       </table>
     </div>
     <div id="b2b-members-msg" style="margin-top:10px;font-size:.85rem;"></div>
+
+    <details style="margin-top:14px;">
+      <summary style="cursor:pointer;font-size:.85rem;color:#0052cc;">Bulk import (paste CSV)</summary>
+      <p style="color:#5e6c84;font-size:.82rem;margin:8px 0;">
+        One person per line. Columns: <code>jiraEmail, jiraName, teamsEmail, teamsName, matrixx, aria</code>.
+        Matrixx/Aria are <code>yes/no</code> (optional). A header row is auto-skipped. Existing rows
+        (matched by Jira email) are updated.
+      </p>
+      <textarea id="b2b-bulk-text" rows="6" placeholder="sujiM@libertypr.com, Suji M, suji@prodapt.com, Suji, yes, no"
+        style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:6px;font-size:.82rem;font-family:monospace;box-sizing:border-box;"></textarea>
+      <div style="margin-top:8px;">
+        <button class="btn" onclick="bulkImportMembers()">Import</button>
+      </div>
+    </details>
   </div>
 </main>
 </div><!-- /#b2b-view-content -->
@@ -4299,6 +4313,45 @@ async function deleteMember(id, btn) {
     const r = await fetch('/api/b2b/members/' + id, { method: 'DELETE' });
     if (!r.ok) { const d = await r.json(); b2bMsg('b2b-members-msg', d.error || 'Delete failed', false); return; }
     b2bMsg('b2b-members-msg', 'Member removed.', true);
+    loadB2bMembers();
+  } catch (e) { b2bMsg('b2b-members-msg', 'Network error: ' + e.message, false); }
+}
+
+function b2bTruthy(v) {
+  const s = (v || '').toString().trim().toLowerCase();
+  return s === 'yes' || s === 'y' || s === 'true' || s === '1' || s === 'x';
+}
+
+async function bulkImportMembers() {
+  const text = document.getElementById('b2b-bulk-text').value.trim();
+  if (!text) { b2bMsg('b2b-members-msg', 'Paste some rows first.', false); return; }
+
+  const rows = [];
+  text.split(/\r?\n/).forEach(line => {
+    if (!line.trim()) return;
+    const c = line.split(/[,\t]/).map(x => x.trim());
+    // skip an obvious header row
+    if (/jira\s*email/i.test(c[0])) return;
+    rows.push({
+      jiraEmail:      c[0] || '',
+      jiraName:       c[1] || '',
+      teamsEmail:     c[2] || '',
+      teamsName:      c[3] || '',
+      matrixxSupport: b2bTruthy(c[4]),
+      ariaSupport:    b2bTruthy(c[5])
+    });
+  });
+  if (!rows.length) { b2bMsg('b2b-members-msg', 'No data rows found.', false); return; }
+
+  try {
+    const r = await fetch('/api/b2b/members/bulk', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows })
+    });
+    const d = await r.json();
+    if (!r.ok) { b2bMsg('b2b-members-msg', d.error || 'Import failed', false); return; }
+    b2bMsg('b2b-members-msg', `Imported — ${d.inserted} added, ${d.updated} updated, ${d.skipped} skipped.`, true);
+    document.getElementById('b2b-bulk-text').value = '';
     loadB2bMembers();
   } catch (e) { b2bMsg('b2b-members-msg', 'Network error: ' + e.message, false); }
 }

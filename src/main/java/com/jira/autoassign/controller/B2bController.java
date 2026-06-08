@@ -63,6 +63,39 @@ public class B2bController {
         return ResponseEntity.ok(toMap(m));
     }
 
+    /**
+     * Bulk upsert members. Body: { "rows": [ { jiraEmail, jiraName, teamsEmail, teamsName,
+     * matrixxSupport, ariaSupport }, ... ] }. Matches existing rows by jiraEmail (case-insensitive)
+     * and updates them; otherwise inserts. Rows without a Teams email or any Jira identity are skipped.
+     */
+    @PostMapping("/members/bulk")
+    public ResponseEntity<?> bulkUpsert(@RequestBody Map<String, Object> body) {
+        Object rowsObj = body.get("rows");
+        if (!(rowsObj instanceof List<?> rows))
+            return ResponseEntity.badRequest().body(Map.of("error", "Expected a 'rows' array"));
+
+        int inserted = 0, updated = 0, skipped = 0;
+        for (Object o : rows) {
+            if (!(o instanceof Map<?, ?> raw)) { skipped++; continue; }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> row = (Map<String, Object>) raw;
+
+            String jiraEmail = str(row.get("jiraEmail")).toLowerCase();
+            String jiraName  = str(row.get("jiraName"));
+            String teamsEmail = str(row.get("teamsEmail"));
+            if (teamsEmail.isEmpty() || (jiraEmail.isEmpty() && jiraName.isEmpty())) { skipped++; continue; }
+
+            B2bMember m = jiraEmail.isEmpty() ? null
+                : memberRepository.findByJiraEmailIgnoreCase(jiraEmail).orElse(null);
+            boolean isNew = (m == null);
+            if (isNew) m = new B2bMember();
+            apply(m, row);
+            memberRepository.save(m);
+            if (isNew) inserted++; else updated++;
+        }
+        return ResponseEntity.ok(Map.of("inserted", inserted, "updated", updated, "skipped", skipped));
+    }
+
     @DeleteMapping("/members/{id}")
     public ResponseEntity<?> deleteMember(@PathVariable Long id) {
         if (!memberRepository.existsById(id))
