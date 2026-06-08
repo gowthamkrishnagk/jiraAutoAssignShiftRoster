@@ -125,11 +125,12 @@ public class B2bNotifyService {
             String from = st.getAssigneeName() != null && !st.getAssigneeName().isBlank()
                 ? st.getAssigneeName() : "Unassigned";
             Map<String, String> t = ticketMap(issueKey, summary, "Reassigned: " + from + " → " + currentName, slaFriendly, currentEmail, nameKey);
+            String message = "this is a B2B ticket, please work on it as priority.";
             String body = mention.has()
-                ? "<at>" + mention.name() + "</at> — this is a B2B ticket, please work on it as priority."
-                : mention.name() + " — this is a B2B ticket, please work on it as priority.";
+                ? "<at>" + mention.name() + "</at> — " + message
+                : mention.name() + " — " + message;
             log.info("[{}] {} reassigned {} → {} — notifying", team.getName(), issueKey, from, currentName);
-            webhookService.fireB2bCard("🔔 B2B Ticket Reassigned", body, mention.email(), mention.name(), t);
+            webhookService.fireB2bCard("🔔 B2B Ticket Reassigned", body, message, mention.email(), mention.name(), t);
             // New assignee context — let support / SLA warnings fire again.
             st.setSupportNotified("NONE");
             st.setSlaWarned(false);
@@ -151,11 +152,11 @@ public class B2bNotifyService {
                 String label = supportType.equals("MATRIXX") ? "Matrixx" : "Aria";
                 Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey);
                 String nameTag = mention.has() ? "<at>" + mention.name() + "</at>" : mention.name();
-                String body = "Hi " + nameTag + " — this B2B ticket needs " + label
-                    + " support, please check this on priority.";
+                String message = "this B2B ticket needs " + label + " support, please check this on priority.";
+                String body = "Hi " + nameTag + " — " + message;
                 log.info("[{}] {} needs {} support — notifying {}", team.getName(), issueKey, label, currentName);
                 webhookService.fireB2bCard("🛠 B2B Ticket Needs " + label + " Support",
-                    body, mention.email(), mention.name(), t);
+                    body, message, mention.email(), mention.name(), t);
             }
             st.setSupportNotified(supportType); // also covers silent reset to NONE
         }
@@ -166,10 +167,11 @@ public class B2bNotifyService {
         if (inWarnWindow && !st.isSlaWarned()) {
             Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey);
             String nameTag = mention.has() ? "<at>" + mention.name() + "</at>" : mention.name();
-            String body = nameTag + " — heads up: this B2B ticket's SLA will breach within ~15 minutes.";
+            String message = "heads up — this B2B ticket's SLA will breach within ~15 minutes.";
+            String body = nameTag + " — " + message;
             log.info("[{}] {} SLA breach warning ({} left) — notifying {}",
                 team.getName(), issueKey, slaFriendly, currentName);
-            webhookService.fireB2bCard("⏰ B2B SLA Breach Warning", body, mention.email(), mention.name(), t);
+            webhookService.fireB2bCard("⏰ B2B SLA Breach Warning", body, message, mention.email(), mention.name(), t);
             st.setSlaWarned(true);
         } else if (st.isSlaWarned() && sla.available() && !sla.breached()
                    && sla.remainingMillis() > SLA_WARN_WINDOW_MS) {

@@ -188,11 +188,13 @@ public class WebhookService {
      *
      * @param title       card banner title
      * @param mentionText body line, may contain "&lt;at&gt;Name&lt;/at&gt;" if a mapped member exists
+     * @param message     same body line WITHOUT the name (for flows that build the @mention
+     *                    themselves: they prepend the mention token to this text)
      * @param teamsEmail  Teams id/UPN for the @mention; blank/null → no mention entity
      * @param teamsName   Teams display name for the @mention
      * @param ticket      map with key, url, summary, context, sla
      */
-    public void fireB2bCard(String title, String mentionText,
+    public void fireB2bCard(String title, String mentionText, String message,
                             String teamsEmail, String teamsName,
                             Map<String, String> ticket) {
         String webhookUrl = jiraConfigService.getB2bWebhookUrl();
@@ -203,7 +205,7 @@ public class WebhookService {
         }
         try {
             Map<String, Object> card = buildB2bCard(title, mentionText, teamsEmail, teamsName, ticket);
-            Map<String, Object> payload = teamsMessagePayload(card, teamsEmail, teamsName, ticket);
+            Map<String, Object> payload = teamsMessagePayload(card, title, message, teamsEmail, teamsName, ticket);
             String body = mapper.writeValueAsString(payload);
             sendAsyncDelayed(webhookUrl, body, "b2b", ticket.getOrDefault("key", "") + " — " + title, 0);
         } catch (Exception e) {
@@ -220,6 +222,7 @@ public class WebhookService {
      * their own mention (mapping override / group auto-match).
      */
     private Map<String, Object> teamsMessagePayload(Map<String, Object> card,
+                                                    String title, String message,
                                                     String teamsEmail, String teamsName,
                                                     Map<String, String> ticket)
             throws com.fasterxml.jackson.core.JsonProcessingException {
@@ -232,6 +235,9 @@ public class WebhookService {
         payload.put("attachments",       List.of(attachment));
         // --- extras (ignored by the simple template; useful for custom flows) ---
         payload.put("timestamp",         LocalDateTime.now().format(FMT));
+        payload.put("title",             title   != null ? title   : "");
+        // message = the body line WITHOUT the name, so a flow can post: <mention token> — <message>
+        payload.put("message",           message != null ? message : "");
         payload.put("ticketKey",         ticket.getOrDefault("key", ""));
         payload.put("mentionEmail",      teamsEmail != null ? teamsEmail : "");
         payload.put("mentionName",       teamsName  != null ? teamsName  : "");
@@ -263,8 +269,9 @@ public class WebhookService {
                 "🔔 B2B Webhook Test",
                 "<at>Test User</at> — this is a B2B test message.",
                 "test.user@example.com", "Test User", sample);
-            Map<String, Object> payload =
-                teamsMessagePayload(card, "test.user@example.com", "Test User", sample);
+            Map<String, Object> payload = teamsMessagePayload(card,
+                "🔔 B2B Webhook Test", "this is a B2B test message.",
+                "test.user@example.com", "Test User", sample);
             String reqBody = mapper.writeValueAsString(payload);
             HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
