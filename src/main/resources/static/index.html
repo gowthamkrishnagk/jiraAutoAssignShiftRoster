@@ -1867,10 +1867,18 @@
     <p style="color:#5e6c84;font-size:.85rem;margin:0 0 12px;">
       Assignee-change, Matrixx/Aria support, and SLA breach-warning cards are posted to this Microsoft Teams webhook.
     </p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <!-- View mode: masked, read-only + Edit -->
+    <div id="b2b-wh-view" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;">
+      <input id="b2b-wh-masked" type="text" readonly
+        style="flex:1;min-width:280px;padding:8px 10px;border:1px solid #dfe1e6;border-radius:6px;font-size:.85rem;background:#f4f5f7;color:#5e6c84;">
+      <button class="btn" onclick="b2bWebhookEdit()">Edit</button>
+    </div>
+    <!-- Edit mode: full input + Save -->
+    <div id="b2b-wh-edit" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <input id="b2b-wh-url" type="text" placeholder="https://prod-XX.logic.azure.com/workflows/..."
         style="flex:1;min-width:280px;padding:8px 10px;border:1px solid #dfe1e6;border-radius:6px;font-size:.85rem;">
       <button class="btn" onclick="saveB2bWebhook()">Save</button>
+      <button class="btn" id="b2b-wh-cancel" onclick="b2bWebhookCancel()" style="display:none;background:#f4f5f7;color:#42526e;">Cancel</button>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
       <input id="b2b-test-mention" type="text" placeholder="Test @mention email (e.g. you@prodapt.com)"
@@ -4196,11 +4204,38 @@ async function loadB2bPanel() {
   await loadB2bMembers();
 }
 
+let b2bWebhookFull = '';   // full saved URL, kept in memory for Edit
+
+// Mask roughly the second half of the URL.
+function maskWebhook(u) {
+  if (!u) return '';
+  const keep = Math.ceil(u.length / 2);
+  return u.slice(0, keep) + '•'.repeat(Math.min(u.length - keep, 24));
+}
+
+function b2bShowWebhookView() {
+  document.getElementById('b2b-wh-masked').value = maskWebhook(b2bWebhookFull);
+  document.getElementById('b2b-wh-view').style.display = 'flex';
+  document.getElementById('b2b-wh-edit').style.display = 'none';
+}
+
+function b2bShowWebhookEdit(prefill) {
+  document.getElementById('b2b-wh-url').value = prefill ? b2bWebhookFull : '';
+  document.getElementById('b2b-wh-view').style.display = 'none';
+  document.getElementById('b2b-wh-edit').style.display = 'flex';
+  // Cancel only makes sense when a URL already exists
+  document.getElementById('b2b-wh-cancel').style.display = b2bWebhookFull ? '' : 'none';
+}
+
+function b2bWebhookEdit()   { b2bShowWebhookEdit(true);  document.getElementById('b2b-wh-url').focus(); }
+function b2bWebhookCancel() { b2bShowWebhookView(); }
+
 async function loadB2bWebhook() {
   try {
     const d = await (await fetch('/api/b2b/webhook-settings')).json();
-    document.getElementById('b2b-wh-url').value = d.webhookUrl || '';
-  } catch { /* ignore */ }
+    b2bWebhookFull = d.webhookUrl || '';
+  } catch { b2bWebhookFull = ''; }
+  if (b2bWebhookFull) b2bShowWebhookView(); else b2bShowWebhookEdit(false);
 }
 
 async function saveB2bWebhook() {
@@ -4211,7 +4246,10 @@ async function saveB2bWebhook() {
       body: JSON.stringify({ webhookUrl: url })
     });
     const d = await r.json();
-    b2bMsg('b2b-wh-msg', r.ok ? 'Saved.' : (d.error || 'Save failed'), r.ok);
+    if (!r.ok) { b2bMsg('b2b-wh-msg', d.error || 'Save failed', false); return; }
+    b2bWebhookFull = url;
+    b2bMsg('b2b-wh-msg', 'Saved.', true);
+    if (b2bWebhookFull) b2bShowWebhookView();
   } catch (e) { b2bMsg('b2b-wh-msg', 'Network error: ' + e.message, false); }
 }
 
