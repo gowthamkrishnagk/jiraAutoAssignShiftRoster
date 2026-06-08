@@ -44,16 +44,19 @@ public class B2bNotifyService {
     private final B2bMemberRepository        memberRepository;
     private final B2bAssignStateRepository   stateRepository;
     private final WebhookService             webhookService;
+    private final JiraConfigService          jiraConfigService;
 
     public B2bNotifyService(JiraClient jiraClient, TeamRepository teamRepository,
                             B2bMemberRepository memberRepository,
                             B2bAssignStateRepository stateRepository,
-                            WebhookService webhookService) {
-        this.jiraClient       = jiraClient;
-        this.teamRepository   = teamRepository;
-        this.memberRepository = memberRepository;
-        this.stateRepository  = stateRepository;
-        this.webhookService   = webhookService;
+                            WebhookService webhookService,
+                            JiraConfigService jiraConfigService) {
+        this.jiraClient        = jiraClient;
+        this.teamRepository    = teamRepository;
+        this.memberRepository  = memberRepository;
+        this.stateRepository   = stateRepository;
+        this.webhookService    = webhookService;
+        this.jiraConfigService = jiraConfigService;
     }
 
     /** Resolved Teams @mention target for an assignee. */
@@ -116,7 +119,7 @@ public class B2bNotifyService {
 
         Optional<B2bMember> memberOpt = hasAssignee
             ? resolveMember(currentEmail, currentName) : Optional.empty();
-        Mention mention = mention(memberOpt, currentName);
+        Mention mention = mention(memberOpt, currentEmail, currentName);
 
         // --- 1. Assignee changed (only for tickets we've seen before) ---
         boolean assigneeChanged = existed && hasAssignee
@@ -201,19 +204,37 @@ public class B2bNotifyService {
         return Optional.empty();
     }
 
-    /** Builds the @mention target: mapped Teams identity if present, else the plain Jira name. */
-    private Mention mention(Optional<B2bMember> memberOpt, String fallbackName) {
+    /**
+     * Builds the @mention target. Priority:
+     *  1. Explicit mapping's Teams email (handles exceptions where the local-part differs).
+     *  2. Derived: Jira email local-part + "@" + the configured Teams domain
+     *     (e.g. sujiM@libertypr.com + "prodapt.com" → sujiM@prodapt.com).
+     *  3. No mention (plain name) if neither is available.
+     */
+    private Mention mention(Optional<B2bMember> memberOpt, String jiraEmail, String fallbackName) {
+        String name = (memberOpt.isPresent() && memberOpt.get().getTeamsName() != null
+                       && !memberOpt.get().getTeamsName().isBlank())
+            ? memberOpt.get().getTeamsName()
+            : (fallbackName == null ? "" : fallbackName);
+
+        // 1. Explicit mapping wins
         if (memberOpt.isPresent()) {
-            B2bMember m = memberOpt.get();
-            String email = m.getTeamsEmail();
+            String email = memberOpt.get().getTeamsEmail();
             if (email != null && !email.isBlank()) {
-                String name = (m.getTeamsName() != null && !m.getTeamsName().isBlank())
-                    ? m.getTeamsName()
-                    : (fallbackName == null || fallbackName.isBlank() ? email : fallbackName);
-                return new Mention(email.trim(), name, true);
+                return new Mention(email.trim(), name.isBlank() ? email.trim() : name, true);
             }
         }
-        return new Mention("", fallbackName == null ? "" : fallbackName, false);
+
+        // 2. Derive from Jira email local-part + configured Teams domain
+        String domain = jiraConfigService.getB2bTeamsDomain();
+        if (domain != null && !domain.isBlank() && jiraEmail != null && jiraEmail.contains("@")) {
+            String local   = jiraEmail.substring(0, jiraEmail.indexOf('@')).trim();
+            String derived = local + "@" + domain.trim();
+            return new Mention(derived, name.isBlank() ? derived : name, true);
+        }
+
+        // 3. No mention
+        return new Mention("", name, false);
     }
 
     private Map<String, String> ticketMap(String key, String summary, String context, String sla,

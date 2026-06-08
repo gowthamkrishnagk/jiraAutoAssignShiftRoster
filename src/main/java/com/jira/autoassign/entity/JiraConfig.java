@@ -27,6 +27,11 @@ public class JiraConfig {
     @Column(name = "b2b_webhook_url", columnDefinition = "TEXT")
     private String b2bWebhookUrl;
 
+    /** Teams email domain (e.g. "prodapt.com") used to derive a Teams @mention address
+     *  from the Jira email's local-part when no explicit member mapping exists. */
+    @Column(name = "b2b_teams_domain")
+    private String b2bTeamsDomain;
+
     public Long getId()                    { return id; }
     public String getJiraEmail()           { return jiraEmail; }
     public void   setJiraEmail(String v)   { this.jiraEmail = v; }
@@ -38,4 +43,6 @@ public class JiraConfig {
     public void   setWebhookUrl(String v)  { this.webhookUrl = v; }
     public String getB2bWebhookUrl()         { return b2bWebhookUrl; }
     public void   setB2bWebhookUrl(String v) { this.b2bWebhookUrl = v; }
+    public String getB2bTeamsDomain()         { return b2bTeamsDomain; }
+    public void   setB2bTeamsDomain(String v) { this.b2bTeamsDomain = v; }
 }

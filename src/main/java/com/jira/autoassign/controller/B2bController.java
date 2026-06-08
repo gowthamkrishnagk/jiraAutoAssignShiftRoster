@@ -77,8 +77,9 @@ public class B2bController {
     public ResponseEntity<Map<String, Object>> getWebhookSettings() {
         String url = configService.getB2bWebhookUrl();
         Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("webhookUrl", url);
-        resp.put("configured", url != null && !url.isBlank());
+        resp.put("webhookUrl",  url);
+        resp.put("teamsDomain", configService.getB2bTeamsDomain());
+        resp.put("configured",  url != null && !url.isBlank());
         return ResponseEntity.ok(resp);
     }
 
@@ -86,7 +87,11 @@ public class B2bController {
     public ResponseEntity<?> saveWebhookSettings(@RequestBody Map<String, String> body) {
         String url = body.getOrDefault("webhookUrl", "").trim();
         configService.saveB2bWebhookUrl(url);
-        return ResponseEntity.ok(Map.of("saved", true, "webhookUrl", url, "configured", !url.isBlank()));
+        if (body.containsKey("teamsDomain")) {
+            configService.saveB2bTeamsDomain(body.getOrDefault("teamsDomain", "").trim());
+        }
+        return ResponseEntity.ok(Map.of("saved", true, "webhookUrl", url,
+            "teamsDomain", configService.getB2bTeamsDomain(), "configured", !url.isBlank()));
     }
 
     @PostMapping("/webhook-settings/test")

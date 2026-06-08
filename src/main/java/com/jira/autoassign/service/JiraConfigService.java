@@ -22,6 +22,7 @@ public class JiraConfigService {
     private volatile String slaFieldId;
     private volatile String webhookUrl;
     private volatile String b2bWebhookUrl;
+    private volatile String b2bTeamsDomain;
 
     public JiraConfigService(JiraConfigRepository repo, JiraProperties props) {
         this.repo  = repo;
@@ -45,6 +46,8 @@ public class JiraConfigService {
                      ? saved.getWebhookUrl() : "";
         b2bWebhookUrl = (saved != null && saved.getB2bWebhookUrl() != null)
                      ? saved.getB2bWebhookUrl() : "";
+        b2bTeamsDomain = (saved != null && saved.getB2bTeamsDomain() != null)
+                     ? saved.getB2bTeamsDomain() : "";
     }
 
     public String getUrl()        { return props.getUrl(); } // always from application.properties
@@ -53,6 +56,7 @@ public class JiraConfigService {
     public String getSlaFieldId() { return slaFieldId != null ? slaFieldId : ""; }
     public String getWebhookUrl() { return webhookUrl != null ? webhookUrl : ""; }
     public String getB2bWebhookUrl() { return b2bWebhookUrl != null ? b2bWebhookUrl : ""; }
+    public String getB2bTeamsDomain() { return b2bTeamsDomain != null ? b2bTeamsDomain : ""; }
 
     public boolean isConfigured() {
         return email != null && !email.isBlank()
@@ -89,5 +93,14 @@ public class JiraConfigService {
         cfg.setB2bWebhookUrl(url.trim());
         repo.save(cfg);
         this.b2bWebhookUrl = url.trim();
+    }
+
+    public void saveB2bTeamsDomain(String domain) {
+        // Accept "prodapt.com" or "@prodapt.com" — store the bare domain.
+        String d = domain == null ? "" : domain.trim().replaceFirst("^@", "");
+        JiraConfig cfg = repo.findById(1L).orElse(new JiraConfig());
+        cfg.setB2bTeamsDomain(d);
+        repo.save(cfg);
+        this.b2bTeamsDomain = d;
     }
 }
