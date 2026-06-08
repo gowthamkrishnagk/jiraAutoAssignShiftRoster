@@ -202,8 +202,8 @@ public class WebhookService {
             return;
         }
         try {
-            String cardJson = mapper.writeValueAsString(
-                buildB2bCard(title, mentionText, teamsEmail, teamsName, ticket));
+            Map<String, Object> card = buildB2bCard(title, mentionText, teamsEmail, teamsName, ticket);
+            String cardJson = mapper.writeValueAsString(card);
 
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("timestamp",         LocalDateTime.now().format(FMT));
@@ -218,6 +218,9 @@ public class WebhookService {
             payload.put("assigneeJiraEmail", ticket.getOrDefault("assigneeJiraEmail", ""));
             payload.put("assigneeNameKey",   ticket.getOrDefault("assigneeNameKey", ""));
             payload.put("ticket",            ticket);
+            // card  = the Adaptive Card as a JSON object (pass to "Post adaptive card" directly)
+            // adaptiveCard = the same card as a JSON string (for Compose / parse-then-pass flows)
+            payload.put("card",              card);
             payload.put("adaptiveCard",      cardJson);
 
             String body = mapper.writeValueAsString(payload);
@@ -240,10 +243,11 @@ public class WebhookService {
         sample.put("assigneeJiraEmail", "testUser@libertypr.com");
         sample.put("assigneeNameKey",   "testuser");
         try {
-            String cardJson = mapper.writeValueAsString(buildB2bCard(
+            Map<String, Object> card = buildB2bCard(
                 "🔔 B2B Webhook Test",
                 "<at>Test User</at> — this is a B2B test message.",
-                "test.user@example.com", "Test User", sample));
+                "test.user@example.com", "Test User", sample);
+            String cardJson = mapper.writeValueAsString(card);
 
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("timestamp",         LocalDateTime.now().format(FMT));
@@ -254,6 +258,7 @@ public class WebhookService {
             payload.put("assigneeJiraEmail", sample.get("assigneeJiraEmail"));
             payload.put("assigneeNameKey",   sample.get("assigneeNameKey"));
             payload.put("ticket",            sample);
+            payload.put("card",              card);
             payload.put("adaptiveCard",      cardJson);
 
             String reqBody = mapper.writeValueAsString(payload);
