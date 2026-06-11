@@ -134,7 +134,9 @@ public class B2bController {
     public ResponseEntity<Map<String, Object>> getWebhookSettings() {
         String url = configService.getB2bWebhookUrl();
         Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("webhookUrl",  url);
+        // Never expose the full webhook (it embeds a signature anyone could reuse);
+        // only ever send a masked preview to the browser.
+        resp.put("webhookUrlMasked", maskUrl(url));
         resp.put("teamsDomain", configService.getB2bTeamsDomain());
         resp.put("configured",  url != null && !url.isBlank());
         return ResponseEntity.ok(resp);
@@ -147,8 +149,25 @@ public class B2bController {
         if (body.containsKey("teamsDomain")) {
             configService.saveB2bTeamsDomain(body.getOrDefault("teamsDomain", "").trim());
         }
-        return ResponseEntity.ok(Map.of("saved", true, "webhookUrl", url,
+        return ResponseEntity.ok(Map.of("saved", true, "webhookUrlMasked", maskUrl(url),
             "teamsDomain", configService.getB2bTeamsDomain(), "configured", !url.isBlank()));
+    }
+
+    /**
+     * Masked preview of a secret webhook URL: keep the scheme + host so the user can
+     * recognise it, hide the entire path + query (which carries the signature token).
+     */
+    private static String maskUrl(String url) {
+        if (url == null || url.isBlank()) return "";
+        int scheme = url.indexOf("://");
+        int from   = scheme >= 0 ? scheme + 3 : 0;
+        int slash  = url.indexOf('/', from);
+        int keep   = slash > 0 ? slash : Math.min(24, url.length());
+        // Build the bullet run from a char code so the source file stays pure ASCII
+        // (avoids encoding surprises when the server compiles with a non-UTF-8 default).
+        char[] dots = new char[12];
+        java.util.Arrays.fill(dots, (char) 0x2022);   // 0x2022 = bullet glyph
+        return url.substring(0, keep) + "/" + new String(dots);
     }
 
     @PostMapping("/webhook-settings/test")

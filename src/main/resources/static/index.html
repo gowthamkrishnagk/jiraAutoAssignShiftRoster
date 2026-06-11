@@ -4243,38 +4243,35 @@ async function loadB2bHistory() {
     </table>`;
 }
 
-let b2bWebhookFull = '';   // full saved URL, kept in memory for Edit
-
-// Mask roughly the second half of the URL.
-function maskWebhook(u) {
-  if (!u) return '';
-  const keep = Math.ceil(u.length / 2);
-  return u.slice(0, keep) + '•'.repeat(Math.min(u.length - keep, 24));
-}
+// The full secret URL is never sent to the browser — we only hold the server's
+// masked preview and whether one is configured.
+let b2bWebhookMasked     = '';
+let b2bWebhookConfigured = false;
 
 function b2bShowWebhookView() {
-  document.getElementById('b2b-wh-masked').value = maskWebhook(b2bWebhookFull);
+  document.getElementById('b2b-wh-masked').value = b2bWebhookMasked;
   document.getElementById('b2b-wh-view').style.display = 'flex';
   document.getElementById('b2b-wh-edit').style.display = 'none';
 }
 
-function b2bShowWebhookEdit(prefill) {
-  document.getElementById('b2b-wh-url').value = prefill ? b2bWebhookFull : '';
+function b2bShowWebhookEdit() {
+  document.getElementById('b2b-wh-url').value = '';   // never prefill the secret
   document.getElementById('b2b-wh-view').style.display = 'none';
   document.getElementById('b2b-wh-edit').style.display = 'flex';
-  // Cancel only makes sense when a URL already exists
-  document.getElementById('b2b-wh-cancel').style.display = b2bWebhookFull ? '' : 'none';
+  // Cancel only makes sense when a URL is already saved
+  document.getElementById('b2b-wh-cancel').style.display = b2bWebhookConfigured ? '' : 'none';
 }
 
-function b2bWebhookEdit()   { b2bShowWebhookEdit(true);  document.getElementById('b2b-wh-url').focus(); }
+function b2bWebhookEdit()   { b2bShowWebhookEdit(); document.getElementById('b2b-wh-url').focus(); }
 function b2bWebhookCancel() { b2bShowWebhookView(); }
 
 async function loadB2bWebhook() {
   try {
     const d = await (await fetch('/api/b2b/webhook-settings')).json();
-    b2bWebhookFull = d.webhookUrl || '';
-  } catch { b2bWebhookFull = ''; }
-  if (b2bWebhookFull) b2bShowWebhookView(); else b2bShowWebhookEdit(false);
+    b2bWebhookMasked     = d.webhookUrlMasked || '';
+    b2bWebhookConfigured = !!d.configured;
+  } catch { b2bWebhookMasked = ''; b2bWebhookConfigured = false; }
+  if (b2bWebhookConfigured) b2bShowWebhookView(); else b2bShowWebhookEdit();
 }
 
 async function saveB2bWebhook() {
@@ -4286,9 +4283,10 @@ async function saveB2bWebhook() {
     });
     const d = await r.json();
     if (!r.ok) { b2bMsg('b2b-wh-msg', d.error || 'Save failed', false); return; }
-    b2bWebhookFull = url;
+    b2bWebhookMasked     = d.webhookUrlMasked || '';
+    b2bWebhookConfigured = !!d.configured;
     b2bMsg('b2b-wh-msg', 'Saved.', true);
-    if (b2bWebhookFull) b2bShowWebhookView();
+    if (b2bWebhookConfigured) b2bShowWebhookView();
   } catch (e) { b2bMsg('b2b-wh-msg', 'Network error: ' + e.message, false); }
 }
 
