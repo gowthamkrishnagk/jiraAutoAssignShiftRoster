@@ -296,7 +296,7 @@ public class UploadController {
             String status;
             if (shiftEnded) {
                 status = "done";
-            } else if (paused.contains(s.getEmail().toLowerCase().trim())) {
+            } else if (started && paused.contains(s.getEmail().toLowerCase().trim())) {
                 status = "break";
             } else if (!started) {
                 status = "upcoming";
