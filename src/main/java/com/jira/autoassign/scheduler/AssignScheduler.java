@@ -54,7 +54,14 @@ public class AssignScheduler {
     public void scheduledRun() {
         lastRunAt = Instant.now();
         log.info("Scheduler triggered — running all teams.");
-        shiftAssignService.runAllTeams();
+        // Never let an exception escape a @Scheduled method: an uncaught throwable
+        // (or even an Error) propagating out can stop this cron from being rescheduled,
+        // silently freezing all auto-assignment while the process stays alive.
+        try {
+            shiftAssignService.runAllTeams();
+        } catch (Exception e) {
+            log.error("Scheduled assignment run failed: {}", e.getMessage(), e);
+        }
     }
 
     /**

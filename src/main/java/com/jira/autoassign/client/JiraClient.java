@@ -177,16 +177,21 @@ public class JiraClient {
     private List<JsonNode> searchTicketsWithFields(String jql, String fields, String expand) {
         List<JsonNode> all = new ArrayList<>();
         final int PAGE_SIZE = 100;
-        int startAt = 0;
 
-        while (true) {
+        // Jira's /rest/api/3/search/jql endpoint uses token-based pagination:
+        // it returns a `nextPageToken` for the following page (and omits it / sets
+        // isLast on the final page). The old startAt/total model is gone — relying on
+        // `total` made the loop stop after the first 100 results, silently dropping the
+        // rest. We now follow nextPageToken until there is none.
+        String nextPageToken = null;
+        do {
             UriComponentsBuilder builder = UriComponentsBuilder
                 .fromHttpUrl(baseUrl() + "/rest/api/3/search/jql")
                 .queryParam("jql",        "{jql}")
                 .queryParam("maxResults", PAGE_SIZE)
-                .queryParam("startAt",    startAt)
                 .queryParam("fields",     fields);
             if (expand != null && !expand.isBlank()) builder.queryParam("expand", expand);
+            if (nextPageToken != null) builder.queryParam("nextPageToken", nextPageToken);
             URI uri = builder.build().expand(jql).encode().toUri();
 
             ResponseEntity<JsonNode> response = restTemplate.exchange(
@@ -201,13 +206,16 @@ public class JiraClient {
                 fetched++;
             }
 
-            int total = body.path("total").asInt(0);
-            startAt += fetched;
-            log.debug("[JQL] Fetched {}/{} tickets (startAt={})", startAt, total, startAt - fetched);
+            // Advance to the next page only if the response gives us a token.
+            // `isLast == true` or a missing/blank token means we're done.
+            boolean isLast = body.path("isLast").asBoolean(false);
+            JsonNode tokenNode = body.get("nextPageToken");
+            nextPageToken = (tokenNode != null && !tokenNode.isNull()) ? tokenNode.asText(null) : null;
+            log.debug("[JQL] Fetched {} tickets this page (total so far {}, isLast={})",
+                fetched, all.size(), isLast);
 
-            // Stop if we've fetched everything or got an empty page
-            if (fetched == 0 || startAt >= total) break;
-        }
+            if (isLast || nextPageToken == null || nextPageToken.isBlank()) break;
+        } while (true);
 
         return all;
     }
