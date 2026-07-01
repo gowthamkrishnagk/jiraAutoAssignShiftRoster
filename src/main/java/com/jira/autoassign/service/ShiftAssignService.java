@@ -19,6 +19,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -646,6 +647,8 @@ public class ShiftAssignService {
     public Map<String, Object> addShiftRow(String teamId, String email, LocalTime start, LocalTime end) {
         if (email == null || email.isBlank())
             throw new IllegalArgumentException("Email is required");
+        if (!isValidEmail(email))
+            throw new IllegalArgumentException("'" + email.trim() + "' is not a valid email address");
         if (start == null || end == null)
             throw new IllegalArgumentException("Shift start and end are required");
         teamRepository.findById(teamId)
@@ -653,6 +656,16 @@ public class ShiftAssignService {
 
         String cleanEmail = email.trim();
         LocalDate today   = LocalDate.now();
+
+        // Reject an exact duplicate — same person, same shift window, already on today.
+        boolean duplicate = repository.findByTeamIdAndDate(teamId, today).stream().anyMatch(r ->
+            r.getEmail() != null
+            && r.getEmail().trim().equalsIgnoreCase(cleanEmail)
+            && r.getShiftStart().equals(start)
+            && r.getShiftEnd().equals(end));
+        if (duplicate)
+            throw new IllegalArgumentException(
+                cleanEmail + " is already on today's shift for " + start + "–" + end);
 
         ShiftRoster row = new ShiftRoster();
         row.setTeamId(teamId);
@@ -694,6 +707,8 @@ public class ShiftAssignService {
             repository.save(row);
             log.info("[{}] Cover cleared on row {} ({})", teamId, id, row.getEmail());
         } else {
+            if (!isValidEmail(clean))
+                throw new IllegalArgumentException("'" + clean + "' is not a valid email address");
             if (clean.equalsIgnoreCase(row.getEmail().trim()))
                 throw new IllegalArgumentException("Cover cannot be the same person as the shift owner");
             row.setCoverEmail(clean);
@@ -714,6 +729,17 @@ public class ShiftAssignService {
     private static String coverComment(String ownerEmail) {
         return "This ticket is worked by " + displayNameFromEmail(ownerEmail)
              + ", the actual shift assignee.";
+    }
+
+    // A pragmatic email check: exactly one @, non-empty local and domain parts,
+    // a dot in the domain, and no whitespace. Rejects a display name accidentally
+    // typed into the email field (e.g. "Jecintha A"), which would otherwise become
+    // a phantom rotation slot that can never receive a Jira ticket.
+    private static final Pattern EMAIL_RE = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
+
+    /** True when the string is a syntactically valid email address. */
+    public static boolean isValidEmail(String email) {
+        return email != null && EMAIL_RE.matcher(email.trim()).matches();
     }
 
     /** Derives a human display name from an email's local part, e.g. gowtham.krishna@x → "Gowtham Krishna". */
@@ -781,6 +807,19 @@ public class ShiftAssignService {
 
         if (newEmail.equals(row.getEmail()))
             throw new IllegalArgumentException("New email is the same as the current one");
+        if (!isValidEmail(newEmail))
+            throw new IllegalArgumentException("'" + newEmail + "' is not a valid email address");
+
+        // Don't let a rename collapse two rows into a duplicate of another same-window entry.
+        boolean duplicate = repository.findByTeamIdAndDate(teamId, row.getShiftDate()).stream().anyMatch(r ->
+            !r.getId().equals(row.getId())
+            && r.getEmail() != null
+            && r.getEmail().trim().equalsIgnoreCase(newEmail.trim())
+            && r.getShiftStart().equals(row.getShiftStart())
+            && r.getShiftEnd().equals(row.getShiftEnd()));
+        if (duplicate)
+            throw new IllegalArgumentException(
+                newEmail.trim() + " already has this shift (" + row.getShiftStart() + "–" + row.getShiftEnd() + ")");
 
         String oldEmail = row.getEmail();
         row.setEmail(newEmail);
@@ -799,6 +838,8 @@ public class ShiftAssignService {
     public Map<String, Object> swapAssignee(String fromEmail, String toEmail, String teamId) {
         if (fromEmail.equals(toEmail))
             throw new IllegalArgumentException("fromEmail and toEmail are the same");
+        if (!isValidEmail(toEmail))
+            throw new IllegalArgumentException("'" + toEmail + "' is not a valid email address");
 
         Team team = teamRepository.findById(teamId)
             .orElseThrow(() -> new IllegalArgumentException("Team not found: " + teamId));

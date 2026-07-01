@@ -379,6 +379,13 @@
       font-size: .66rem; font-weight: 700; padding: 1px 7px; border-radius: 999px;
       background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; vertical-align: middle;
     }
+    .ts-warn-badge {
+      display: inline-flex; align-items: center; gap: 3px; margin-left: 7px;
+      font-size: .66rem; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+      background: #ffebe6; color: #bf2600; border: 1px solid #ff8f73; vertical-align: middle;
+      cursor: help;
+    }
+    .ts-card.ts-invalid { border-color: #ff8f73; background: #fff5f2; }
     .ts-btn-break  { background: #fff7ed; color: #92400e; border: 1.5px solid #fcd34d; }
     .ts-btn-break:hover  { background: #f59e0b; color: #fff; border-color: #f59e0b; box-shadow: 0 2px 5px rgba(245,158,11,.35); }
     .ts-btn-resume { background: #f0fdf4; color: #14532d; border: 1.5px solid #86efac; }
@@ -2703,10 +2710,14 @@ function renderTodayShift(rows) {
     items.forEach(r => {
       const ownerName = r.ownerName || nameFromEmail(r.email);
       const usesEmail = r.covered ? (r.coverEmail || r.email) : r.email;
-      s += `<div class="ts-card ${cardCls}">
+      const badEmail  = r.validEmail === false;
+      const warnBadge = badEmail
+        ? `<span class="ts-warn-badge" title="'${esc(r.email)}' is not a valid email — this person can't receive Jira tickets. Use Edit → Swap/Remove to fix it.">⚠ invalid email</span>`
+        : '';
+      s += `<div class="ts-card ${cardCls}${badEmail ? ' ts-invalid' : ''}">
         <span class="ts-status-dot ${dotCls}"></span>
         <div class="ts-info">
-          <div class="ts-email">${tick ? '✓ ' : ''}${esc(ownerName)}${r.covered ? `<span class="ts-cover-badge" title="On shift: ${esc(ownerName)} — Jira tickets go to ${esc(usesEmail)}">⇄ swapped</span>` : ''}</div>
+          <div class="ts-email">${tick ? '✓ ' : ''}${esc(ownerName)}${r.covered ? `<span class="ts-cover-badge" title="On shift: ${esc(ownerName)} — Jira tickets go to ${esc(usesEmail)}">⇄ swapped</span>` : ''}${warnBadge}</div>
           <div class="ts-uses${r.covered ? ' is-cover' : ''}"><span class="ts-uses-label">uses: </span><span class="ts-uses-email">${esc(usesEmail)}</span></div>
           <div class="ts-time">${r.start} – ${r.end}</div>
         </div>
@@ -2826,6 +2837,8 @@ async function doAddShift() {
   const showErr = msg => { errEl.textContent = msg; errEl.style.display = 'block'; };
 
   if (!email) return showErr('Please enter an assignee email.');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
+    return showErr("'" + email + "' is not a valid email address.");
   if (!start || !end) return showErr('Please set both shift start and end times.');
 
   const btn = document.getElementById('add-shift-confirm-btn');

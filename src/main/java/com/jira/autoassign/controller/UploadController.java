@@ -391,6 +391,9 @@ public class UploadController {
         m.put("coverName",  covered ? ShiftAssignService.displayNameFromEmail(s.getCoverEmail()) : null);
         // Display name of the actual shift owner (what the UI shows as the row title).
         m.put("ownerName",  ShiftAssignService.displayNameFromEmail(s.getEmail()));
+        // Flags a row whose email isn't a real address (e.g. a name typed in) — it can
+        // never receive a Jira ticket, so the UI shows a ⚠ and prompts a fix.
+        m.put("validEmail", ShiftAssignService.isValidEmail(s.getEmail()));
     }
 
     /** Identity for deduping shift rows in the Today panel: same person + same shift window. */

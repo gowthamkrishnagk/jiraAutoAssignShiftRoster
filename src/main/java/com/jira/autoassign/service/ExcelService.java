@@ -88,10 +88,16 @@ public class ExcelService {
     public Map<String, Object> processExcel(MultipartFile file, String teamId) throws IOException {
         ParseResult result = parseFile(file);
 
-        // Expand each raw row into one ShiftRoster entry per day
+        // Expand each raw row into one ShiftRoster entry per day.
+        // Dedupe on (email, date, start, end) so a sheet that lists the same person
+        // twice with overlapping date ranges can't create duplicate rows.
         List<ShiftRoster> entries = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
         for (RawRow r : result.rows()) {
             for (LocalDate d = r.fromDate(); !d.isAfter(r.toDate()); d = d.plusDays(1)) {
+                String key = r.email().trim().toLowerCase()
+                    + "|" + d + "|" + r.shiftStart() + "|" + r.shiftEnd();
+                if (!seen.add(key)) continue;   // duplicate — skip
                 ShiftRoster s = new ShiftRoster();
                 s.setTeamId(teamId);
                 s.setEmail(r.email());
@@ -188,7 +194,11 @@ public class ExcelService {
                 if (row == null || isBlankRow(row)) continue;
                 try {
                     String email = cellStr(row.getCell(emailCol)).toLowerCase().trim();
-                    if (email.isBlank() || !email.contains("@")) continue;
+                    if (email.isBlank()) continue;
+                    if (!ShiftAssignService.isValidEmail(email)) {
+                        warnings.add("Row " + (r + 1) + ": '" + email + "' is not a valid email — skipped");
+                        continue;
+                    }
 
                     LocalDate from  = parseDate(row.getCell(fromCol));
                     LocalDate to    = parseDate(row.getCell(toCol));
