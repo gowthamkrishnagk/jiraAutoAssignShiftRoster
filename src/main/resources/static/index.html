@@ -292,17 +292,26 @@
       background: #00875a; border-radius: 999px; padding: 2px 7px; align-self: center;
     }
 
-    /* Modal: history sequence */
-    .rot-history { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-    .rot-hitem {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: #fff; border: 1px solid #ebedf0; border-radius: 8px;
-      padding: 4px 9px 4px 4px; font-size: .78rem; color: #42526e;
+    /* Modal: history table */
+    .rot-htable { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    .rot-htable thead th {
+      text-align: left; font-size: .66rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .5px; color: #7a869a; padding: 6px 10px;
+      border-bottom: 2px solid #ebedf0; position: sticky; top: 0; background: #fff;
     }
-    .rot-hitem .na-avatar { width: 20px; height: 20px; font-size: .58rem; }
-    .rot-hitem .rot-hkey { font-family: 'Courier New', monospace; font-size: .68rem; color: #97a0af; }
-    .rot-hitem.cycle-start { border-color: #c0d0ff; box-shadow: -3px 0 0 0 #0052cc; }
-    .rot-harrow { color: #c1c7d0; font-size: .8rem; }
+    .rot-htable tbody td { padding: 7px 10px; border-bottom: 1px solid #f4f5f7; vertical-align: middle; }
+    .rot-htable tbody tr:last-child td { border-bottom: none; }
+    .rot-htable tbody tr:hover td { background: #f7f9fc; }
+    .rot-htable tbody tr.cycle-start td { border-top: 2px solid #dbe4ff; }
+    .rot-hname { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: #172b4d; white-space: nowrap; }
+    .rot-hname .na-avatar { width: 24px; height: 24px; font-size: .62rem; }
+    .rot-slot {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px;
+      font-size: .66rem; font-weight: 800; background: #eef1f5; color: #5e6c84;
+    }
+    .rot-htable .rot-hkey { font-family: 'Courier New', monospace; font-size: .74rem; color: #0052cc; font-weight: 700; }
+    .rot-htime { color: #7a869a; font-size: .74rem; white-space: nowrap; }
     .rot-history-empty { font-size: .82rem; color: #97a0af; font-style: italic; }
 
     /* ---- Today's Shift card ---- */
@@ -2880,6 +2889,15 @@ function naAvatarHtml(name, email, cls) {
   return `<span class="na-avatar ${cls || ''}" style="background:${naAvatarColor(email || name)}">${esc(naInitials(name))}</span>`;
 }
 
+function rotFormatTime(iso) {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d)) return esc(iso || '');
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+      + ', ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  } catch { return esc(iso || ''); }
+}
+
 let rotationData = null;   // cached last /api/rotation response for the modal
 
 async function loadRotation() {
@@ -2924,7 +2942,7 @@ function renderRotationStrip(data) {
       <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 117 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.98 8.98 0 0013 21a9 9 0 000-18z"/></svg>
       Next Assignment
     </span>
-    <span class="rot-strip-flow">${chips}<span class="rot-loop" title="cycle repeats">↺</span></span>`;
+    <span class="rot-strip-flow">${chips}</span>`;
   strip.style.display = 'flex';
 }
 
@@ -2977,17 +2995,30 @@ function renderRotationModal(data) {
     histEl.innerHTML = '<div class="rot-history-empty">No assignments logged yet for this team.</div>';
     return;
   }
-  histEl.innerHTML = hist.map((h, i) => {
-    // Mark where a new lap of the cycle begins (assignee equals the first person again)
-    const cycleStart = i > 0 && order.length && h.email &&
-      order[0] && h.email.toLowerCase() === (order[0].email || '').toLowerCase();
-    const arrow = i > 0 ? '<span class="rot-harrow">→</span>' : '';
-    return `${arrow}<span class="rot-hitem ${cycleStart ? 'cycle-start' : ''}" title="${esc(h.issueKey)} · ${esc(h.at)}">
-        ${naAvatarHtml(h.name, h.email)}
-        <span>${esc(h.name)}</span>
-        <span class="rot-hkey">${esc(h.issueKey)}</span>
-      </span>`;
+
+  // Rotation slot lookup (email → 1-based position in the cycle) so the table
+  // makes the 1→2→3→1→2→3 pattern visible at a glance.
+  const slotByEmail = {};
+  order.forEach((p, i) => { if (p.email) slotByEmail[p.email.toLowerCase()] = i + 1; });
+  const firstEmail = order.length && order[0].email ? order[0].email.toLowerCase() : null;
+
+  const rows = hist.map((h, i) => {
+    const em = (h.email || '').toLowerCase();
+    // Mark where a new lap begins (assignee equals the first person in the cycle again)
+    const cycleStart = i > 0 && firstEmail && em === firstEmail;
+    const slot = slotByEmail[em];
+    return `<tr class="${cycleStart ? 'cycle-start' : ''}">
+        <td><span class="rot-slot">${slot ? '#' + slot : '–'}</span></td>
+        <td><span class="rot-hname">${naAvatarHtml(h.name, h.email)}${esc(h.name)}</span></td>
+        <td><span class="rot-hkey">${esc(h.issueKey)}</span></td>
+        <td class="rot-htime">${rotFormatTime(h.at)}</td>
+      </tr>`;
   }).join('');
+
+  histEl.innerHTML = `<table class="rot-htable">
+      <thead><tr><th>Slot</th><th>Assignee</th><th>Ticket</th><th>Time</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
 async function openSwapModal(rowId, ownerEmail, swapped, currentSwapEmail) {
