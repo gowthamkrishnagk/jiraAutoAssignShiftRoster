@@ -479,6 +479,15 @@ public class ShiftAssignService {
             pausedByTeam.getOrDefault(teamId, Collections.emptySet()));
     }
 
+    /**
+     * Current round-robin pointer for a team — the position (into the email-sorted
+     * active roster) that the next auto-assigned ticket will go to. Persists between
+     * scheduler runs, normalized to [0, activeCount). Read-only accessor for the UI.
+     */
+    public int getRrIndex(String teamId) {
+        return rrIndexByTeam.getOrDefault(teamId, 0);
+    }
+
     // -----------------------------------------------------------------------
     // Queries used by REST endpoints
     // -----------------------------------------------------------------------

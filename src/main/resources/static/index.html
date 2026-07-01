@@ -231,6 +231,80 @@
     .btn-remove:hover { background: #ff8f73; color: #fff; }
     .btn-restore { background: #e3fcef; color: #006644; border: 1px solid #57d9a3; }
     .btn-restore:hover { background: #57d9a3; color: #fff; }
+    /* ---- Next Assignment strip + round-robin cycle ---- */
+    .na-avatar {
+      border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; color: #fff;
+    }
+
+    /* Compact "next up" strip inside Today's Shift */
+    .rot-strip {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      background: linear-gradient(90deg,#f0f7ff 0%,#f7fbff 100%);
+      border: 1px solid #d3e4ff; border-radius: 10px;
+      padding: 10px 14px; margin-bottom: 14px;
+    }
+    .rot-strip-label {
+      font-size: .66rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase;
+      color: #0052cc; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+    }
+    .rot-strip-flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+    .rot-chip {
+      display: inline-flex; align-items: center; gap: 7px;
+      background: #fff; border: 1.5px solid #dfe6f0; border-radius: 999px;
+      padding: 4px 12px 4px 5px; font-size: .82rem; font-weight: 600; color: #42526e;
+      white-space: nowrap; transition: border-color .15s, box-shadow .15s;
+    }
+    .rot-chip .na-avatar { width: 24px; height: 24px; font-size: .64rem; }
+    .rot-chip.is-next {
+      border-color: #00875a; color: #172b4d; background: #e3fcef;
+      box-shadow: 0 0 0 3px rgba(0,135,90,.14);
+    }
+    .rot-chip.is-next .rot-next-tag {
+      font-size: .6rem; font-weight: 800; letter-spacing: .4px; color: #fff;
+      background: #00875a; border-radius: 999px; padding: 1px 7px; margin-left: 2px;
+    }
+    .rot-arrow { color: #97a0af; flex-shrink: 0; font-size: .9rem; }
+    .rot-loop  { color: #0052cc; font-size: 1rem; flex-shrink: 0; }
+    .rot-strip-empty { font-size: .82rem; color: #5e6c84; }
+
+    /* Modal: rotation ring */
+    .rot-ring { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .rot-node {
+      display: flex; align-items: center; gap: 9px;
+      background: #f7f9fc; border: 1.5px solid #e4e8ef; border-radius: 10px;
+      padding: 8px 12px 8px 8px; min-width: 0;
+    }
+    .rot-node.is-next { border-color: #00875a; background: #e3fcef; box-shadow: 0 0 0 3px rgba(0,135,90,.12); }
+    .rot-node .na-avatar { width: 30px; height: 30px; font-size: .7rem; }
+    .rot-node-idx {
+      font-size: .68rem; font-weight: 800; color: #97a0af;
+      width: 16px; text-align: center; flex-shrink: 0;
+    }
+    .rot-node-info { min-width: 0; }
+    .rot-node-name { font-size: .84rem; font-weight: 700; color: #172b4d; white-space: nowrap; }
+    .rot-node-sub  { font-size: .7rem; color: #6b778c; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+    .rot-node-sub .rot-cover { color: #6d28d9; font-weight: 600; }
+    .rot-node-next-tag {
+      font-size: .58rem; font-weight: 800; letter-spacing: .3px; color: #fff;
+      background: #00875a; border-radius: 999px; padding: 2px 7px; align-self: center;
+    }
+
+    /* Modal: history sequence */
+    .rot-history { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+    .rot-hitem {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #fff; border: 1px solid #ebedf0; border-radius: 8px;
+      padding: 4px 9px 4px 4px; font-size: .78rem; color: #42526e;
+    }
+    .rot-hitem .na-avatar { width: 20px; height: 20px; font-size: .58rem; }
+    .rot-hitem .rot-hkey { font-family: 'Courier New', monospace; font-size: .68rem; color: #97a0af; }
+    .rot-hitem.cycle-start { border-color: #c0d0ff; box-shadow: -3px 0 0 0 #0052cc; }
+    .rot-harrow { color: #c1c7d0; font-size: .8rem; }
+    .rot-history-empty { font-size: .82rem; color: #97a0af; font-style: italic; }
+
     /* ---- Today's Shift card ---- */
     .ts-section-label {
       font-size: .72rem; font-weight: 700; text-transform: uppercase;
@@ -1436,6 +1510,25 @@
   </div>
 </div>
 
+<!-- Assignment History / Round-Robin Modal -->
+<div class="modal-backdrop" id="rotation-modal" onclick="if(event.target===this)closeRotationModal()">
+  <div class="modal-box" style="max-width:560px;max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <div class="modal-title" style="margin:0;flex:1;">🔄 Assignment History</div>
+      <button class="btn-cancel" style="padding:4px 10px;" onclick="closeRotationModal()">✕</button>
+    </div>
+    <p style="font-size:.8rem;color:#5e6c84;margin:0 0 16px;line-height:1.5;" id="rot-team-sub">
+      Tickets are handed out in a repeating round-robin over the active shift.
+    </p>
+
+    <div style="font-size:.72rem;font-weight:700;color:#5e6c84;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Rotation order</div>
+    <div id="rot-ring" class="rot-ring"><div class="spin"></div></div>
+
+    <div style="font-size:.72rem;font-weight:700;color:#5e6c84;text-transform:uppercase;letter-spacing:.5px;margin:20px 0 8px;">Recent assignments (newest last)</div>
+    <div id="rot-history" class="rot-history"></div>
+  </div>
+</div>
+
 <!-- SLA Range Report Modal -->
 <div class="modal-backdrop" id="sla-range-modal" onclick="if(event.target===this)closeRangeModal()">
   <div class="modal-box" style="max-width:420px;">
@@ -1829,6 +1922,10 @@
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
       <div class="card-title" style="margin-bottom:0;flex:1;">Today's Shift</div>
       <span id="status-ts" class="ts"></span>
+      <button class="btn-edit-shift" id="shift-history-btn" onclick="openRotationModal()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 117 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.98 8.98 0 0013 21a9 9 0 000-18zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8z"/></svg>
+        Assignment History
+      </button>
       <button class="btn-edit-shift" id="shift-add-btn" style="display:none;" onclick="openAddShiftModal()">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
         Add
@@ -1838,6 +1935,10 @@
         Edit
       </button>
     </div>
+
+    <!-- Next Assignment — round-robin cycle for this team -->
+    <div id="rotation-strip" class="rot-strip" style="display:none;"></div>
+
     <div id="status-content"><div class="spin"></div></div>
   </div>
 
@@ -2556,6 +2657,7 @@ async function loadTodayShift() {
     if (activeTeam !== teamId) return;          // team switched while fetching
     document.getElementById('status-ts').textContent = 'as of ' + new Date().toLocaleTimeString();
     renderTodayShift(rows);
+    loadRotation();   // keep the "next assignment" rotation strip in sync
   } catch {
     if (activeTeam === teamId)
       el.innerHTML = '<p class="no-data">Could not load today\'s shift.</p>';
@@ -2753,6 +2855,139 @@ function nameFromEmail(email) {
   const name = local.split(/[._+\-]+/).filter(Boolean)
     .map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
   return name || email;
+}
+
+// ================================================================
+// NEXT ASSIGNMENT + ROUND-ROBIN — the "Assignment History" view.
+// Shows the rotation cycle (1→2→3→1→2→3) and who gets the next ticket.
+// ================================================================
+const NA_AVATAR_COLORS = ['#0052cc','#00875a','#6d28d9','#c2410c','#0b7285','#9f1239','#5521b5','#1d7a46'];
+
+function naAvatarColor(seed) {
+  let h = 0;
+  seed = seed || '?';
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return NA_AVATAR_COLORS[h % NA_AVATAR_COLORS.length];
+}
+
+function naInitials(name) {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
+
+function naAvatarHtml(name, email, cls) {
+  return `<span class="na-avatar ${cls || ''}" style="background:${naAvatarColor(email || name)}">${esc(naInitials(name))}</span>`;
+}
+
+let rotationData = null;   // cached last /api/rotation response for the modal
+
+async function loadRotation() {
+  const strip  = document.getElementById('rotation-strip');
+  if (!strip) return;
+  const teamId = activeTeam;
+  try {
+    const url  = '/api/rotation' + (teamId ? '?team=' + encodeURIComponent(teamId) : '');
+    const data = await (await fetch(url)).json();
+    if (activeTeam !== teamId) return;      // team switched mid-fetch
+    rotationData = data;
+    renderRotationStrip(data);
+    if (document.getElementById('rotation-modal').classList.contains('open'))
+      renderRotationModal(data);            // keep an open modal live
+  } catch {
+    strip.style.display = 'none';
+  }
+}
+
+// Compact "Next up" strip shown inside the Today's Shift card.
+function renderRotationStrip(data) {
+  const strip = document.getElementById('rotation-strip');
+  const order = (data && data.order) || [];
+
+  if (!order.length) {
+    strip.style.display = 'none';
+    return;
+  }
+
+  const next = data.nextIndex;
+  const chips = order.map((p, i) => {
+    const isNext = i === next;
+    return `<span class="rot-chip ${isNext ? 'is-next' : ''}" title="${esc(p.email)}">
+      ${naAvatarHtml(p.name, p.email)}
+      ${esc(p.name)}
+      ${isNext ? '<span class="rot-next-tag">NEXT</span>' : ''}
+    </span>`;
+  }).join('<span class="rot-arrow">→</span>');
+
+  strip.innerHTML = `
+    <span class="rot-strip-label">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 117 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.98 8.98 0 0013 21a9 9 0 000-18z"/></svg>
+      Next Assignment
+    </span>
+    <span class="rot-strip-flow">${chips}<span class="rot-loop" title="cycle repeats">↺</span></span>`;
+  strip.style.display = 'flex';
+}
+
+function openRotationModal() {
+  const modal = document.getElementById('rotation-modal');
+  modal.classList.add('open');
+  if (rotationData) renderRotationModal(rotationData);
+  loadRotation();   // refresh in the background
+}
+
+function closeRotationModal() {
+  document.getElementById('rotation-modal').classList.remove('open');
+}
+
+function renderRotationModal(data) {
+  const ringEl = document.getElementById('rot-ring');
+  const histEl = document.getElementById('rot-history');
+  const subEl  = document.getElementById('rot-team-sub');
+  const order  = (data && data.order) || [];
+  const teamNm = (teams.find(t => t.id === activeTeam) || {}).name || 'this team';
+
+  // ---- Rotation ring ----
+  if (!order.length) {
+    subEl.textContent = 'No one is on shift right now, so there is no active rotation.';
+    ringEl.innerHTML  = '<div class="rot-history-empty">No active shift — nobody is receiving tickets.</div>';
+  } else {
+    subEl.innerHTML = `Tickets for <strong>${esc(teamNm)}</strong> are handed out in this repeating order. `
+      + `The <strong style="color:#00875a">NEXT</strong> tag marks who gets the next ticket.`;
+    ringEl.innerHTML = order.map((p, i) => {
+      const isNext = i === data.nextIndex;
+      const sub = p.covered
+        ? `<span class="rot-cover">⇄ tickets → ${esc(p.uses)}</span>`
+        : esc(p.email);
+      return `<div class="rot-node ${isNext ? 'is-next' : ''}">
+          <span class="rot-node-idx">${i + 1}</span>
+          ${naAvatarHtml(p.name, p.email)}
+          <div class="rot-node-info">
+            <div class="rot-node-name">${esc(p.name)}</div>
+            <div class="rot-node-sub">${sub}</div>
+          </div>
+          ${isNext ? '<span class="rot-node-next-tag">NEXT</span>' : ''}
+        </div>`;
+    }).join('<span class="rot-arrow">→</span>')
+      + '<span class="rot-loop" title="cycle repeats">↺</span>';
+  }
+
+  // ---- Recent assignment history (chronological, oldest → newest) ----
+  const hist = (data && data.history) || [];
+  if (!hist.length) {
+    histEl.innerHTML = '<div class="rot-history-empty">No assignments logged yet for this team.</div>';
+    return;
+  }
+  histEl.innerHTML = hist.map((h, i) => {
+    // Mark where a new lap of the cycle begins (assignee equals the first person again)
+    const cycleStart = i > 0 && order.length && h.email &&
+      order[0] && h.email.toLowerCase() === (order[0].email || '').toLowerCase();
+    const arrow = i > 0 ? '<span class="rot-harrow">→</span>' : '';
+    return `${arrow}<span class="rot-hitem ${cycleStart ? 'cycle-start' : ''}" title="${esc(h.issueKey)} · ${esc(h.at)}">
+        ${naAvatarHtml(h.name, h.email)}
+        <span>${esc(h.name)}</span>
+        <span class="rot-hkey">${esc(h.issueKey)}</span>
+      </span>`;
+  }).join('');
 }
 
 async function openSwapModal(rowId, ownerEmail, swapped, currentSwapEmail) {

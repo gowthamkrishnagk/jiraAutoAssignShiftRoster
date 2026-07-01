@@ -12,7 +12,14 @@ import java.util.List;
 
 public interface AssignmentLogRepository extends JpaRepository<AssignmentLog, Long> {
 
-    List<AssignmentLog> findTop100ByOrderByAssignedAtDesc();
+    // id DESC is a stable tiebreaker: many logs saved in the same scheduler run share
+    // an identical assignedAt, so ordering by time alone lets rows reshuffle between
+    // refreshes. Adding id keeps the last-100 order deterministic.
+    List<AssignmentLog> findTop100ByOrderByAssignedAtDescIdDesc();
+
+    // Recent assignments for one team, newest first — powers the round-robin
+    // "Assignment History" view. Filtered to ASSIGN so the cycle reads cleanly.
+    List<AssignmentLog> findTop24ByTeamIdAndActionOrderByAssignedAtDescIdDesc(String teamId, String action);
 
     @Modifying
     @Transactional

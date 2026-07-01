@@ -134,24 +134,6 @@
     .stat-num   { font-size: 1.6rem; font-weight: 700; color: #0052cc; }
     .stat-label { font-size: .72rem; color: #5e6c84; margin-top: 2px; }
 
-    /* Table */
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-    thead th {
-      background: #f4f5f7;
-      color: #5e6c84;
-      font-weight: 700;
-      font-size: .72rem;
-      text-transform: uppercase;
-      letter-spacing: .5px;
-      padding: 9px 12px;
-      text-align: left;
-      border-bottom: 2px solid #dfe1e6;
-    }
-    tbody tr { border-bottom: 1px solid #f0f1f3; transition: background .1s; }
-    tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: #f8f9ff; }
-    tbody td { padding: 9px 12px; vertical-align: middle; }
 
     .badge {
       display: inline-block;
@@ -190,6 +172,48 @@
       white-space: nowrap;
     }
 
+    /* ---- Grouped timeline (replaces the flat table) ---- */
+    .day-group { margin-bottom: 22px; }
+    .day-group:last-child { margin-bottom: 0; }
+    .day-header { display: flex; align-items: center; gap: 10px; margin: 0 0 10px 2px; }
+    .day-title { font-size: .82rem; font-weight: 700; color: #172b4d; white-space: nowrap; }
+    .day-count {
+      font-size: .68rem; color: #5e6c84; background: #eef0f3;
+      border-radius: 999px; padding: 2px 9px; font-weight: 600; white-space: nowrap;
+    }
+    .day-line { flex: 1; height: 1px; background: #e4e6ea; }
+
+    .event {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 11px 13px; border-radius: 8px; border: 1px solid #eef0f3;
+      background: #fff; margin-bottom: 8px;
+      transition: box-shadow .15s, border-color .15s;
+    }
+    .event:last-child { margin-bottom: 0; }
+    .event:hover { box-shadow: 0 2px 8px rgba(9,30,66,.08); border-color: #dfe3e8; }
+    .event-avatar {
+      width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .74rem; font-weight: 700; color: #fff;
+    }
+    .event-body { flex: 1; min-width: 0; }
+    .event-line1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .event-person { font-weight: 600; font-size: .86rem; color: #172b4d; }
+    .event-line2 {
+      margin-top: 4px; display: flex; align-items: center; gap: 8px;
+      flex-wrap: wrap; font-size: .8rem;
+    }
+    .event-summary {
+      color: #5e6c84; font-size: .78rem; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .event-meta {
+      display: flex; flex-direction: column; align-items: flex-end;
+      gap: 2px; flex-shrink: 0; text-align: right;
+    }
+    .event-time { font-size: .73rem; color: #6b778c; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .event-rel  { font-size: .68rem; color: #a5adba; white-space: nowrap; }
+
     .empty-state {
       text-align: center;
       padding: 48px 0;
@@ -199,9 +223,6 @@
     .empty-state svg { display: block; margin: 0 auto 12px; opacity: .35; }
 
     .ts { font-size: .75rem; color: #8993a4; white-space: nowrap; }
-
-    .col-team { /* hidden when viewing a single team */ }
-    .hide-col-team .col-team { display: none; }
 
     .spinner {
       display: inline-block;
@@ -266,21 +287,7 @@
       </div>
     </div>
 
-    <div class="table-wrap" id="table-wrap">
-      <table id="log-table">
-        <thead>
-          <tr>
-            <th class="col-team">Team</th>
-            <th>Ticket</th>
-            <th>Summary</th>
-            <th>Action</th>
-            <th>Assigned To</th>
-            <th>When</th>
-          </tr>
-        </thead>
-        <tbody id="logBody"></tbody>
-      </table>
-    </div>
+    <div id="logBody"></div>
   </div>
 
 </main>
@@ -340,7 +347,7 @@
       renderFiltered();
     } catch (e) {
       document.getElementById('logBody').innerHTML =
-        '<tr><td colspan="6" style="padding:20px;color:#de350b;text-align:center">Failed to load: ' + e.message + '</td></tr>';
+        '<div style="padding:20px;color:#de350b;text-align:center">Failed to load: ' + e.message + '</div>';
     } finally {
       btn.disabled = false;
       btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
@@ -362,33 +369,23 @@
         ? 'All Teams — Recent Assignments'
         : (teamObj ? teamObj.name : activeTeam) + ' — Recent Assignments';
 
-    // Show/hide Team column (redundant when filtered to one team)
-    const table = document.getElementById('log-table');
-    if (activeTeam === 'all') {
-      table.classList.remove('hide-col-team');
-    } else {
-      table.classList.add('hide-col-team');
-    }
-
     render(data);
   }
 
   function render(data) {
-    const tbody = document.getElementById('logBody');
+    const box = document.getElementById('logBody');
 
     if (!data.length) {
       document.getElementById('statsRow').style.display = 'none';
       const msg = activeTeam === 'all'
         ? 'No assignment activity yet.<br>The scheduler runs every minute and will log assignments here.'
         : 'No activity for this team yet.';
-      tbody.innerHTML = `<tr><td colspan="6">
-        <div class="empty-state">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20 6h-2.18c.07-.44.18-.88.18-1.36C18 2.06 15.94 0 13.36 0c-1.46 0-2.72.64-3.59 1.66L9 3 8.23 1.66C7.36.64 6.1 0 4.64 0 2.06 0 0 2.06 0 4.64c0 .48.11.92.18 1.36H0v2h20V6zM4.64 4.5c-.75 0-1.36-.61-1.36-1.36 0-.75.61-1.36 1.36-1.36.46 0 .87.23 1.12.58L7.1 4.5H4.64zm8.72 0H10.9l1.34-2.28c.25-.35.66-.58 1.12-.58.75 0 1.36.61 1.36 1.36 0 .75-.61 1.36-1.36 1.36zM1 8v12c0 1.1.9 2 2 2h6V8H1zm10 14h6c1.1 0 2-.9 2-2V8h-8v14z"/>
-          </svg>
-          ${msg}
-        </div>
-      </td></tr>`;
+      box.innerHTML = `<div class="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20 6h-2.18c.07-.44.18-.88.18-1.36C18 2.06 15.94 0 13.36 0c-1.46 0-2.72.64-3.59 1.66L9 3 8.23 1.66C7.36.64 6.1 0 4.64 0 2.06 0 0 2.06 0 4.64c0 .48.11.92.18 1.36H0v2h20V6zM4.64 4.5c-.75 0-1.36-.61-1.36-1.36 0-.75.61-1.36 1.36-1.36.46 0 .87.23 1.12.58L7.1 4.5H4.64zm8.72 0H10.9l1.34-2.28c.25-.35.66-.58 1.12-.58.75 0 1.36.61 1.36 1.36 0 .75-.61 1.36-1.36 1.36zM1 8v12c0 1.1.9 2 2 2h6V8H1zm10 14h6c1.1 0 2-.9 2-2V8h-8v14z"/>
+        </svg>
+        ${msg}
+      </div>`;
       return;
     }
 
@@ -402,22 +399,59 @@
     document.getElementById('statPeople').textContent   = people;
     document.getElementById('statsRow').style.display   = 'flex';
 
-    // Resolve teamId → display name
     const teamName = id => {
       const t = teams.find(t => t.id === id);
       return t ? t.name : (id || '—');
     };
 
-    tbody.innerHTML = data.map(row => `
-      <tr>
-        <td class="col-team"><span class="team-badge">${esc(teamName(row.teamId))}</span></td>
-        <td><span class="issue-key">${esc(row.issueKey)}</span></td>
-        <td><span class="issue-summary" title="${esc(row.issueSummary)}">${esc(row.issueSummary) || '<span style="color:#c1c7d0">—</span>'}</span></td>
-        <td><span class="badge ${row.action === 'ASSIGN' ? 'badge-assign' : 'badge-unassign'}">${esc(row.action)}</span></td>
-        <td style="font-size:.8rem">${esc(row.assignedToEmail)}</td>
-        <td class="ts">${formatTs(row.assignedAt)}</td>
-      </tr>
+    // Group events by calendar day, preserving the newest-first order the API returns.
+    const groups = [];
+    const index  = {};
+    data.forEach(row => {
+      const key = (row.assignedAt || '').slice(0, 10);   // YYYY-MM-DD
+      if (!(key in index)) { index[key] = groups.length; groups.push({ key, rows: [] }); }
+      groups[index[key]].rows.push(row);
+    });
+
+    box.innerHTML = groups.map(g => `
+      <div class="day-group">
+        <div class="day-header">
+          <span class="day-title">${dayLabel(g.key)}</span>
+          <span class="day-count">${g.rows.length} event${g.rows.length === 1 ? '' : 's'}</span>
+          <span class="day-line"></span>
+        </div>
+        ${g.rows.map(row => eventItem(row, teamName)).join('')}
+      </div>
     `).join('');
+  }
+
+  function eventItem(row, teamName) {
+    const name       = nameFromEmail(row.assignedToEmail);
+    const isAssign   = row.action === 'ASSIGN';
+    const actionWord = isAssign ? 'assigned to' : 'unassigned from';
+    const teamChip   = activeTeam === 'all'
+      ? `<span class="team-badge">${esc(teamName(row.teamId))}</span>` : '';
+    const summary    = row.issueSummary
+      ? `<span class="event-summary" title="${esc(row.issueSummary)}">${esc(row.issueSummary)}</span>`
+      : '<span class="event-summary" style="color:#c1c7d0">no summary</span>';
+
+    return `<div class="event">
+      <div class="event-avatar" style="background:${avatarColor(row.assignedToEmail)}">${esc(initials(name))}</div>
+      <div class="event-body">
+        <div class="event-line1">
+          <span class="badge ${isAssign ? 'badge-assign' : 'badge-unassign'}">${esc(row.action)}</span>
+          <span class="issue-key">${esc(row.issueKey)}</span>
+          <span style="font-size:.78rem;color:#8993a4;">${actionWord}</span>
+          <span class="event-person">${esc(name)}</span>
+          ${teamChip}
+        </div>
+        <div class="event-line2">${summary}</div>
+      </div>
+      <div class="event-meta">
+        <span class="event-time">${formatTime(row.assignedAt)}</span>
+        <span class="event-rel">${relativeTime(row.assignedAt)}</span>
+      </div>
+    </div>`;
   }
 
   function esc(s) {
@@ -425,12 +459,57 @@
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  function formatTs(iso) {
+  function nameFromEmail(email) {
+    const local = (email || '').split('@')[0];
+    const name  = local.split(/[._+\-]+/).filter(Boolean)
+      .map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
+    return name || (email || '—');
+  }
+
+  function initials(name) {
+    const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '?';
+    return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+  }
+
+  const AVATAR_COLORS = ['#0052cc','#00875a','#6d28d9','#c2410c','#0b7285','#9f1239','#5521b5','#1d7a46'];
+  function avatarColor(seed) {
+    seed = seed || '?';
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
+  }
+
+  // Day header label — "Today" / "Yesterday" / "Mon, 12 May 2026"
+  function dayLabel(key) {
+    if (!key) return 'Unknown date';
+    const today = new Date(); today.setHours(0,0,0,0);
+    const d = new Date(key + 'T00:00:00');
+    const diff = Math.round((today - d) / 86400000);
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Yesterday';
+    return d.toLocaleDateString('en-GB', { weekday:'short', day:'2-digit', month:'short', year:'numeric' });
+  }
+
+  function formatTime(iso) {
     try {
-      const d = new Date(iso);
-      return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })
-        + ' ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+      return new Date(iso).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
     } catch { return iso; }
+  }
+
+  // Compact relative time — "just now", "5m ago", "3h ago", "2d ago"
+  function relativeTime(iso) {
+    try {
+      const secs = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+      if (secs < 0)    return 'just now';
+      if (secs < 60)   return 'just now';
+      const mins = Math.floor(secs / 60);
+      if (mins < 60)   return mins + 'm ago';
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24)    return hrs + 'h ago';
+      const days = Math.floor(hrs / 24);
+      return days + 'd ago';
+    } catch { return ''; }
   }
 
   init();

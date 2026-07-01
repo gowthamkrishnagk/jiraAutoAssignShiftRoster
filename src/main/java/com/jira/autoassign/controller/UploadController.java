@@ -175,6 +175,74 @@ public class UploadController {
     }
 
     // -----------------------------------------------------------------------
+    // Round-robin rotation for one team — powers the "Assignment History" view.
+    // Returns the rotation order (who's in the cycle, in the exact order the
+    // scheduler uses), which slot is next, and the recent assignment sequence
+    // so the 1→2→3→1→2→3 pattern is visible.
+    // -----------------------------------------------------------------------
+
+    @GetMapping("/rotation")
+    public ResponseEntity<Map<String, Object>> rotation(
+            @RequestParam(value = "team", required = false, defaultValue = "orderfallout") String teamId) {
+
+        Set<String> paused       = shiftAssignService.getPausedEmails(teamId);
+        List<ShiftRoster> active = shiftAssignService.getActiveShifts(teamId);
+
+        // Cover map: owner (lower) → substitute who actually receives the ticket.
+        Map<String, String> coverByOwner = new HashMap<>();
+        for (ShiftRoster s : active) {
+            if (s.getCoverEmail() != null && !s.getCoverEmail().isBlank())
+                coverByOwner.put(s.getEmail().toLowerCase().trim(), s.getCoverEmail().trim());
+        }
+
+        // Rotation order = active owners, not paused, deduped, sorted by email —
+        // the exact ordering the scheduler round-robins over (ShiftAssignService sorts
+        // its working list by owner email before indexing).
+        List<ShiftRoster> uniq = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (ShiftRoster s : active) {
+            String ownerKey = s.getEmail().toLowerCase().trim();
+            if (paused.contains(ownerKey)) continue;
+            if (!seen.add(ownerKey)) continue;
+            uniq.add(s);
+        }
+        uniq.sort(Comparator.comparing(ShiftRoster::getEmail));
+
+        List<Map<String, Object>> order = new ArrayList<>();
+        for (ShiftRoster s : uniq) {
+            String cover = coverByOwner.get(s.getEmail().toLowerCase().trim());
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("name",    ShiftAssignService.displayNameFromEmail(s.getEmail()));
+            p.put("email",   s.getEmail());
+            p.put("uses",    cover != null ? cover : s.getEmail());
+            p.put("covered", cover != null);
+            order.add(p);
+        }
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("teamId",    teamId);
+        resp.put("order",     order);
+        resp.put("nextIndex", order.isEmpty() ? -1 : Math.floorMod(shiftAssignService.getRrIndex(teamId), order.size()));
+
+        // Recent assignment sequence (chronological: oldest → newest) so the cycle reads left-to-right.
+        List<AssignmentLog> recent =
+            logRepository.findTop24ByTeamIdAndActionOrderByAssignedAtDescIdDesc(teamId, "ASSIGN");
+        List<Map<String, Object>> history = new ArrayList<>();
+        for (int i = recent.size() - 1; i >= 0; i--) {
+            AssignmentLog l = recent.get(i);
+            Map<String, Object> h = new LinkedHashMap<>();
+            h.put("name",     ShiftAssignService.displayNameFromEmail(l.getAssignedToEmail()));
+            h.put("email",    l.getAssignedToEmail());
+            h.put("issueKey", l.getIssueKey());
+            h.put("at",       l.getAssignedAt().toString());
+            history.add(h);
+        }
+        resp.put("history", history);
+
+        return ResponseEntity.ok(resp);
+    }
+
+    // -----------------------------------------------------------------------
     // Pause / resume (per team)
     // -----------------------------------------------------------------------
 
@@ -205,7 +273,7 @@ public class UploadController {
     @GetMapping("/activity")
     public ResponseEntity<List<Map<String, String>>> activity() {
         return ResponseEntity.ok(
-            logRepository.findTop100ByOrderByAssignedAtDesc().stream().map(l -> {
+            logRepository.findTop100ByOrderByAssignedAtDescIdDesc().stream().map(l -> {
                 Map<String, String> m = new LinkedHashMap<>();
                 m.put("teamId",          l.getTeamId() != null ? l.getTeamId() : "");
                 m.put("issueKey",        l.getIssueKey());
