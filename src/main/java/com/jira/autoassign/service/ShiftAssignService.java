@@ -130,6 +130,7 @@ public class ShiftAssignService {
         LocalDate yesterday = today.minusDays(1);
         LocalTime now       = LocalTime.now();
 
+        clearPausesForEndedShifts(teamId);
         Set<String> paused = pausedByTeam.getOrDefault(teamId, Collections.emptySet());
 
         // Emails currently parked because their Jira assignment failed (frozen/locked).
@@ -476,8 +477,36 @@ public class ShiftAssignService {
     }
 
     public Set<String> getPausedEmails(String teamId) {
+        clearPausesForEndedShifts(teamId);
         return Collections.unmodifiableSet(
             pausedByTeam.getOrDefault(teamId, Collections.emptySet()));
+    }
+
+    /**
+     * A break is scoped to the shift it was taken in: once the person's shift
+     * ends, their pause is dropped automatically — even if they never hit
+     * Resume — so they start their next shift available. Overnight shifts
+     * (e.g. 15:30 → 00:30) stay paused until the end crosses midnight, because
+     * findActiveShifts still matches yesterday's row until then.
+     */
+    private void clearPausesForEndedShifts(String teamId) {
+        Set<String> paused = pausedByTeam.get(teamId);
+        if (paused == null || paused.isEmpty()) return;
+
+        LocalDate today = LocalDate.now();
+        Set<String> onShiftNow = repository
+            .findActiveShifts(teamId, today, today.minusDays(1), LocalTime.now())
+            .stream()
+            .map(s -> s.getEmail().toLowerCase().trim())
+            .collect(Collectors.toSet());
+
+        paused.removeIf(email -> {
+            boolean shiftOver = !onShiftNow.contains(email);
+            if (shiftOver) {
+                log.info("[{}] Shift ended — break auto-cleared for {}", teamId, email);
+            }
+            return shiftOver;
+        });
     }
 
     /**
