@@ -663,6 +663,13 @@ public class ShiftAssignService {
             .orElseThrow(() -> new IllegalArgumentException("Shift row not found: " + id));
         if (!teamId.equals(row.getTeamId()))
             throw new IllegalArgumentException("Row does not belong to team: " + teamId);
+        // A covered row being removed drops the cover with it: return the cover's held
+        // tickets to the owner first (while the row still shields the cover from the
+        // sweep). If the owner stays on shift via another row — or is re-added — the
+        // tickets stay put; otherwise the normal off-shift sweep takes them from there.
+        if (row.getCoverEmail() != null && !row.getCoverEmail().isBlank()) {
+            transferCoverTickets(teamId, row.getEmail(), row.getCoverEmail(), row.getEmail());
+        }
         repository.deleteById(id);
         resumeEmail(teamId, row.getEmail());   // clear any lingering break state
         log.info("[{}] Removed from today's shift: {} (row {})", teamId, row.getEmail(), id);
@@ -731,10 +738,16 @@ public class ShiftAssignService {
             throw new IllegalArgumentException("Shift does not belong to team: " + teamId);
 
         String clean = coverEmail == null ? "" : coverEmail.trim();
+        String previousCover = row.getCoverEmail();
         if (clean.isBlank()) {
             row.setCoverEmail(null);
             repository.save(row);
             log.info("[{}] Cover cleared on row {} ({})", teamId, id, row.getEmail());
+            // Hand the cover's held tickets back to the owner BEFORE the triggered run,
+            // otherwise the sweep sees the ex-cover as off-shift and round-robins them away.
+            if (previousCover != null) {
+                transferCoverTickets(teamId, row.getEmail(), previousCover, row.getEmail());
+            }
         } else {
             if (!isValidEmail(clean))
                 throw new IllegalArgumentException("'" + clean + "' is not a valid email address");
@@ -743,6 +756,11 @@ public class ShiftAssignService {
             row.setCoverEmail(clean);
             repository.save(row);
             log.info("[{}] Cover set on row {}: {} → tickets assigned to {}", teamId, id, row.getEmail(), clean);
+            // Replacing one cover with another: move the old cover's held tickets to the
+            // new cover so they follow the owner's slot instead of being swept.
+            if (previousCover != null && !previousCover.equalsIgnoreCase(clean)) {
+                transferCoverTickets(teamId, row.getEmail(), previousCover, clean);
+            }
         }
 
         triggerAssignmentRun(teamId);
@@ -752,6 +770,47 @@ public class ShiftAssignService {
         result.put("coverName", row.getCoverEmail() != null ? displayNameFromEmail(row.getCoverEmail()) : null);
         result.put("shift",     shiftRowMap(row));
         return result;
+    }
+
+    /**
+     * Moves every ticket currently sitting with a (former) cover to its new holder —
+     * the owner when the cover is cleared, or the replacement cover on a cover change.
+     * The owner remains the displayed/logged assignee either way.
+     *
+     * Best-effort: if the target account can't be resolved or an assignment fails
+     * (e.g. the owner's Jira is still locked — the reason the cover existed), the
+     * ticket stays with the ex-cover and the regular off-shift sweep handles it.
+     */
+    private void transferCoverTickets(String teamId, String ownerEmail, String fromEmail, String toEmail) {
+        try {
+            Team team = teamRepository.findById(teamId).orElse(null);
+            if (team == null) return;
+            String fromAccId = jiraClient.getAccountId(fromEmail);
+            String toAccId   = jiraClient.getAccountId(toEmail);
+            List<JsonNode> tickets = jiraClient.getTicketsAssignedToByJql(fromAccId, team.getJql());
+            if (tickets.isEmpty()) return;
+
+            log.info("[{}] Cover change — moving {} ticket(s) from {} to {} (owner {})",
+                     teamId, tickets.size(), fromEmail, toEmail, ownerEmail);
+
+            for (JsonNode ticket : tickets) {
+                String issueKey = ticket.get("key").asText();
+                String summary  = ticket.get("fields").path("summary").asText("");
+                if (jiraClient.assignTicket(issueKey, toAccId)) {
+                    logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, ownerEmail));
+                    if (!toEmail.equalsIgnoreCase(ownerEmail)) {
+                        jiraClient.postComment(issueKey, coverComment(ownerEmail));
+                    }
+                } else {
+                    log.warn("[{}] [{}] Could not move ticket from {} to {} — leaving with cover",
+                             teamId, issueKey, fromEmail, toEmail);
+                }
+                jiraClient.pauseBetweenAssignments();
+            }
+        } catch (Exception e) {
+            log.warn("[{}] Could not return cover tickets from {} to {}: {} — off-shift sweep will pick them up",
+                     teamId, fromEmail, toEmail, e.getMessage());
+        }
     }
 
     /** Comment posted on tickets routed through a cover — credits the real shift owner by name. */
