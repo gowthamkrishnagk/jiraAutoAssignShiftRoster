@@ -1540,7 +1540,7 @@
       <button class="btn-cancel" style="padding:4px 10px;" onclick="closeRosterEventsModal()">✕</button>
     </div>
     <p style="font-size:.8rem;color:#5e6c84;margin:0 0 14px;line-height:1.5;">
-      Every shift edit and break today, and the tickets each edit moved. Click a ticket count to see the keys.
+      Every shift edit today, and the tickets each edit moved. Click a ticket count to see the keys.
     </p>
     <div id="roster-events-body"><div class="spin"></div></div>
   </div>
@@ -3104,9 +3104,7 @@ const ROSTER_EVENT_META = {
   EMAIL_REPLACE: { label: 'Replaced',      bg: '#fff0b3', fg: '#7a5c00' },
   COVER_SET:     { label: 'Cover Set',     bg: '#eae6ff', fg: '#403294' },
   COVER_CLEAR:   { label: 'Cover Cleared', bg: '#eae6ff', fg: '#403294' },
-  ASSIGNEE_SWAP: { label: 'Tickets Moved', bg: '#deebff', fg: '#0747a6' },
-  BREAK_START:   { label: 'Break',         bg: '#fff0b3', fg: '#7a5c00' },
-  BREAK_END:     { label: 'Back',          bg: '#e3fcef', fg: '#006644' }
+  ASSIGNEE_SWAP: { label: 'Tickets Moved', bg: '#deebff', fg: '#0747a6' }
 };
 
 async function openRosterEventsModal() {

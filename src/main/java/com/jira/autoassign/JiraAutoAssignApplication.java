@@ -22,3 +22,4 @@ public class    JiraAutoAssignApplication {
         log.info("Jira Shift Roster started (timezone: Asia/Kolkata). Upload a roster at /");
     }
 }
+    

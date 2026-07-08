@@ -4,10 +4,9 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 /**
- * One roster edit or break event, shown in the "Today's Roster Edits" history.
- *
- * Deliberately event-only: break rows record that a break started/ended, never
- * how long it lasted — this is a transparency feed, not a monitoring tool.
+ * One roster edit event, shown in the "Today's Roster Edits" history.
+ * Structural changes only — breaks are deliberately NOT recorded here;
+ * this is a transparency feed for roster edits, not a monitoring tool.
  *
  * ticketsJson optionally holds the ticket movements the edit caused, as a JSON
  * array of {"key": "SAC-123", "to": "email"} entries — appended by the cover
@@ -29,12 +28,12 @@ public class RosterEvent {
 
     /**
      * ROSTER_ADD, ROSTER_REMOVE, SHIFT_SWAP, EMAIL_REPLACE,
-     * COVER_SET, COVER_CLEAR, ASSIGNEE_SWAP, BREAK_START, BREAK_END
+     * COVER_SET, COVER_CLEAR, ASSIGNEE_SWAP
      */
     @Column(nullable = false)
     private String action;
 
-    /** The person the event is about (shift owner / person on break). */
+    /** The person the event is about (the shift owner). */
     @Column(nullable = false)
     private String email;
 

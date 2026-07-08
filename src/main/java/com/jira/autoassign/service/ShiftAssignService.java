@@ -505,20 +505,15 @@ public class ShiftAssignService {
     }
 
     public void pauseEmail(String teamId, String email) {
-        boolean added = pausedByTeam.computeIfAbsent(teamId, k -> ConcurrentHashMap.newKeySet())
+        pausedByTeam.computeIfAbsent(teamId, k -> ConcurrentHashMap.newKeySet())
                     .add(email.toLowerCase().trim());
         log.info("[{}] Paused from assignments: {}", teamId, email);
-        // Event only — deliberately no duration tracking.
-        if (added) recordRosterEvent(teamId, "BREAK_START", email, "on break");
     }
 
     public void resumeEmail(String teamId, String email) {
         Set<String> set = pausedByTeam.get(teamId);
-        boolean removed = set != null && set.remove(email.toLowerCase().trim());
+        if (set != null) set.remove(email.toLowerCase().trim());
         log.info("[{}] Resumed for assignments: {}", teamId, email);
-        // Only a real state change is history — internal resume calls on people
-        // who weren't on break (row add/remove cleanup) don't log anything.
-        if (removed) recordRosterEvent(teamId, "BREAK_END", email, "back from break");
     }
 
     public Set<String> getPausedEmails(String teamId) {
@@ -549,7 +544,6 @@ public class ShiftAssignService {
             boolean shiftOver = !onShiftNow.contains(email);
             if (shiftOver) {
                 log.info("[{}] Shift ended — break auto-cleared for {}", teamId, email);
-                recordRosterEvent(teamId, "BREAK_END", email, "auto — shift ended");
             }
             return shiftOver;
         });
