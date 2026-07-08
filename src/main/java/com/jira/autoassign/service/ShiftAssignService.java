@@ -1,13 +1,18 @@
 package com.jira.autoassign.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jira.autoassign.client.JiraClient;
 import com.jira.autoassign.entity.AssignmentLog;
 import com.jira.autoassign.entity.CoverAssignment;
+import com.jira.autoassign.entity.RosterEvent;
 import com.jira.autoassign.entity.ShiftRoster;
 import com.jira.autoassign.entity.Team;
 import com.jira.autoassign.repository.AssignmentLogRepository;
 import com.jira.autoassign.repository.CoverAssignmentRepository;
+import com.jira.autoassign.repository.RosterEventRepository;
 import com.jira.autoassign.repository.ShiftRosterRepository;
 import com.jira.autoassign.repository.TeamRepository;
 import org.slf4j.Logger;
@@ -48,6 +53,13 @@ public class ShiftAssignService {
     private final TeamRepository teamRepository;
     private final WebhookService webhookService;
     private final CoverAssignmentRepository coverRepository;
+    private final RosterEventRepository eventRepository;
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    // Sweep moves attach to an edit event at most this old — anything later is a
+    // natural shift-end sweep, not the aftermath of a roster edit.
+    private static final long EVENT_ATTACH_WINDOW_MIN = 15;
 
     // Per-team round-robin index (resets on restart — fine)
     private final Map<String, Integer> rrIndexByTeam = new ConcurrentHashMap<>();
@@ -78,13 +90,15 @@ public class ShiftAssignService {
 
     public ShiftAssignService(JiraClient jiraClient, ShiftRosterRepository repository,
                               AssignmentLogRepository logRepository, TeamRepository teamRepository,
-                              WebhookService webhookService, CoverAssignmentRepository coverRepository) {
+                              WebhookService webhookService, CoverAssignmentRepository coverRepository,
+                              RosterEventRepository eventRepository) {
         this.jiraClient      = jiraClient;
         this.repository      = repository;
         this.logRepository   = logRepository;
         this.teamRepository  = teamRepository;
         this.webhookService  = webhookService;
         this.coverRepository = coverRepository;
+        this.eventRepository = eventRepository;
     }
 
     // -----------------------------------------------------------------------
@@ -372,6 +386,9 @@ public class ShiftAssignService {
                 if (theirTickets.isEmpty()) continue;
                 log.info("[{}] {} has {} ticket(s) to reassign", teamName, offEmail, theirTickets.size());
 
+                // Movements for THIS person — attached to their recent roster edit (if any)
+                List<Map<String, String>> personMoves = new ArrayList<>();
+
                 for (JsonNode ticket : theirTickets) {
                     String issueKey = ticket.get("key").asText();
                     String summary  = ticket.get("fields").path("summary").asText("");
@@ -395,12 +412,15 @@ public class ShiftAssignService {
                             t.put("currentAssignee", offEmail);
                             t.put("reassignedTo",    res.email());
                             allReassigned.add(t);
+                            personMoves.add(Map.of("key", issueKey, "to", res.email()));
                         } else {
                             workRr++;
                         }
                         jiraClient.pauseBetweenAssignments();
                     }
                 }
+
+                attachSweepMoves(teamId, offEmail, personMoves);
             } catch (Exception e) {
                 log.warn("[{}] Could not sweep off-shift {}: {}", teamName, offEmail, e.getMessage());
             }
@@ -485,15 +505,20 @@ public class ShiftAssignService {
     }
 
     public void pauseEmail(String teamId, String email) {
-        pausedByTeam.computeIfAbsent(teamId, k -> ConcurrentHashMap.newKeySet())
+        boolean added = pausedByTeam.computeIfAbsent(teamId, k -> ConcurrentHashMap.newKeySet())
                     .add(email.toLowerCase().trim());
         log.info("[{}] Paused from assignments: {}", teamId, email);
+        // Event only — deliberately no duration tracking.
+        if (added) recordRosterEvent(teamId, "BREAK_START", email, "on break");
     }
 
     public void resumeEmail(String teamId, String email) {
         Set<String> set = pausedByTeam.get(teamId);
-        if (set != null) set.remove(email.toLowerCase().trim());
+        boolean removed = set != null && set.remove(email.toLowerCase().trim());
         log.info("[{}] Resumed for assignments: {}", teamId, email);
+        // Only a real state change is history — internal resume calls on people
+        // who weren't on break (row add/remove cleanup) don't log anything.
+        if (removed) recordRosterEvent(teamId, "BREAK_END", email, "back from break");
     }
 
     public Set<String> getPausedEmails(String teamId) {
@@ -524,6 +549,7 @@ public class ShiftAssignService {
             boolean shiftOver = !onShiftNow.contains(email);
             if (shiftOver) {
                 log.info("[{}] Shift ended — break auto-cleared for {}", teamId, email);
+                recordRosterEvent(teamId, "BREAK_END", email, "auto — shift ended");
             }
             return shiftOver;
         });
@@ -675,6 +701,48 @@ public class ShiftAssignService {
     }
 
     /**
+     * Today's roster edits + break events for a team, newest first. Ticket movements
+     * are grouped by receiver: moves = [{to, toName, keys:[SAC-…]}]. Counts and keys
+     * only — no durations, by design.
+     */
+    public List<Map<String, Object>> getTodayRosterEvents(String teamId) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        List<RosterEvent> events = eventRepository
+            .findByTeamIdAndCreatedAtAfterOrderByCreatedAtDescIdDesc(teamId, LocalDate.now().atStartOfDay());
+        for (RosterEvent ev : events) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("action", ev.getAction());
+            m.put("email",  ev.getEmail());
+            m.put("name",   displayNameFromEmail(ev.getEmail()));
+            m.put("detail", ev.getDetail() == null ? "" : ev.getDetail());
+            m.put("at",     ev.getCreatedAt().toString());
+
+            List<Map<String, Object>> moves = new ArrayList<>();
+            if (ev.getTicketsJson() != null) {
+                try {
+                    Map<String, List<String>> byTo = new LinkedHashMap<>();
+                    for (JsonNode n : JSON.readTree(ev.getTicketsJson())) {
+                        byTo.computeIfAbsent(n.path("to").asText(), k -> new ArrayList<>())
+                            .add(n.path("key").asText());
+                    }
+                    byTo.forEach((to, keys) -> {
+                        Map<String, Object> mv = new LinkedHashMap<>();
+                        mv.put("to",     to);
+                        mv.put("toName", displayNameFromEmail(to));
+                        mv.put("keys",   keys);
+                        moves.add(mv);
+                    });
+                } catch (Exception e) {
+                    log.warn("Unparseable tickets payload on roster event {}: {}", ev.getId(), e.getMessage());
+                }
+            }
+            m.put("moves", moves);
+            out.add(m);
+        }
+        return out;
+    }
+
+    /**
      * Permanently removes a single ShiftRoster row (used by "Remove from today's shift").
      * Also clears the pause state for that email so they don't linger in the paused set.
      */
@@ -683,12 +751,17 @@ public class ShiftAssignService {
             .orElseThrow(() -> new IllegalArgumentException("Shift row not found: " + id));
         if (!teamId.equals(row.getTeamId()))
             throw new IllegalArgumentException("Row does not belong to team: " + teamId);
+        RosterEvent ev = recordRosterEvent(teamId, "ROSTER_REMOVE", row.getEmail(),
+            row.getShiftStart() + "–" + row.getShiftEnd()
+            + (row.getCoverEmail() != null && !row.getCoverEmail().isBlank()
+               ? " (covered by " + row.getCoverEmail() + ")" : ""));
         // A covered row being removed drops the cover with it: return the cover-routed
         // tickets to the owner (guard first, so the sweep can't grab them once the row
         // is gone). If the owner stays on shift via another row — or is re-added — the
         // tickets stay put; otherwise the normal off-shift sweep takes them from there.
         if (row.getCoverEmail() != null && !row.getCoverEmail().isBlank()) {
-            beginCoverReturn(teamId, row.getEmail(), row.getCoverEmail(), row.getEmail());
+            beginCoverReturn(teamId, row.getEmail(), row.getCoverEmail(), row.getEmail(),
+                ev != null ? ev.getId() : null);
         }
         repository.deleteById(id);
         resumeEmail(teamId, row.getEmail());   // clear any lingering break state
@@ -738,6 +811,8 @@ public class ShiftAssignService {
         log.info("[{}] Added to today's shift: {} ({}–{}) (row {})",
             teamId, cleanEmail, start, end, row.getId());
 
+        recordRosterEvent(teamId, "ROSTER_ADD", cleanEmail, start + "–" + end);
+
         triggerAssignmentRun(teamId);
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -763,7 +838,10 @@ public class ShiftAssignService {
             // Shield the ex-cover from the sweep BEFORE the cleared row is saved, then
             // hand their cover-routed tickets back to the owner asynchronously.
             if (previousCover != null) {
-                beginCoverReturn(teamId, row.getEmail(), previousCover, row.getEmail());
+                RosterEvent ev = recordRosterEvent(teamId, "COVER_CLEAR", row.getEmail(),
+                    "cover " + previousCover + " removed");
+                beginCoverReturn(teamId, row.getEmail(), previousCover, row.getEmail(),
+                    ev != null ? ev.getId() : null);
             }
             row.setCoverEmail(null);
             repository.save(row);
@@ -773,10 +851,15 @@ public class ShiftAssignService {
                 throw new IllegalArgumentException("'" + clean + "' is not a valid email address");
             if (clean.equalsIgnoreCase(row.getEmail().trim()))
                 throw new IllegalArgumentException("Cover cannot be the same person as the shift owner");
+            RosterEvent ev = recordRosterEvent(teamId, "COVER_SET", row.getEmail(),
+                previousCover != null && !previousCover.equalsIgnoreCase(clean)
+                    ? "cover " + previousCover + " → " + clean
+                    : "covered by " + clean);
             // Replacing one cover with another: move the old cover's routed tickets to
             // the new cover so they keep following the owner's slot.
             if (previousCover != null && !previousCover.equalsIgnoreCase(clean)) {
-                beginCoverReturn(teamId, row.getEmail(), previousCover, clean);
+                beginCoverReturn(teamId, row.getEmail(), previousCover, clean,
+                    ev != null ? ev.getId() : null);
             }
             row.setCoverEmail(clean);
             repository.save(row);
@@ -790,6 +873,61 @@ public class ShiftAssignService {
         result.put("coverName", row.getCoverEmail() != null ? displayNameFromEmail(row.getCoverEmail()) : null);
         result.put("shift",     shiftRowMap(row));
         return result;
+    }
+
+    // -----------------------------------------------------------------------
+    // Roster edit / break history (event feed — no durations, no timers)
+    // -----------------------------------------------------------------------
+
+    /** Saves a roster/break event; never lets a history failure break the edit itself. */
+    private RosterEvent recordRosterEvent(String teamId, String action, String email, String detail) {
+        try {
+            return eventRepository.save(RosterEvent.of(teamId, action, email, detail));
+        } catch (Exception e) {
+            log.warn("[{}] Could not record roster event {} for {}: {}", teamId, action, email, e.getMessage());
+            return null;
+        }
+    }
+
+    /** Appends ticket movements ({key, to}) onto an event's JSON payload. */
+    private synchronized void appendEventTickets(Long eventId, List<Map<String, String>> moves) {
+        if (eventId == null || moves == null || moves.isEmpty()) return;
+        try {
+            RosterEvent ev = eventRepository.findById(eventId).orElse(null);
+            if (ev == null) return;
+            ArrayNode arr = ev.getTicketsJson() == null
+                ? JSON.createArrayNode()
+                : (ArrayNode) JSON.readTree(ev.getTicketsJson());
+            for (Map<String, String> m : moves) {
+                ObjectNode n = arr.addObject();
+                n.put("key", m.get("key"));
+                n.put("to",  m.get("to"));
+            }
+            ev.setTicketsJson(JSON.writeValueAsString(arr));
+            eventRepository.save(ev);
+        } catch (Exception e) {
+            log.warn("Could not attach {} ticket move(s) to roster event {}: {}",
+                     moves.size(), eventId, e.getMessage());
+        }
+    }
+
+    /**
+     * Attaches sweep-caused ticket movements to the roster edit that triggered them:
+     * the person's most recent edit event within the attach window. A sweep with no
+     * recent edit (a natural shift end) attaches nowhere — it isn't a roster edit.
+     */
+    private void attachSweepMoves(String teamId, String offEmail, List<Map<String, String>> moves) {
+        if (moves.isEmpty()) return;
+        try {
+            List<RosterEvent> recent = eventRepository
+                .findTop3ByTeamIdAndEmailIgnoreCaseAndActionInAndCreatedAtAfterOrderByCreatedAtDescIdDesc(
+                    teamId, offEmail,
+                    List.of("ROSTER_REMOVE", "SHIFT_SWAP", "EMAIL_REPLACE", "COVER_CLEAR"),
+                    LocalDateTime.now().minusMinutes(EVENT_ATTACH_WINDOW_MIN));
+            if (!recent.isEmpty()) appendEventTickets(recent.get(0).getId(), moves);
+        } catch (Exception e) {
+            log.warn("[{}] Could not attach sweep moves for {}: {}", teamId, offEmail, e.getMessage());
+        }
     }
 
     /** Records that issueKey was assigned to a cover on the owner's behalf. */
@@ -808,13 +946,14 @@ public class ShiftAssignService {
      * so no scheduler tick can round-robin those tickets away mid-transfer, and the
      * HTTP request that triggered the change returns without waiting on Jira.
      */
-    private void beginCoverReturn(String teamId, String ownerEmail, String fromEmail, String toEmail) {
+    private void beginCoverReturn(String teamId, String ownerEmail, String fromEmail, String toEmail,
+                                  Long eventId) {
         String guardKey = fromEmail.toLowerCase().trim();
         pendingCoverReturnByTeam.computeIfAbsent(teamId, k -> ConcurrentHashMap.newKeySet())
                                 .add(guardKey);
         CompletableFuture.runAsync(() -> {
             try {
-                transferCoverTickets(teamId, ownerEmail, fromEmail, toEmail);
+                transferCoverTickets(teamId, ownerEmail, fromEmail, toEmail, eventId);
             } finally {
                 Set<String> set = pendingCoverReturnByTeam.get(teamId);
                 if (set != null) set.remove(guardKey);
@@ -832,7 +971,9 @@ public class ShiftAssignService {
      * (e.g. the owner's Jira is still locked — the reason the cover existed), the
      * ticket stays with the ex-cover and the regular off-shift sweep handles it.
      */
-    private void transferCoverTickets(String teamId, String ownerEmail, String fromEmail, String toEmail) {
+    private void transferCoverTickets(String teamId, String ownerEmail, String fromEmail, String toEmail,
+                                      Long eventId) {
+        List<Map<String, String>> moves = new ArrayList<>();
         try {
             Team team = teamRepository.findById(teamId).orElse(null);
             if (team == null) return;
@@ -875,6 +1016,7 @@ public class ShiftAssignService {
                 String summary  = ticket.get("fields").path("summary").asText("");
                 if (jiraClient.assignTicket(issueKey, toAccId)) {
                     logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, ownerEmail));
+                    moves.add(Map.of("key", issueKey, "to", toEmail));
                     // Back with the owner → routing over. Moved to a new cover → update
                     // the record; the ticket already carries the "worked by" comment.
                     if (toOwner) {
@@ -891,6 +1033,8 @@ public class ShiftAssignService {
         } catch (Exception e) {
             log.warn("[{}] Could not return cover tickets from {} to {}: {} — off-shift sweep will pick them up",
                      teamId, fromEmail, toEmail, e.getMessage());
+        } finally {
+            appendEventTickets(eventId, moves);
         }
     }
 
@@ -950,6 +1094,7 @@ public class ShiftAssignService {
             throw new IllegalArgumentException("Cannot swap a shift with itself");
 
         String emailA = a.getEmail();
+        String emailB = b.getEmail();
         a.setEmail(b.getEmail());
         b.setEmail(emailA);
         repository.save(a);
@@ -957,6 +1102,13 @@ public class ShiftAssignService {
 
         log.info("[{}] Shift swap: row {} ({}) ↔ row {} ({})",
             teamId, idA, b.getEmail(), idB, a.getEmail());
+
+        // One event per person so sweep-caused movements can attach to either side.
+        // Rows keep their windows; emails swapped — so A now works B's old window.
+        recordRosterEvent(teamId, "SHIFT_SWAP", emailA,
+            "swapped with " + emailB + " — now " + b.getShiftStart() + "–" + b.getShiftEnd());
+        recordRosterEvent(teamId, "SHIFT_SWAP", emailB,
+            "swapped with " + emailA + " — now " + a.getShiftStart() + "–" + a.getShiftEnd());
 
         triggerAssignmentRun(teamId);
 
@@ -996,6 +1148,9 @@ public class ShiftAssignService {
 
         log.info("[{}] Shift email replaced: row {} {} → {}", teamId, id, oldEmail, newEmail);
 
+        recordRosterEvent(teamId, "EMAIL_REPLACE", oldEmail,
+            "→ " + newEmail + " (" + row.getShiftStart() + "–" + row.getShiftEnd() + ")");
+
         triggerAssignmentRun(teamId);
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -1019,6 +1174,9 @@ public class ShiftAssignService {
         List<JsonNode> tickets = jiraClient.getTicketsAssignedToByJql(fromAccountId, team.getJql());
         log.info("[{}] Swap assignee {} → {}: {} ticket(s)", teamId, fromEmail, toEmail, tickets.size());
 
+        RosterEvent ev = recordRosterEvent(teamId, "ASSIGNEE_SWAP", fromEmail, "tickets → " + toEmail);
+        List<Map<String, String>> moves = new ArrayList<>();
+
         int reassigned = 0;
         for (JsonNode ticket : tickets) {
             String issueKey = ticket.get("key").asText();
@@ -1026,10 +1184,12 @@ public class ShiftAssignService {
             if (jiraClient.assignTicket(issueKey, toAccountId)) {
                 logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, toEmail));
                 coverRepository.deleteByIssueKey(issueKey);
+                moves.add(Map.of("key", issueKey, "to", toEmail));
                 reassigned++;
             }
             jiraClient.pauseBetweenAssignments();
         }
+        if (ev != null) appendEventTickets(ev.getId(), moves);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("swapped", true);
@@ -1068,8 +1228,9 @@ public class ShiftAssignService {
         long logsDeleted   = logRepository.deleteByAssignedAtBefore(logCutoff);
         long rosterDeleted = repository.deleteByShiftDateBefore(rosterCutoff);
         long coversDeleted = coverRepository.deleteByCreatedAtBefore(logCutoff);
+        long eventsDeleted = eventRepository.deleteByCreatedAtBefore(logCutoff);
 
-        log.info("Purged data older than 7 days — activity log: {} rows, shift roster: {} rows, cover routing: {} rows.",
-                 logsDeleted, rosterDeleted, coversDeleted);
+        log.info("Purged data older than 7 days — activity log: {} rows, shift roster: {} rows, cover routing: {} rows, roster events: {} rows.",
+                 logsDeleted, rosterDeleted, coversDeleted, eventsDeleted);
     }
 }

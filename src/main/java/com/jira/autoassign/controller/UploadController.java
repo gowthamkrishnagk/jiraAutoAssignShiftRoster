@@ -287,6 +287,16 @@ public class UploadController {
     }
 
     // -----------------------------------------------------------------------
+    // Roster edit + break history (per team, today only)
+    // -----------------------------------------------------------------------
+
+    @GetMapping("/roster-events")
+    public ResponseEntity<List<Map<String, Object>>> rosterEvents(
+            @RequestParam(value = "team", required = false, defaultValue = "orderfallout") String teamId) {
+        return ResponseEntity.ok(shiftAssignService.getTodayRosterEvents(teamId));
+    }
+
+    // -----------------------------------------------------------------------
     // Schedule (per team)
     // -----------------------------------------------------------------------
 

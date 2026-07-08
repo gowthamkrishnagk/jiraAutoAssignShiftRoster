@@ -1265,6 +1265,12 @@
     </svg>
     View Activity
   </a>
+  <button class="activity-btn" onclick="openRosterEventsModal()" id="roster-events-btn" style="gap:5px;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+    </svg>
+    Roster Edits
+  </button>
   <button class="activity-btn" onclick="openSettingsModal()" id="settings-btn" style="gap:5px;">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
       <path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.06 7.06 0 0 0-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.47.47 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z"/>
@@ -1523,6 +1529,20 @@
       <button class="btn" id="add-shift-confirm-btn" onclick="doAddShift()">Add</button>
       <button class="btn-cancel" onclick="closeAddShiftModal()">Cancel</button>
     </div>
+  </div>
+</div>
+
+<!-- Today's Roster Edits & Breaks Modal -->
+<div class="modal-backdrop" id="roster-events-modal" onclick="if(event.target===this)closeRosterEventsModal()">
+  <div class="modal-box" style="max-width:720px;max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <div class="modal-title" style="margin:0;flex:1;">📋 Today's Roster Edits</div>
+      <button class="btn-cancel" style="padding:4px 10px;" onclick="closeRosterEventsModal()">✕</button>
+    </div>
+    <p style="font-size:.8rem;color:#5e6c84;margin:0 0 14px;line-height:1.5;">
+      Every shift edit and break today, and the tickets each edit moved. Click a ticket count to see the keys.
+    </p>
+    <div id="roster-events-body"><div class="spin"></div></div>
   </div>
 </div>
 
@@ -3073,6 +3093,81 @@ async function openSwapModal(rowId, ownerEmail, swapped, currentSwapEmail) {
 
 function closeSwapModal() {
   document.getElementById('swap-modal').style.display = 'none';
+}
+
+/* ---------- Today's Roster Edits & Breaks modal ---------- */
+
+const ROSTER_EVENT_META = {
+  ROSTER_ADD:    { label: 'Added',         bg: '#e3fcef', fg: '#006644' },
+  ROSTER_REMOVE: { label: 'Removed',       bg: '#ffebe6', fg: '#bf2600' },
+  SHIFT_SWAP:    { label: 'Shift Swap',    bg: '#deebff', fg: '#0747a6' },
+  EMAIL_REPLACE: { label: 'Replaced',      bg: '#fff0b3', fg: '#7a5c00' },
+  COVER_SET:     { label: 'Cover Set',     bg: '#eae6ff', fg: '#403294' },
+  COVER_CLEAR:   { label: 'Cover Cleared', bg: '#eae6ff', fg: '#403294' },
+  ASSIGNEE_SWAP: { label: 'Tickets Moved', bg: '#deebff', fg: '#0747a6' },
+  BREAK_START:   { label: 'Break',         bg: '#fff0b3', fg: '#7a5c00' },
+  BREAK_END:     { label: 'Back',          bg: '#e3fcef', fg: '#006644' }
+};
+
+async function openRosterEventsModal() {
+  const box = document.getElementById('roster-events-body');
+  box.innerHTML = '<div class="spin"></div>';
+  document.getElementById('roster-events-modal').style.display = 'flex';
+  try {
+    const url  = '/api/roster-events' + (activeTeam ? '?team=' + encodeURIComponent(activeTeam) : '');
+    const rows = await (await fetch(url)).json();
+    renderRosterEvents(rows);
+  } catch (e) {
+    box.innerHTML = '<div style="color:#de350b;font-size:.85rem;">Could not load roster edits: ' + esc(e.message) + '</div>';
+  }
+}
+
+function closeRosterEventsModal() {
+  document.getElementById('roster-events-modal').style.display = 'none';
+}
+
+function renderRosterEvents(rows) {
+  const box = document.getElementById('roster-events-body');
+  if (!rows || !rows.length) {
+    box.innerHTML = '<div style="color:#5e6c84;font-size:.85rem;padding:14px 0;">No roster edits or breaks today.</div>';
+    return;
+  }
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:.8rem;">
+    <thead><tr style="text-align:left;color:#5e6c84;font-size:.68rem;text-transform:uppercase;letter-spacing:.5px;">
+      <th style="padding:6px 8px;">Time</th>
+      <th style="padding:6px 8px;">Action</th>
+      <th style="padding:6px 8px;">Person</th>
+      <th style="padding:6px 8px;">Details</th>
+      <th style="padding:6px 8px;">Tickets moved</th>
+    </tr></thead><tbody>`;
+  rows.forEach((r, i) => {
+    const meta = ROSTER_EVENT_META[r.action] || { label: r.action, bg: '#f4f5f7', fg: '#42526e' };
+    const time = (r.at || '').slice(11, 16);
+    let ticketsCell = '<span style="color:#c1c7d0;">—</span>';
+    if (r.moves && r.moves.length) {
+      ticketsCell = r.moves.map((mv, j) => {
+        const kid = `rev-keys-${i}-${j}`;
+        const chips = mv.keys.map(k =>
+          `<span style="display:inline-block;background:#f4f5f7;border:1px solid #dfe1e6;border-radius:3px;padding:1px 6px;margin:1px 2px 1px 0;font-family:monospace;font-size:.72rem;color:#172b4d;">${esc(k)}</span>`
+        ).join('');
+        return `<div style="margin:1px 0;">
+          <a href="#" onclick="const el=document.getElementById('${kid}');el.style.display=el.style.display==='none'?'block':'none';return false;"
+             style="color:#0052cc;font-weight:600;text-decoration:none;">${mv.keys.length} ticket${mv.keys.length === 1 ? '' : 's'}</a>
+          <span style="color:#5e6c84;"> → ${esc(mv.toName)}</span>
+          <div id="${kid}" style="display:none;margin-top:3px;">${chips}</div>
+        </div>`;
+      }).join('');
+    }
+    html += `<tr style="border-top:1px solid #f0f1f3;vertical-align:top;">
+      <td style="padding:7px 8px;color:#5e6c84;white-space:nowrap;">${esc(time)}</td>
+      <td style="padding:7px 8px;white-space:nowrap;"><span style="background:${meta.bg};color:${meta.fg};border-radius:3px;padding:2px 7px;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;">${esc(meta.label)}</span></td>
+      <td style="padding:7px 8px;font-weight:600;color:#172b4d;">${esc(r.name)}</td>
+      <td style="padding:7px 8px;color:#42526e;">${esc(r.detail)}</td>
+      <td style="padding:7px 8px;">${ticketsCell}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  box.innerHTML = html;
 }
 
 function updateSwapPreview() {
