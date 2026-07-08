@@ -704,6 +704,8 @@ public class ShiftAssignService {
         List<RosterEvent> events = eventRepository
             .findByTeamIdAndCreatedAtAfterOrderByCreatedAtDescIdDesc(teamId, LocalDate.now().atStartOfDay());
         for (RosterEvent ev : events) {
+            // Break events are no longer recorded; skip any left from older builds.
+            if (ev.getAction() != null && ev.getAction().startsWith("BREAK")) continue;
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("action", ev.getAction());
             m.put("email",  ev.getEmail());
