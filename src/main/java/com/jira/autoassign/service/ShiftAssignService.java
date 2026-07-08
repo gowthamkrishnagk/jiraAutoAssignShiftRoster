@@ -3,9 +3,11 @@ package com.jira.autoassign.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jira.autoassign.client.JiraClient;
 import com.jira.autoassign.entity.AssignmentLog;
+import com.jira.autoassign.entity.CoverAssignment;
 import com.jira.autoassign.entity.ShiftRoster;
 import com.jira.autoassign.entity.Team;
 import com.jira.autoassign.repository.AssignmentLogRepository;
+import com.jira.autoassign.repository.CoverAssignmentRepository;
 import com.jira.autoassign.repository.ShiftRosterRepository;
 import com.jira.autoassign.repository.TeamRepository;
 import org.slf4j.Logger;
@@ -45,12 +47,18 @@ public class ShiftAssignService {
     private final AssignmentLogRepository logRepository;
     private final TeamRepository teamRepository;
     private final WebhookService webhookService;
+    private final CoverAssignmentRepository coverRepository;
 
     // Per-team round-robin index (resets on restart — fine)
     private final Map<String, Integer> rrIndexByTeam = new ConcurrentHashMap<>();
 
     // Per-team paused emails
     private final Map<String, Set<String>> pausedByTeam = new ConcurrentHashMap<>();
+
+    // Per-team cover emails whose tickets are mid-hand-back to the owner. The off-shift
+    // sweep skips these so a scheduler tick can't round-robin the tickets away in the
+    // window between a cover being cleared and the async return finishing.
+    private final Map<String, Set<String>> pendingCoverReturnByTeam = new ConcurrentHashMap<>();
 
     // Per-team discovered-unavailable emails → epoch millis until which to skip them.
     // An account whose Jira assignment fails (deactivated / frozen / locked) still
@@ -70,12 +78,13 @@ public class ShiftAssignService {
 
     public ShiftAssignService(JiraClient jiraClient, ShiftRosterRepository repository,
                               AssignmentLogRepository logRepository, TeamRepository teamRepository,
-                              WebhookService webhookService) {
-        this.jiraClient     = jiraClient;
-        this.repository     = repository;
-        this.logRepository  = logRepository;
-        this.teamRepository = teamRepository;
-        this.webhookService = webhookService;
+                              WebhookService webhookService, CoverAssignmentRepository coverRepository) {
+        this.jiraClient      = jiraClient;
+        this.repository      = repository;
+        this.logRepository   = logRepository;
+        this.teamRepository  = teamRepository;
+        this.webhookService  = webhookService;
+        this.coverRepository = coverRepository;
     }
 
     // -----------------------------------------------------------------------
@@ -287,6 +296,7 @@ public class ShiftAssignService {
                 log.info("[{}] Restore escalated [{}] -> {}", teamName, issueKey, lastEmail);
                 if (jiraClient.assignTicket(issueKey, lastAccId)) {
                     logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, lastEmail));
+                    coverRepository.deleteByIssueKey(issueKey);
                 }
             }
             jiraClient.pauseBetweenAssignments();
@@ -335,11 +345,16 @@ public class ShiftAssignService {
             .map(c -> c.toLowerCase().trim())
             .collect(Collectors.toSet());
 
+        // Ex-covers whose tickets are still being handed back to the owner: leave them
+        // alone this tick — the async return owns those tickets right now.
+        Set<String> returning = pendingCoverReturnByTeam.getOrDefault(teamId, Collections.emptySet());
+
         List<String> allRosterEmails = repository.findAllEmailsInRange(teamId, today, yesterday);
         List<String> offShiftEmails  = allRosterEmails.stream()
             .filter(e -> !activeEmails.contains(e))
             .filter(e -> !paused.contains(e))
             .filter(e -> !activeCoverTargets.contains(e.toLowerCase().trim()))
+            .filter(e -> !returning.contains(e.toLowerCase().trim()))
             .collect(Collectors.toList());
 
         log.info("[{}] Off-shift sweep — people to check: {}",
@@ -431,9 +446,14 @@ public class ShiftAssignService {
                      cover != null ? " (assigned to cover " + cover + ")" : "");
 
             if (jiraClient.assignTicket(issueKey, accId)) {
-                // Under cover: credit the real shift owner by name on the ticket itself.
                 if (cover != null) {
+                    // Under cover: credit the real shift owner by name on the ticket
+                    // itself, and record the routing so a later cover clear/replace
+                    // can hand back exactly these tickets — not the cover's own.
                     jiraClient.postComment(issueKey, coverComment(email));
+                    rememberCoverRouted(teamId, issueKey, email, cover);
+                } else {
+                    coverRepository.deleteByIssueKey(issueKey);
                 }
                 return new AssignResult(email, accId, workRr + 1);
             }
@@ -663,12 +683,12 @@ public class ShiftAssignService {
             .orElseThrow(() -> new IllegalArgumentException("Shift row not found: " + id));
         if (!teamId.equals(row.getTeamId()))
             throw new IllegalArgumentException("Row does not belong to team: " + teamId);
-        // A covered row being removed drops the cover with it: return the cover's held
-        // tickets to the owner first (while the row still shields the cover from the
-        // sweep). If the owner stays on shift via another row — or is re-added — the
+        // A covered row being removed drops the cover with it: return the cover-routed
+        // tickets to the owner (guard first, so the sweep can't grab them once the row
+        // is gone). If the owner stays on shift via another row — or is re-added — the
         // tickets stay put; otherwise the normal off-shift sweep takes them from there.
         if (row.getCoverEmail() != null && !row.getCoverEmail().isBlank()) {
-            transferCoverTickets(teamId, row.getEmail(), row.getCoverEmail(), row.getEmail());
+            beginCoverReturn(teamId, row.getEmail(), row.getCoverEmail(), row.getEmail());
         }
         repository.deleteById(id);
         resumeEmail(teamId, row.getEmail());   // clear any lingering break state
@@ -740,27 +760,27 @@ public class ShiftAssignService {
         String clean = coverEmail == null ? "" : coverEmail.trim();
         String previousCover = row.getCoverEmail();
         if (clean.isBlank()) {
+            // Shield the ex-cover from the sweep BEFORE the cleared row is saved, then
+            // hand their cover-routed tickets back to the owner asynchronously.
+            if (previousCover != null) {
+                beginCoverReturn(teamId, row.getEmail(), previousCover, row.getEmail());
+            }
             row.setCoverEmail(null);
             repository.save(row);
             log.info("[{}] Cover cleared on row {} ({})", teamId, id, row.getEmail());
-            // Hand the cover's held tickets back to the owner BEFORE the triggered run,
-            // otherwise the sweep sees the ex-cover as off-shift and round-robins them away.
-            if (previousCover != null) {
-                transferCoverTickets(teamId, row.getEmail(), previousCover, row.getEmail());
-            }
         } else {
             if (!isValidEmail(clean))
                 throw new IllegalArgumentException("'" + clean + "' is not a valid email address");
             if (clean.equalsIgnoreCase(row.getEmail().trim()))
                 throw new IllegalArgumentException("Cover cannot be the same person as the shift owner");
+            // Replacing one cover with another: move the old cover's routed tickets to
+            // the new cover so they keep following the owner's slot.
+            if (previousCover != null && !previousCover.equalsIgnoreCase(clean)) {
+                beginCoverReturn(teamId, row.getEmail(), previousCover, clean);
+            }
             row.setCoverEmail(clean);
             repository.save(row);
             log.info("[{}] Cover set on row {}: {} → tickets assigned to {}", teamId, id, row.getEmail(), clean);
-            // Replacing one cover with another: move the old cover's held tickets to the
-            // new cover so they follow the owner's slot instead of being swept.
-            if (previousCover != null && !previousCover.equalsIgnoreCase(clean)) {
-                transferCoverTickets(teamId, row.getEmail(), previousCover, clean);
-            }
         }
 
         triggerAssignmentRun(teamId);
@@ -772,10 +792,41 @@ public class ShiftAssignService {
         return result;
     }
 
+    /** Records that issueKey was assigned to a cover on the owner's behalf. */
+    private void rememberCoverRouted(String teamId, String issueKey, String ownerEmail, String coverEmail) {
+        try {
+            coverRepository.deleteByIssueKey(issueKey);
+            coverRepository.save(CoverAssignment.of(teamId, issueKey, ownerEmail, coverEmail));
+        } catch (Exception e) {
+            log.warn("[{}] Could not record cover routing for [{}]: {}", teamId, issueKey, e.getMessage());
+        }
+    }
+
     /**
-     * Moves every ticket currently sitting with a (former) cover to its new holder —
+     * Starts an async hand-back of a (former) cover's routed tickets. The cover email
+     * is added to the sweep guard FIRST — before the caller persists the roster change —
+     * so no scheduler tick can round-robin those tickets away mid-transfer, and the
+     * HTTP request that triggered the change returns without waiting on Jira.
+     */
+    private void beginCoverReturn(String teamId, String ownerEmail, String fromEmail, String toEmail) {
+        String guardKey = fromEmail.toLowerCase().trim();
+        pendingCoverReturnByTeam.computeIfAbsent(teamId, k -> ConcurrentHashMap.newKeySet())
+                                .add(guardKey);
+        CompletableFuture.runAsync(() -> {
+            try {
+                transferCoverTickets(teamId, ownerEmail, fromEmail, toEmail);
+            } finally {
+                Set<String> set = pendingCoverReturnByTeam.get(teamId);
+                if (set != null) set.remove(guardKey);
+            }
+        }, teamExecutor);
+    }
+
+    /**
+     * Moves the tickets a (former) cover is holding FOR the owner to their new holder —
      * the owner when the cover is cleared, or the replacement cover on a cover change.
-     * The owner remains the displayed/logged assignee either way.
+     * Only tickets recorded in cover_assignment move; the cover's own workload is
+     * untouched. The owner remains the displayed/logged assignee either way.
      *
      * Best-effort: if the target account can't be resolved or an assignment fails
      * (e.g. the owner's Jira is still locked — the reason the cover existed), the
@@ -785,12 +836,38 @@ public class ShiftAssignService {
         try {
             Team team = teamRepository.findById(teamId).orElse(null);
             if (team == null) return;
+
+            List<CoverAssignment> records = coverRepository.findByTeamIdAndCoverEmailIgnoreCase(teamId, fromEmail);
+            if (records.isEmpty()) return;
+            Set<String> routedKeys = records.stream()
+                .map(CoverAssignment::getIssueKey)
+                .collect(Collectors.toSet());
+
+            if (team.isDryRun()) {
+                log.info("[{}][DRY-RUN] Would move cover-routed ticket(s) {} from {} to {} (owner {})",
+                         teamId, routedKeys, fromEmail, toEmail, ownerEmail);
+                return;
+            }
+
             String fromAccId = jiraClient.getAccountId(fromEmail);
             String toAccId   = jiraClient.getAccountId(toEmail);
-            List<JsonNode> tickets = jiraClient.getTicketsAssignedToByJql(fromAccId, team.getJql());
-            if (tickets.isEmpty()) return;
 
-            log.info("[{}] Cover change — moving {} ticket(s) from {} to {} (owner {})",
+            // Only tickets STILL assigned to the cover count; anything reassigned or
+            // resolved in the meantime is a stale record and is dropped below.
+            List<JsonNode> tickets = jiraClient.getTicketsAssignedToByJql(fromAccId, team.getJql()).stream()
+                .filter(t -> routedKeys.contains(t.get("key").asText()))
+                .collect(Collectors.toList());
+            Set<String> stillHeldKeys = tickets.stream()
+                .map(t -> t.get("key").asText())
+                .collect(Collectors.toSet());
+            List<CoverAssignment> stale = records.stream()
+                .filter(r -> !stillHeldKeys.contains(r.getIssueKey()))
+                .collect(Collectors.toList());
+            if (!stale.isEmpty()) coverRepository.deleteAll(stale);
+
+            if (tickets.isEmpty()) return;
+            boolean toOwner = toEmail.equalsIgnoreCase(ownerEmail);
+            log.info("[{}] Cover change — moving {} cover-routed ticket(s) from {} to {} (owner {})",
                      teamId, tickets.size(), fromEmail, toEmail, ownerEmail);
 
             for (JsonNode ticket : tickets) {
@@ -798,8 +875,12 @@ public class ShiftAssignService {
                 String summary  = ticket.get("fields").path("summary").asText("");
                 if (jiraClient.assignTicket(issueKey, toAccId)) {
                     logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, ownerEmail));
-                    if (!toEmail.equalsIgnoreCase(ownerEmail)) {
-                        jiraClient.postComment(issueKey, coverComment(ownerEmail));
+                    // Back with the owner → routing over. Moved to a new cover → update
+                    // the record; the ticket already carries the "worked by" comment.
+                    if (toOwner) {
+                        coverRepository.deleteByIssueKey(issueKey);
+                    } else {
+                        rememberCoverRouted(teamId, issueKey, ownerEmail, toEmail);
                     }
                 } else {
                     log.warn("[{}] [{}] Could not move ticket from {} to {} — leaving with cover",
@@ -944,6 +1025,7 @@ public class ShiftAssignService {
             String summary  = ticket.get("fields").path("summary").asText("");
             if (jiraClient.assignTicket(issueKey, toAccountId)) {
                 logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, toEmail));
+                coverRepository.deleteByIssueKey(issueKey);
                 reassigned++;
             }
             jiraClient.pauseBetweenAssignments();
@@ -985,8 +1067,9 @@ public class ShiftAssignService {
 
         long logsDeleted   = logRepository.deleteByAssignedAtBefore(logCutoff);
         long rosterDeleted = repository.deleteByShiftDateBefore(rosterCutoff);
+        long coversDeleted = coverRepository.deleteByCreatedAtBefore(logCutoff);
 
-        log.info("Purged data older than 7 days — activity log: {} rows, shift roster: {} rows.",
-                 logsDeleted, rosterDeleted);
+        log.info("Purged data older than 7 days — activity log: {} rows, shift roster: {} rows, cover routing: {} rows.",
+                 logsDeleted, rosterDeleted, coversDeleted);
     }
 }
