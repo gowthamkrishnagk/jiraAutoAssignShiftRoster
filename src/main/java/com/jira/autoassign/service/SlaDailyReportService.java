@@ -462,39 +462,17 @@ public class SlaDailyReportService {
         h.append("<div style=\"font-family:Segoe UI,Arial,sans-serif;color:#172b4d;max-width:860px;\">");
 
         h.append("<h2 style=\"margin:0 0 4px;font-size:19px;\">SLA Breach Reasons — Pending</h2>")
-         .append("<div style=\"font-size:12.5px;color:#5e6c84;margin-bottom:4px;\">")
-         .append("Breached tickets with an <strong>empty Breach Reason</strong>, by assignee.</div>")
          .append("<div style=\"font-size:12px;color:#7a869a;margin-bottom:18px;\">")
-         .append("<strong>Open</strong> = still open right now &nbsp;·&nbsp; ")
-         .append("<strong>Resolved</strong> = resolved/closed on <strong>")
-         .append(esc(report.resolvedDate())).append("</strong> &nbsp;·&nbsp; generated ")
+         .append("Resolved = closed on <strong>").append(esc(report.resolvedDate()))
+         .append("</strong> &nbsp;·&nbsp; Open = still open now &nbsp;·&nbsp; generated ")
          .append(esc(report.generatedAt())).append("</div>");
 
-        // Headline number
-        String bannerBg  = report.grandTotal() == 0 ? "#e3fcef" : "#fffae6";
-        String bannerCol = report.grandTotal() == 0 ? "#006644" : "#974f0c";
-        h.append("<div style=\"background:").append(bannerBg).append(";border-radius:6px;")
-         .append("padding:12px 14px;margin-bottom:20px;font-size:14px;color:").append(bannerCol).append(";\">");
-        if (report.grandTotal() == 0) {
-            h.append("<strong>All clear</strong> — every breached ticket in scope has a reason logged.");
-        } else {
-            h.append("<strong>").append(report.grandTotal()).append("</strong> breached ticket(s) still have no reason")
-             .append(" &nbsp;·&nbsp; out of ").append(report.grandBreachedTotal()).append(" breached in scope.");
-        }
-        h.append("</div>");
-
-        // Attachment callout — the full tracker sheet for the same day
-        if (attachmentName != null && !attachmentName.isBlank()) {
-            h.append("<div style=\"background:#deebff;border-radius:6px;padding:11px 14px;")
-             .append("margin-bottom:20px;font-size:13px;color:#0747a6;\">")
-             .append("📎 Attached: <strong>").append(esc(attachmentName)).append("</strong>")
-             .append(" — the full SLA Tracker sheet for ").append(esc(report.resolvedDate()))
-             .append(" (pivot + every breached ticket per team, reason column included).</div>");
-        }
-
         for (TeamPivot tp : report.teams()) {
-            h.append("<div style=\"font-size:15px;font-weight:600;margin:22px 0 8px;\">")
-             .append(esc(tp.teamName())).append("</div>");
+            // Team heading only when more than one team is in scope — with a single team
+            // it just repeats the subject line.
+            if (report.teams().size() > 1)
+                h.append("<div style=\"font-size:15px;font-weight:600;margin:22px 0 8px;\">")
+                 .append(esc(tp.teamName())).append("</div>");
 
             if (tp.error() != null) {
                 h.append("<div style=\"font-size:12.5px;color:#bf2600;background:#ffebe6;")
@@ -503,88 +481,46 @@ public class SlaDailyReportService {
                 continue;
             }
             if (tp.rows().isEmpty()) {
-                h.append("<div style=\"font-size:12.5px;color:#5e6c84;background:#f4f5f7;")
-                 .append("border-radius:4px;padding:9px 12px;\">No breached tickets missing a reason")
-                 .append(" (").append(tp.breachedTotal()).append(" breached in scope).</div>");
+                h.append("<div style=\"font-size:12.5px;color:#006644;background:#e3fcef;")
+                 .append("border-radius:4px;padding:9px 12px;\">All breached tickets have a reason logged.</div>");
                 continue;
             }
 
-            // ---- the pivot ----
             h.append("<table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\" ")
-             .append("style=\"border-collapse:collapse;width:100%;border:1px solid #dfe1e6;border-radius:4px;\">")
+             .append("style=\"border-collapse:collapse;width:100%;border:1px solid #dfe1e6;\">")
              .append("<thead><tr>")
              .append("<th style=\"").append(TH).append("\">Assignee</th>")
-             .append("<th style=\"").append(TH).append(NUM).append("\">Open</th>")
-             .append("<th style=\"").append(TH).append(NUM).append("\">Resolved</th>")
-             .append("<th style=\"").append(TH).append(NUM).append("\">Total</th>")
+             .append("<th style=\"").append(TH).append(NUM).append("\">Breach Reason Empty (Resolved)</th>")
+             .append("<th style=\"").append(TH).append(NUM).append("\">Breach Reason Empty (Open)</th>")
              .append("</tr></thead><tbody>");
 
             for (PivotRow r : tp.rows()) {
-                h.append("<tr><td style=\"").append(TD).append("\">")
-                 .append("<span style=\"font-weight:600;\">").append(esc(r.name())).append("</span>");
-                if (r.email() != null && !r.email().isBlank())
-                    h.append("<br><span style=\"font-size:11.5px;color:#7a869a;\">")
-                     .append(esc(r.email())).append("</span>");
-                h.append("</td>")
-                 .append("<td style=\"").append(TD).append(NUM).append("\">").append(r.open()).append("</td>")
+                h.append("<tr>")
+                 .append("<td style=\"").append(TD).append("font-weight:600;\">")
+                 .append(esc(r.name())).append("</td>")
                  .append("<td style=\"").append(TD).append(NUM).append("\">").append(r.resolved()).append("</td>")
-                 .append("<td style=\"").append(TD).append(NUM)
-                 .append("font-weight:700;\">").append(r.total()).append("</td></tr>");
+                 .append("<td style=\"").append(TD).append(NUM).append("\">").append(r.open()).append("</td>")
+                 .append("</tr>");
             }
 
-            h.append("<tr><td style=\"").append(TD)
-             .append("font-weight:700;background:#f4f5f7;\">Total</td>")
-             .append("<td style=\"").append(TD).append(NUM).append("font-weight:700;background:#f4f5f7;\">")
-             .append(tp.open()).append("</td>")
+            h.append("<tr>")
+             .append("<td style=\"").append(TD).append("font-weight:700;background:#f4f5f7;\">Total</td>")
              .append("<td style=\"").append(TD).append(NUM).append("font-weight:700;background:#f4f5f7;\">")
              .append(tp.resolved()).append("</td>")
              .append("<td style=\"").append(TD).append(NUM).append("font-weight:700;background:#f4f5f7;\">")
-             .append(tp.total()).append("</td></tr>")
-             .append("</tbody></table>");
-
-            // ---- the tickets behind the numbers ----
-            h.append("<div style=\"font-size:12px;color:#5e6c84;margin:14px 0 6px;font-weight:600;\">")
-             .append("Tickets awaiting a reason</div>")
-             .append("<table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\" ")
-             .append("style=\"border-collapse:collapse;width:100%;border:1px solid #dfe1e6;\">")
-             .append("<thead><tr>")
-             .append("<th style=\"").append(TH).append("\">Ticket</th>")
-             .append("<th style=\"").append(TH).append("\">Assignee</th>")
-             .append("<th style=\"").append(TH).append("\">Status</th>")
-             .append("<th style=\"").append(TH).append("\">Severity</th>")
-             .append("<th style=\"").append(TH).append("\">Breached</th>")
-             .append("</tr></thead><tbody>");
-
-            for (PivotRow r : tp.rows()) {
-                for (PendingTicket pt : r.tickets()) {
-                    h.append("<tr><td style=\"").append(TD).append("\">")
-                     .append("<a href=\"").append(esc(pt.url()))
-                     .append("\" style=\"color:#0052cc;text-decoration:none;font-weight:600;\">")
-                     .append(esc(pt.key())).append("</a>")
-                     .append("<br><span style=\"font-size:11.5px;color:#7a869a;\">")
-                     .append(esc(trim(pt.summary(), 90))).append("</span></td>")
-                     .append("<td style=\"").append(TD).append("\">").append(esc(r.name())).append("</td>")
-                     .append("<td style=\"").append(TD).append("\">").append(esc(pt.status())).append("</td>")
-                     .append("<td style=\"").append(TD).append("\">").append(esc(pt.severity())).append("</td>")
-                     .append("<td style=\"").append(TD).append("\">").append(esc(pt.breachTime())).append("</td>")
-                     .append("</tr>");
-                }
-            }
-            h.append("</tbody></table>");
+             .append(tp.open()).append("</td>")
+             .append("</tr></tbody></table>");
         }
 
-        h.append("<div style=\"font-size:11.5px;color:#7a869a;margin-top:24px;")
-         .append("border-top:1px solid #ebecf0;padding-top:10px;\">")
-         .append("Log a reason from the <strong>SLA Tracker</strong> → Breach Reason dropdown. ")
-         .append("Automated daily report — reply to this address is not monitored.</div>")
+        h.append("<div style=\"font-size:11.5px;color:#7a869a;margin-top:20px;")
+         .append("border-top:1px solid #ebecf0;padding-top:10px;\">");
+        if (attachmentName != null && !attachmentName.isBlank())
+            h.append("Ticket-level detail is in the attached <strong>")
+             .append(esc(attachmentName)).append("</strong>. ");
+        h.append("Log a reason from the <strong>SLA Tracker</strong> → Breach Reason dropdown.</div>")
          .append("</div>");
 
         return h.toString();
-    }
-
-    private static String trim(String s, int max) {
-        if (s == null) return "";
-        return s.length() <= max ? s : s.substring(0, max - 1) + "…";
     }
 
     private static String esc(String s) {
