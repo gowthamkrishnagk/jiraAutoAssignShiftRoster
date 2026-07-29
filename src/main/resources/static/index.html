@@ -1740,6 +1740,142 @@
            style="display:none;margin-top:8px;padding:7px 12px;border-radius:4px;font-size:.82rem;"></div>
     </div>
 
+    <!-- Mail Server (SMTP) -->
+    <div class="card">
+      <div class="card-title">Mail Server (SMTP)</div>
+      <p style="font-size:.82rem;color:#5e6c84;margin-bottom:14px;line-height:1.5;">
+        Outgoing mail server used for the daily SLA report. Saved here it takes effect
+        immediately — no restart needed.
+      </p>
+
+      <div id="smtp-active-status"
+           style="font-size:.78rem;padding:8px 11px;border-radius:4px;margin-bottom:14px;
+                  background:#f4f5f7;color:#5e6c84;">Loading…</div>
+
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;">
+        <div>
+          <label style="display:block;font-size:.8rem;color:#5e6c84;margin-bottom:5px;font-weight:600;">Host</label>
+          <input id="smtp-host" type="text" placeholder="smtp.office365.com"
+                 style="width:100%;border:1.5px solid #dfe1e6;border-radius:4px;padding:8px 10px;
+                        font-size:.86rem;font-family:inherit;outline:none;box-sizing:border-box;"
+                 onfocus="this.style.borderColor='#0052cc'" onblur="this.style.borderColor='#dfe1e6'">
+        </div>
+        <div>
+          <label style="display:block;font-size:.8rem;color:#5e6c84;margin-bottom:5px;font-weight:600;">Port</label>
+          <input id="smtp-port" type="number" placeholder="587" min="1" max="65535"
+                 style="width:100%;border:1.5px solid #dfe1e6;border-radius:4px;padding:8px 10px;
+                        font-size:.86rem;font-family:inherit;outline:none;box-sizing:border-box;"
+                 onfocus="this.style.borderColor='#0052cc'" onblur="this.style.borderColor='#dfe1e6'">
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+        <div>
+          <label style="display:block;font-size:.8rem;color:#5e6c84;margin-bottom:5px;font-weight:600;">Username</label>
+          <input id="smtp-username" type="text" placeholder="sla-tracker@prodapt.com" autocomplete="off"
+                 style="width:100%;border:1.5px solid #dfe1e6;border-radius:4px;padding:8px 10px;
+                        font-size:.86rem;font-family:inherit;outline:none;box-sizing:border-box;"
+                 onfocus="this.style.borderColor='#0052cc'" onblur="this.style.borderColor='#dfe1e6'">
+        </div>
+        <div>
+          <label style="display:block;font-size:.8rem;color:#5e6c84;margin-bottom:5px;font-weight:600;">Password</label>
+          <input id="smtp-password" type="password" placeholder="••••••••" autocomplete="new-password"
+                 style="width:100%;border:1.5px solid #dfe1e6;border-radius:4px;padding:8px 10px;
+                        font-size:.86rem;font-family:inherit;outline:none;box-sizing:border-box;"
+                 onfocus="this.style.borderColor='#0052cc'" onblur="this.style.borderColor='#dfe1e6'">
+          <div id="smtp-password-hint" style="font-size:.72rem;color:#97a0af;margin-top:4px;"></div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+        <div>
+          <label style="display:block;font-size:.8rem;color:#5e6c84;margin-bottom:5px;font-weight:600;">From address</label>
+          <input id="smtp-from" type="text" placeholder="same as username"
+                 style="width:100%;border:1.5px solid #dfe1e6;border-radius:4px;padding:8px 10px;
+                        font-size:.86rem;font-family:inherit;outline:none;box-sizing:border-box;"
+                 onfocus="this.style.borderColor='#0052cc'" onblur="this.style.borderColor='#dfe1e6'">
+        </div>
+        <div>
+          <label style="display:block;font-size:.8rem;color:#5e6c84;margin-bottom:5px;font-weight:600;">From name</label>
+          <input id="smtp-from-name" type="text" placeholder="SLA Tracker"
+                 style="width:100%;border:1.5px solid #dfe1e6;border-radius:4px;padding:8px 10px;
+                        font-size:.86rem;font-family:inherit;outline:none;box-sizing:border-box;"
+                 onfocus="this.style.borderColor='#0052cc'" onblur="this.style.borderColor='#dfe1e6'">
+        </div>
+      </div>
+
+      <div style="display:flex;gap:18px;margin-top:12px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:7px;font-size:.85rem;color:#172b4d;cursor:pointer;">
+          <input type="checkbox" id="smtp-auth" checked style="width:15px;height:15px;cursor:pointer;">
+          Use authentication
+        </label>
+        <label style="display:flex;align-items:center;gap:7px;font-size:.85rem;color:#172b4d;cursor:pointer;">
+          <input type="checkbox" id="smtp-starttls" checked style="width:15px;height:15px;cursor:pointer;">
+          STARTTLS
+        </label>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;align-items:center;">
+        <button class="btn" onclick="saveSmtpSettings()">Save</button>
+        <button class="btn" id="smtp-test-btn" onclick="testSmtpSettings()"
+                style="background:#f4f5f7;color:#42526e;">Send test</button>
+        <input id="smtp-test-to" type="text" placeholder="test to… (optional)"
+               style="flex:1;min-width:180px;border:1.5px solid #dfe1e6;border-radius:4px;padding:7px 10px;
+                      font-size:.82rem;font-family:inherit;outline:none;"
+               onfocus="this.style.borderColor='#0052cc'" onblur="this.style.borderColor='#dfe1e6'">
+      </div>
+
+      <div id="smtp-alert"
+           style="display:none;margin-top:10px;padding:7px 12px;border-radius:4px;font-size:.82rem;"></div>
+    </div>
+
+    <!-- Daily SLA Report Email -->
+    <div class="card">
+      <div class="card-title">Daily SLA Report Email</div>
+      <p style="font-size:.82rem;color:#5e6c84;margin-bottom:14px;line-height:1.5;">
+        Every day at <strong>07:30 IST</strong> the recipients below get a pivot of
+        breached tickets whose <strong>Breach Reason is still empty</strong> — assignee
+        names with their counts — plus the day's full SLA Tracker sheet as an
+        <strong>.xlsx</strong> attachment. Covers all teams in one mail.
+      </p>
+
+      <div id="sla-mail-smtp-status"
+           style="font-size:.78rem;padding:8px 11px;border-radius:4px;margin-bottom:14px;
+                  background:#f4f5f7;color:#5e6c84;">Checking mail server…</div>
+
+      <label style="display:block;font-size:.8rem;color:#5e6c84;margin-bottom:5px;font-weight:600;">
+        Recipients
+      </label>
+      <textarea id="sla-mail-recipients" rows="3"
+                placeholder="lead@prodapt.com, manager@prodapt.com"
+                style="width:100%;border:1.5px solid #dfe1e6;border-radius:4px;padding:8px 10px;
+                       font-size:.86rem;font-family:inherit;outline:none;resize:vertical;
+                       transition:border-color .15s;box-sizing:border-box;"
+                onfocus="this.style.borderColor='#0052cc'"
+                onblur="this.style.borderColor='#dfe1e6'"></textarea>
+      <div style="font-size:.75rem;color:#97a0af;margin-top:4px;">
+        Separate with commas, semicolons, spaces or new lines.
+      </div>
+
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;
+                    font-size:.85rem;color:#172b4d;cursor:pointer;">
+        <input type="checkbox" id="sla-mail-enabled" checked
+               style="width:15px;height:15px;cursor:pointer;">
+        Send automatically at 07:30 IST
+      </label>
+
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
+        <button class="btn" onclick="saveSlaMailSettings()">Save</button>
+        <button class="btn" id="sla-mail-send-btn" onclick="sendSlaReportNow()"
+                style="background:#f4f5f7;color:#42526e;">Send now</button>
+        <button class="btn" onclick="downloadSlaDailySheet()"
+                style="background:#f4f5f7;color:#42526e;">Download sheet</button>
+      </div>
+
+      <div id="sla-mail-alert"
+           style="display:none;margin-top:10px;padding:7px 12px;border-radius:4px;font-size:.82rem;"></div>
+    </div>
+
   </div>
 </div>
 
@@ -3567,6 +3703,207 @@ function toggleAdminMode() {
 async function loadAndRenderAdmin() {
   await loadBreachReasons();
   renderBreachReasonAdmin();
+  loadSmtpSettings();
+  loadSlaMailSettings();
+}
+
+// ---- Mail server (SMTP) ----
+
+function smtpMsg(text, ok) {
+  const el = document.getElementById('smtp-alert');
+  if (!el) return;
+  el.textContent = text;
+  el.style.cssText = 'display:block;margin-top:10px;padding:7px 12px;border-radius:4px;font-size:.82rem;'
+    + (ok ? 'color:#006644;background:#e3fcef;border:1px solid #57d9a3;'
+          : 'color:#bf2600;background:#ffebe6;border:1px solid #ff8f73;');
+}
+
+function renderSmtpStatus(d) {
+  const el = document.getElementById('smtp-active-status');
+  if (!el) return;
+  if (d.configured) {
+    const via = d.source === 'env'
+      ? 'from server environment variables (saving below overrides them)'
+      : 'configured here';
+    el.style.cssText = 'font-size:.78rem;padding:8px 11px;border-radius:4px;margin-bottom:14px;'
+      + 'background:#e3fcef;color:#006644;';
+    el.innerHTML = `✓ Active: <strong>${esc(d.activeHost)}</strong>, sending as `
+      + `<strong>${esc(d.activeFrom || '(not set)')}</strong> — ${via}.`;
+  } else {
+    el.style.cssText = 'font-size:.78rem;padding:8px 11px;border-radius:4px;margin-bottom:14px;'
+      + 'background:#fffae6;color:#974f0c;';
+    el.textContent = '⚠ No mail server yet — fill this in and save, then send a test.';
+  }
+}
+
+async function loadSmtpSettings() {
+  try {
+    const res = await fetch('/api/sla/daily-report/smtp');
+    if (!res.ok) return;
+    const d = await res.json();
+
+    document.getElementById('smtp-host').value      = d.host || '';
+    document.getElementById('smtp-port').value      = d.port || 587;
+    document.getElementById('smtp-username').value  = d.username || '';
+    document.getElementById('smtp-from').value      = d.from || '';
+    document.getElementById('smtp-from-name').value = d.fromName || '';
+    document.getElementById('smtp-auth').checked     = d.auth !== false;
+    document.getElementById('smtp-starttls').checked = d.startTls !== false;
+    document.getElementById('smtp-password').value    = '';
+    document.getElementById('smtp-password-hint').textContent =
+      d.passwordSet ? 'A password is saved — leave blank to keep it.' : '';
+
+    renderSmtpStatus(d);
+  } catch { /* non-fatal */ }
+}
+
+async function saveSmtpSettings() {
+  const payload = {
+    host:     document.getElementById('smtp-host').value.trim(),
+    port:     document.getElementById('smtp-port').value,
+    username: document.getElementById('smtp-username').value.trim(),
+    password: document.getElementById('smtp-password').value,
+    from:     document.getElementById('smtp-from').value.trim(),
+    fromName: document.getElementById('smtp-from-name').value.trim(),
+    auth:     document.getElementById('smtp-auth').checked,
+    startTls: document.getElementById('smtp-starttls').checked
+  };
+  try {
+    const res  = await fetch('/api/sla/daily-report/smtp', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) { smtpMsg(data.error || 'Save failed', false); return; }
+
+    smtpMsg('Mail server saved — send a test to confirm it works.', true);
+    document.getElementById('smtp-password').value = '';
+    renderSmtpStatus({ configured: data.configured, source: data.source,
+                       activeHost: data.activeHost, activeFrom: data.activeFrom });
+    loadSmtpSettings();     // refresh the "password is saved" hint
+    loadSlaMailSettings();  // the report card shows mail status too
+  } catch (e) {
+    smtpMsg('Network error: ' + e.message, false);
+  }
+}
+
+async function testSmtpSettings() {
+  const btn  = document.getElementById('smtp-test-btn');
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const res  = await fetch('/api/sla/daily-report/smtp/test', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ to: document.getElementById('smtp-test-to').value.trim() })
+    });
+    const data = await res.json();
+    smtpMsg(data.message || (data.sent ? 'Test sent.' : 'Test failed.'), !!data.sent);
+  } catch (e) {
+    smtpMsg('Network error: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+// ---- Daily SLA report email ----
+
+let slaMailReportDate = '';   // date the report will cover (today, IST) — from the server
+
+function slaMailMsg(text, ok) {
+  const el = document.getElementById('sla-mail-alert');
+  if (!el) return;
+  el.textContent = text;
+  el.style.cssText = 'display:block;margin-top:10px;padding:7px 12px;border-radius:4px;font-size:.82rem;'
+    + (ok ? 'color:#006644;background:#e3fcef;border:1px solid #57d9a3;'
+          : 'color:#bf2600;background:#ffebe6;border:1px solid #ff8f73;');
+}
+
+async function loadSlaMailSettings() {
+  const status = document.getElementById('sla-mail-smtp-status');
+  try {
+    const res  = await fetch('/api/sla/daily-report/settings');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    document.getElementById('sla-mail-recipients').value = data.recipients || '';
+    document.getElementById('sla-mail-enabled').checked  = data.enabled !== false;
+    slaMailReportDate = data.reportDate || '';
+
+    if (data.smtpConfigured) {
+      status.style.cssText = 'font-size:.78rem;padding:8px 11px;border-radius:4px;margin-bottom:14px;'
+        + 'background:#e3fcef;color:#006644;';
+      status.innerHTML = `✓ Mail server ready — <strong>${esc(data.smtpHost)}</strong>, `
+        + `sending as <strong>${esc(data.fromAddress || '(not set)')}</strong>. `
+        + `Next report covers <strong>${esc(slaMailReportDate)}</strong>.`;
+    } else {
+      status.style.cssText = 'font-size:.78rem;padding:8px 11px;border-radius:4px;margin-bottom:14px;'
+        + 'background:#fffae6;color:#974f0c;';
+      status.innerHTML = '⚠ No mail server configured yet — fill in '
+        + '<strong>Mail Server (SMTP)</strong> above first, or nothing will be sent.';
+    }
+  } catch {
+    status.style.cssText = 'font-size:.78rem;padding:8px 11px;border-radius:4px;margin-bottom:14px;'
+      + 'background:#f4f5f7;color:#5e6c84;';
+    status.textContent = 'Could not read mail settings.';
+  }
+}
+
+async function saveSlaMailSettings() {
+  const recipients = document.getElementById('sla-mail-recipients').value;
+  const enabled    = document.getElementById('sla-mail-enabled').checked;
+  try {
+    const res  = await fetch('/api/sla/daily-report/settings', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ recipients, enabled })
+    });
+    const data = await res.json();
+    if (!res.ok) { slaMailMsg(data.error || 'Save failed', false); return; }
+
+    const n = (data.recipientList || []).length;
+    slaMailMsg(n
+      ? `Saved — ${n} recipient(s). Automatic send is ${data.enabled ? 'ON' : 'OFF'}.`
+      : 'Saved, but no valid email addresses were found — nothing will be sent.', n > 0);
+  } catch (e) {
+    slaMailMsg('Network error: ' + e.message, false);
+  }
+}
+
+async function sendSlaReportNow() {
+  const btn  = document.getElementById('sla-mail-send-btn');
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  slaMailMsg('Building the pivot and sheet — this can take a moment…', true);
+  try {
+    const res  = await fetch('/api/sla/daily-report/send', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({})
+    });
+    const data = await res.json();
+    if (!res.ok || !data.sent) {
+      slaMailMsg(data.message || data.error || 'Send failed.', false);
+      return;
+    }
+    slaMailMsg(`${data.message} ${data.pendingTotal} ticket(s) missing a reason for `
+      + `${data.reportDate}${data.attachment ? ' · attached ' + data.attachment : ''}.`, true);
+  } catch (e) {
+    slaMailMsg('Network error: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+// Downloads the exact workbook that gets attached to the mail.
+function downloadSlaDailySheet() {
+  slaMailMsg('Generating the sheet — the download will start shortly…', true);
+  window.location = '/api/sla/daily-report/sheet';
 }
 
 function renderBreachReasonAdmin() {

@@ -7,6 +7,8 @@ import com.jira.autoassign.entity.Team;
 import com.jira.autoassign.repository.BreachCommentRepository;
 import com.jira.autoassign.repository.TeamRepository;
 import com.jira.autoassign.service.JiraConfigService;
+import com.jira.autoassign.service.SlaDailyReportService;
+import com.jira.autoassign.service.SlaGroupingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -34,15 +36,21 @@ public class SlaController {
     private final TeamRepository          teamRepository;
     private final JiraConfigService       configService;
     private final BreachCommentRepository commentRepo;
+    private final SlaGroupingService      grouping;
+    private final SlaDailyReportService   dailyReportService;
 
     public SlaController(JiraClient jiraClient,
                          TeamRepository teamRepository,
                          JiraConfigService configService,
-                         BreachCommentRepository commentRepo) {
-        this.jiraClient    = jiraClient;
-        this.teamRepository = teamRepository;
-        this.configService  = configService;
-        this.commentRepo    = commentRepo;
+                         BreachCommentRepository commentRepo,
+                         SlaGroupingService grouping,
+                         SlaDailyReportService dailyReportService) {
+        this.jiraClient         = jiraClient;
+        this.teamRepository     = teamRepository;
+        this.configService      = configService;
+        this.commentRepo        = commentRepo;
+        this.grouping           = grouping;
+        this.dailyReportService = dailyReportService;
     }
 
     /**
@@ -291,207 +299,237 @@ public class SlaController {
     }
 
     // -----------------------------------------------------------------------
-    // Grouping helper — shared by open and resolved sections
+    // Daily breach-reason report email
+    // -----------------------------------------------------------------------
+
+    /**
+     * Current settings + SMTP status for the Admin card.
+     * GET /api/sla/daily-report/settings
+     */
+    @GetMapping("/sla/daily-report/settings")
+    public ResponseEntity<?> getDailyReportSettings() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("recipients",     configService.getSlaReportRecipients());
+        resp.put("recipientList",  configService.getSlaReportRecipientList());
+        resp.put("enabled",        configService.isSlaReportEnabled());
+        resp.put("smtpConfigured", dailyReportService.isMailConfigured());
+        resp.put("smtpHost",       dailyReportService.smtpHost());
+        resp.put("smtpSource",     dailyReportService.smtpSource());
+        resp.put("fromAddress",    dailyReportService.effectiveFrom());
+        resp.put("reportDate",     dailyReportService.defaultResolvedDate().toString());
+        return ResponseEntity.ok(resp);
+    }
+
+    /**
+     * Mail-server settings for the Admin form. The password is never returned —
+     * only whether one is stored.
+     *
+     * GET /api/sla/daily-report/smtp
+     */
+    @GetMapping("/sla/daily-report/smtp")
+    public ResponseEntity<?> getSmtpSettings() {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("host",        configService.getSmtpHost());
+        resp.put("port",        configService.getSmtpPort() == null ? 587 : configService.getSmtpPort());
+        resp.put("username",    configService.getSmtpUsername());
+        resp.put("passwordSet", !configService.getSmtpPassword().isBlank());
+        resp.put("auth",        configService.isSmtpAuth());
+        resp.put("startTls",    configService.isSmtpStartTls());
+        resp.put("from",        configService.getSlaReportFrom());
+        resp.put("fromName",    configService.getSlaReportFromName());
+        resp.put("configured",  dailyReportService.isMailConfigured());
+        resp.put("source",      dailyReportService.smtpSource());
+        resp.put("activeHost",  dailyReportService.smtpHost());
+        resp.put("activeFrom",  dailyReportService.effectiveFrom());
+        return ResponseEntity.ok(resp);
+    }
+
+    /**
+     * Saves the mail server. Takes effect on the next send — no restart needed.
+     * An omitted/blank password keeps the stored one.
+     *
+     * POST /api/sla/daily-report/smtp
+     * Body: { host, port, username, password, auth, startTls, from, fromName }
+     */
+    @PostMapping("/sla/daily-report/smtp")
+    public ResponseEntity<?> saveSmtpSettings(@RequestBody Map<String, Object> body) {
+        String host = str(body.get("host"));
+        if (!host.isBlank() && str(body.get("from")).isBlank() && str(body.get("username")).isBlank())
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "Set a username or a From address — the mail needs a sender."));
+
+        Integer port = null;
+        Object rawPort = body.get("port");
+        if (rawPort != null && !rawPort.toString().isBlank()) {
+            try {
+                port = Integer.parseInt(rawPort.toString().trim());
+            } catch (NumberFormatException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Port must be a number."));
+            }
+            if (port < 1 || port > 65535)
+                return ResponseEntity.badRequest().body(Map.of("error", "Port must be 1–65535."));
+        }
+
+        configService.saveSmtpSettings(host, port,
+            str(body.get("username")), str(body.get("password")),
+            !(body.get("auth")     instanceof Boolean a) || a,
+            !(body.get("startTls") instanceof Boolean s) || s,
+            str(body.get("from")), str(body.get("fromName")));
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("saved",      true);
+        resp.put("configured", dailyReportService.isMailConfigured());
+        resp.put("source",     dailyReportService.smtpSource());
+        resp.put("activeHost", dailyReportService.smtpHost());
+        resp.put("activeFrom", dailyReportService.effectiveFrom());
+        return ResponseEntity.ok(resp);
+    }
+
+    /**
+     * Sends a one-line test email with the current settings — no Jira work involved,
+     * so a failure here points squarely at the mail server.
+     *
+     * POST /api/sla/daily-report/smtp/test
+     * Body: { "to": "me@x.com" }   (optional — defaults to the first saved recipient)
+     */
+    @PostMapping("/sla/daily-report/smtp/test")
+    public ResponseEntity<?> testSmtp(@RequestBody(required = false) Map<String, Object> body) {
+        String to = body == null ? "" : str(body.get("to"));
+        SlaDailyReportService.SendResult r = dailyReportService.sendTest(to);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("sent",       r.sent());
+        resp.put("message",    r.message());
+        resp.put("recipients", r.recipients());
+        return r.sent() ? ResponseEntity.ok(resp) : ResponseEntity.status(502).body(resp);
+    }
+
+    private static String str(Object o) {
+        return o == null ? "" : o.toString().trim();
+    }
+
+    /**
+     * Saves recipients + on/off for the scheduled send.
+     * POST /api/sla/daily-report/settings
+     * Body: { "recipients": "a@x.com, b@x.com", "enabled": true }
+     */
+    @PostMapping("/sla/daily-report/settings")
+    public ResponseEntity<?> saveDailyReportSettings(@RequestBody Map<String, Object> body) {
+        String recipients = body.get("recipients") == null ? "" : body.get("recipients").toString();
+        boolean enabled   = !(body.get("enabled") instanceof Boolean b) || b;
+
+        configService.saveSlaReportSettings(recipients, enabled);
+        return ResponseEntity.ok(Map.of(
+            "saved",         true,
+            "recipientList", configService.getSlaReportRecipientList(),
+            "enabled",       configService.isSlaReportEnabled()));
+    }
+
+    /**
+     * Builds the pivot without emailing it — used by the Admin "Preview" action.
+     * GET /api/sla/daily-report/preview?date=YYYY-MM-DD  (date optional, defaults to yesterday IST)
+     */
+    @GetMapping("/sla/daily-report/preview")
+    public ResponseEntity<?> previewDailyReport(@RequestParam(required = false) String date) {
+        LocalDate day;
+        try {
+            day = (date == null || date.isBlank()) ? null : LocalDate.parse(date);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid date — use YYYY-MM-DD."));
+        }
+        try {
+            SlaDailyReportService.Report report = dailyReportService.build(day);
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("report", report);
+            resp.put("html",   dailyReportService.renderHtml(report));
+            return ResponseEntity.ok(resp);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Sends the report now — the Admin "Send now" button.
+     * POST /api/sla/daily-report/send
+     * Body (all optional): { "date": "YYYY-MM-DD", "to": "me@x.com" }
+     *
+     * Ignores the enabled flag: an explicit click always sends.
+     */
+    @PostMapping("/sla/daily-report/send")
+    public ResponseEntity<?> sendDailyReport(@RequestBody(required = false) Map<String, Object> body) {
+        Map<String, Object> b = body == null ? Map.of() : body;
+
+        LocalDate day;
+        String dateStr = b.get("date") == null ? "" : b.get("date").toString().trim();
+        try {
+            day = dateStr.isBlank() ? null : LocalDate.parse(dateStr);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid date — use YYYY-MM-DD."));
+        }
+
+        List<String> to = new ArrayList<>();
+        String toStr = b.get("to") == null ? "" : b.get("to").toString();
+        for (String s : toStr.split("[,;\\s]+"))
+            if (s.contains("@")) to.add(s.trim());
+
+        try {
+            SlaDailyReportService.SendResult r = dailyReportService.send(day, to);
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("sent",       r.sent());
+            resp.put("message",    r.message());
+            resp.put("recipients", r.recipients());
+            if (r.report() != null) {
+                resp.put("pendingTotal",  r.report().grandTotal());
+                resp.put("breachedTotal", r.report().grandBreachedTotal());
+                resp.put("reportDate",    r.report().resolvedDate());
+            }
+            resp.put("attachment", r.attachment() == null ? "" : r.attachment());
+            return r.sent() ? ResponseEntity.ok(resp)
+                            : ResponseEntity.status(502).body(resp);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("sent", false, "message", e.getMessage()));
+        }
+    }
+
+    /**
+     * Downloads exactly the workbook that gets attached to the report email — lets an
+     * admin eyeball the sheet without waiting for 07:30.
+     *
+     * GET /api/sla/daily-report/sheet?date=YYYY-MM-DD
+     */
+    @GetMapping("/sla/daily-report/sheet")
+    public ResponseEntity<?> downloadDailyReportSheet(@RequestParam(required = false) String date) {
+        LocalDate day;
+        try {
+            day = (date == null || date.isBlank()) ? null : LocalDate.parse(date);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid date — use YYYY-MM-DD."));
+        }
+        try {
+            SlaDailyReportService.Report report = dailyReportService.build(day);
+            byte[] xlsx = dailyReportService.buildWorkbook(report);
+            if (xlsx == null)
+                return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "Could not generate the workbook — see server logs."));
+
+            String fileName = "SLA_Tracker_" + report.resolvedDate() + ".xlsx";
+            return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+                .header("Content-Type",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                .body(xlsx);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Grouping helper — delegates to SlaGroupingService so the SLA tab, the Excel
+    // report and the daily report email all attribute breaches identically.
     // -----------------------------------------------------------------------
 
     private List<Map<String, Object>> groupByBreachOwner(
             List<JsonNode> tickets, String fieldId, String sevKey, boolean doAttribution) {
-
-        Map<String, Map<String, Object>> byAssignee = new LinkedHashMap<>();
-
-        for (JsonNode ticket : tickets) {
-            JsonNode assigneeNode = ticket.path("fields").path("assignee");
-            boolean unassigned = assigneeNode.isNull() || assigneeNode.isMissingNode();
-
-            String currentAccId = unassigned ? "" : assigneeNode.path("accountId").asText("");
-            String currentEmail = unassigned ? "" : assigneeNode.path("emailAddress").asText("");
-            String currentName  = unassigned ? "" : assigneeNode.path("displayName").asText(currentEmail);
-
-            JsonNode slaField        = ticket.path("fields").path(fieldId);
-            Map<String, Object> slaInfo = new LinkedHashMap<>(extractSla(slaField));
-
-            // Every ticket here came from cf[X]=breached() — Jira confirmed it.
-            // Force breached=true so the frontend isBreached() check never drops it,
-            // even when extractSla() can't parse the SLA field structure perfectly.
-            slaInfo.put("breached", true);
-            if (!"completed_breached".equals(slaInfo.get("status"))
-                    && !"breached".equals(slaInfo.get("status"))) {
-                // Preserve readable status: completed cycle → completed_breached, else breached
-                boolean hasCycles = !ticket.path("fields").path(fieldId)
-                                           .path("completedCycles").isMissingNode()
-                                    && ticket.path("fields").path(fieldId)
-                                             .path("completedCycles").size() > 0;
-                slaInfo.put("status", hasCycles ? "completed_breached" : "breached");
-            }
-            slaInfo.put("available", true);
-
-            String severity = (sevKey != null)
-                ? extractSeverity(ticket.path("fields").path(sevKey)) : "";
-            String issueKey = ticket.path("key").asText();
-
-            boolean breached    = true; // always true — ticket came from breached() JQL
-            long    breachEpoch = slaInfo.containsKey("breachEpoch")
-                                  ? ((Number) slaInfo.get("breachEpoch")).longValue() : 0L;
-
-            String groupAccId   = currentAccId;
-            String groupEmail   = currentEmail;
-            String groupName    = currentName;
-            String reassignedTo = null;
-
-            if (doAttribution && breached && breachEpoch > 0) {
-                // Uses the inline changelog (expand=changelog) + cache; no per-ticket
-                // call unless the inline history is missing/truncated.
-                String ownerAtBreach = jiraClient.resolveBreachOwner(ticket, breachEpoch);
-                if (ownerAtBreach != null && !ownerAtBreach.equals(currentAccId)) {
-                    Map<String, String> ownerInfo = jiraClient.getUserInfo(ownerAtBreach);
-                    groupAccId   = ownerAtBreach;
-                    groupEmail   = ownerInfo.getOrDefault("email", "");
-                    groupName    = ownerInfo.getOrDefault("displayName",
-                                       groupEmail.isEmpty() ? ownerAtBreach : groupEmail);
-                    // For unassigned tickets, show "Now: Unassigned" badge
-                    reassignedTo = unassigned ? "Unassigned"
-                                 : (currentName.isEmpty() ? currentEmail : currentName);
-                }
-            }
-
-            // If still no group info (unassigned and no breach-owner found), group under "Unassigned"
-            if (groupAccId.isEmpty() && groupEmail.isEmpty()) {
-                groupName  = "Unassigned";
-                groupEmail = "__unassigned__";
-            }
-
-            String mapKey = groupEmail.isEmpty() ? groupAccId : groupEmail;
-            if (mapKey.isEmpty()) mapKey = "unknown";
-
-            final String finalEmail = groupEmail;
-            final String finalName  = groupName;
-            Map<String, Object> entry = byAssignee.computeIfAbsent(mapKey, k -> {
-                Map<String, Object> m = new LinkedHashMap<>();
-                m.put("email",   finalEmail);
-                m.put("name",    finalName);
-                m.put("tickets", new ArrayList<>());
-                return m;
-            });
-
-            Map<String, Object> ticketData = new LinkedHashMap<>();
-            ticketData.put("key",      issueKey);
-            ticketData.put("summary",  ticket.path("fields").path("summary").asText(""));
-            ticketData.put("status",   ticket.path("fields").path("status").path("name").asText(""));
-            ticketData.put("severity", severity);
-            ticketData.put("sla",      slaInfo);
-            if (reassignedTo != null) ticketData.put("reassignedTo", reassignedTo);
-
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> list = (List<Map<String, Object>>) entry.get("tickets");
-            list.add(ticketData);
-        }
-
-        return new ArrayList<>(byAssignee.values());
-    }
-
-    // -----------------------------------------------------------------------
-    // SLA field → structured status
-    // -----------------------------------------------------------------------
-
-    /**
-     * Parses a Jira SLA custom field node into a flat status map.
-     *
-     * Jira SLA field shape:
-     * {
-     *   "ongoingCycle": {
-     *     "breachTime":    { "epochMillis": ..., "friendly": "Today 12:00 PM" },
-     *     "remainingTime": { "millis": 7500000,  "friendly": "2h 5m" },
-     *     "breached": false,
-     *     "paused":   false,
-     *     "goalDuration": { "friendly": "4h" }
-     *   },
-     *   "completedCycles": [ ... ]
-     * }
-     */
-    private Map<String, Object> extractSla(JsonNode slaNode) {
-        Map<String, Object> info = new LinkedHashMap<>();
-
-        if (slaNode == null || slaNode.isNull() || slaNode.isMissingNode()) {
-            info.put("available", false);
-            info.put("status",    "unavailable");
-            return info;
-        }
-        info.put("available", true);
-
-        // --- ongoing cycle (SLA is still running) ---
-        JsonNode ongoing = slaNode.path("ongoingCycle");
-        if (!ongoing.isMissingNode() && !ongoing.isNull()) {
-            boolean breached = ongoing.path("breached").asBoolean(false);
-            boolean paused   = ongoing.path("paused").asBoolean(false);
-            long    millis   = ongoing.path("remainingTime").path("millis").asLong(0);
-            long    goalMs   = ongoing.path("goalDuration").path("millis").asLong(0);
-
-            // Jira sometimes returns millis=0 with breached=true — treat negative or zero+breached as breached
-            if (millis < 0) breached = true;
-
-            String slaStatus = breached ? "breached" : (paused ? "paused" : "ongoing");
-
-            info.put("status",          slaStatus);
-            info.put("breached",        breached);
-            info.put("paused",          paused);
-            info.put("remaining",       ongoing.path("remainingTime").path("friendly").asText(""));
-            info.put("remainingMillis", millis);
-            info.put("goalMillis",      goalMs);
-            info.put("goal",            ongoing.path("goalDuration").path("friendly").asText(""));
-            info.put("breachTime",      ongoing.path("breachTime").path("friendly").asText(""));
-            info.put("breachEpoch",     ongoing.path("breachTime").path("epochMillis").asLong(0));
-            return info;
-        }
-
-        // --- completed cycles (SLA already finished) ---
-        JsonNode completed = slaNode.path("completedCycles");
-        if (completed.isArray() && completed.size() > 0) {
-            JsonNode last     = completed.get(completed.size() - 1);
-            boolean  breached = last.path("breached").asBoolean(false);
-            // Fallback: Jira occasionally sets breached=false even when elapsed > goal.
-            // cf[X]=breached() in the JQL already confirmed the ticket is breached —
-            // sync our flag with the elapsed-vs-goal check as a safety net.
-            if (!breached) {
-                long elapsed = last.path("elapsedTime").path("millis").asLong(0);
-                long goal    = last.path("goalDuration").path("millis").asLong(0);
-                if (goal > 0 && elapsed >= goal) breached = true;
-            }
-
-            info.put("status",          breached ? "completed_breached" : "completed");
-            info.put("breached",        breached);
-            info.put("paused",          false);
-            info.put("remaining",       "");
-            info.put("remainingMillis", 0L);
-            info.put("completedAt",     last.path("stopTime").path("friendly").asText(""));
-            info.put("goal",            last.path("goalDuration").path("friendly").asText(""));
-            // breachTime is available on completed cycles too — used for breach attribution
-            info.put("breachEpoch",     last.path("breachTime").path("epochMillis").asLong(0));
-            return info;
-        }
-
-        // --- SLA not yet started ---
-        info.put("status",          "not_started");
-        info.put("breached",        false);
-        info.put("paused",          false);
-        info.put("remaining",       "");
-        info.put("remainingMillis", 0L);
-        return info;
-    }
-
-    /**
-     * Extracts the severity label from the Jira "severity" field node.
-     * The field can be:
-     *   - a plain string: "High"
-     *   - an object with "name": { "name": "High", "id": "2" }
-     *   - an object with "value": { "value": "High" }   (some custom select fields)
-     *   - null / missing
-     */
-    private String extractSeverity(JsonNode node) {
-        if (node == null || node.isNull() || node.isMissingNode()) return "";
-        if (node.isTextual()) return node.asText();
-        if (node.has("name"))  return node.path("name").asText("");
-        if (node.has("value")) return node.path("value").asText("");
-        return "";
+        return grouping.groupByBreachOwner(tickets, fieldId, sevKey, doAttribution);
     }
 
     /**
