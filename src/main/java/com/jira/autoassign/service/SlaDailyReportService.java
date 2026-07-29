@@ -41,7 +41,8 @@ import java.util.*;
  *
  * Scope per run:
  *   - Open breached   → live snapshot, attributed to whoever held the ticket at breach time.
- *   - Resolved breached → the reported calendar day only, by current assignee.
+ *   - Resolved breached → the reported calendar day (default: yesterday, see
+ *     {@link #defaultResolvedDate()}), by current assignee.
  *
  * Covers every configured team, one pivot section each, in a single email. The same
  * day's full SLA Tracker sheet is attached as .xlsx (see {@link SlaReportWorkbookService}).
@@ -123,9 +124,20 @@ public class SlaDailyReportService {
     // Build
     // -----------------------------------------------------------------------
 
-    /** The calendar day the report covers: the current day in the report timezone (IST). */
+    /**
+     * The calendar day the report's RESOLVED section covers: the previous full day in the
+     * report timezone.
+     *
+     * The 07:30 IST send happens 7½ hours into the current day, so scoping resolved
+     * breaches to "today" would report a near-empty Resolved column. Yesterday is the last
+     * complete day of work, which is what makes Open and Resolved both meaningful in the
+     * same mail. Nothing is lost: breaches resolved between midnight and 07:30 today are
+     * picked up by tomorrow's run, which covers today in full.
+     *
+     * Open breaches are always a live snapshot, independent of this date.
+     */
     public LocalDate defaultResolvedDate() {
-        return LocalDate.now(ZoneId.of(zoneId));
+        return LocalDate.now(ZoneId.of(zoneId)).minusDays(1);
     }
 
     /**
@@ -453,7 +465,8 @@ public class SlaDailyReportService {
          .append("<div style=\"font-size:12.5px;color:#5e6c84;margin-bottom:4px;\">")
          .append("Breached tickets with an <strong>empty Breach Reason</strong>, by assignee.</div>")
          .append("<div style=\"font-size:12px;color:#7a869a;margin-bottom:18px;\">")
-         .append("Open breaches as of now &nbsp;·&nbsp; resolved breaches for <strong>")
+         .append("<strong>Open</strong> = still open right now &nbsp;·&nbsp; ")
+         .append("<strong>Resolved</strong> = resolved/closed on <strong>")
          .append(esc(report.resolvedDate())).append("</strong> &nbsp;·&nbsp; generated ")
          .append(esc(report.generatedAt())).append("</div>");
 

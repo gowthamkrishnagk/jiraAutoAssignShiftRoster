@@ -1746,8 +1746,9 @@
       <p style="font-size:.82rem;color:#5e6c84;margin-bottom:14px;line-height:1.5;">
         Every day at <strong>07:30 IST</strong> the recipients below get a pivot of
         breached tickets whose <strong>Breach Reason is still empty</strong> — assignee
-        names with their counts — plus the day's full SLA Tracker sheet as an
-        <strong>.xlsx</strong> attachment.
+        names with their counts, split into <strong>Open</strong> (still open now) and
+        <strong>Resolved</strong> (closed on the previous full day) — plus the full SLA
+        Tracker sheet as an <strong>.xlsx</strong> attachment.
       </p>
 
       <div id="sla-mail-smtp-status"
@@ -3669,8 +3670,9 @@ async function loadSlaMailSettings() {
       status.style.cssText = 'font-size:.78rem;padding:8px 11px;border-radius:4px;margin-bottom:14px;'
         + 'background:#e3fcef;color:#006644;';
       status.innerHTML = `✓ Mail server ready — <strong>${esc(data.smtpHost)}</strong>, `
-        + `sending as <strong>${esc(data.fromAddress || '(not set)')}</strong>. `
-        + `Next report covers <strong>${esc(slaMailReportDate)}</strong>.`;
+        + `sending as <strong>${esc(data.fromAddress || '(not set)')}</strong>.<br>`
+        + `Next report: open breaches as of send time, plus breaches resolved on `
+        + `<strong>${esc(slaMailReportDate)}</strong> (the previous full day).`;
     } else {
       status.style.cssText = 'font-size:.78rem;padding:8px 11px;border-radius:4px;margin-bottom:14px;'
         + 'background:#fffae6;color:#974f0c;';
