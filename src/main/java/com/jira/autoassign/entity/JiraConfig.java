@@ -36,35 +36,9 @@ public class JiraConfig {
     @Column(name = "sla_report_recipients", columnDefinition = "TEXT")
     private String slaReportRecipients;
 
-    // --- SMTP for the daily report. When smtpHost is set these win over the
-    //     spring.mail.* env vars, so the mail server can be changed from the UI
-    //     without touching the service file or restarting. ---
-
-    @Column(name = "smtp_host")
-    private String smtpHost;
-
-    @Column(name = "smtp_port")
-    private Integer smtpPort;
-
-    @Column(name = "smtp_username")
-    private String smtpUsername;
-
-    @Column(name = "smtp_password")
-    private String smtpPassword;
-
-    @Column(name = "smtp_auth", nullable = false, columnDefinition = "boolean default true")
-    private boolean smtpAuth = true;
-
-    @Column(name = "smtp_starttls", nullable = false, columnDefinition = "boolean default true")
-    private boolean smtpStartTls = true;
-
-    /** From address on the report mail. Blank → falls back to smtpUsername. */
-    @Column(name = "sla_report_from")
-    private String slaReportFrom;
-
-    /** Display name shown next to the From address. */
-    @Column(name = "sla_report_from_name")
-    private String slaReportFromName;
+    // The mail SERVER is intentionally not stored here — it comes from the
+    // spring.mail.* environment variables only, so SMTP credentials never sit in
+    // the app DB or pass through the UI. Only the recipients are configurable.
 
     /** Whether the scheduled daily report is sent. Manual "send now" ignores this. */
     @Column(name = "sla_report_enabled", nullable = false, columnDefinition = "boolean default true")
@@ -85,22 +59,6 @@ public class JiraConfig {
     public void   setB2bTeamsDomain(String v) { this.b2bTeamsDomain = v; }
     public String getSlaReportRecipients()         { return slaReportRecipients; }
     public void   setSlaReportRecipients(String v) { this.slaReportRecipients = v; }
-    public String  getSmtpHost()             { return smtpHost; }
-    public void    setSmtpHost(String v)     { this.smtpHost = v; }
-    public Integer getSmtpPort()             { return smtpPort; }
-    public void    setSmtpPort(Integer v)    { this.smtpPort = v; }
-    public String  getSmtpUsername()         { return smtpUsername; }
-    public void    setSmtpUsername(String v) { this.smtpUsername = v; }
-    public String  getSmtpPassword()         { return smtpPassword; }
-    public void    setSmtpPassword(String v) { this.smtpPassword = v; }
-    public boolean isSmtpAuth()              { return smtpAuth; }
-    public void    setSmtpAuth(boolean v)    { this.smtpAuth = v; }
-    public boolean isSmtpStartTls()          { return smtpStartTls; }
-    public void    setSmtpStartTls(boolean v){ this.smtpStartTls = v; }
-    public String  getSlaReportFrom()             { return slaReportFrom; }
-    public void    setSlaReportFrom(String v)     { this.slaReportFrom = v; }
-    public String  getSlaReportFromName()         { return slaReportFromName; }
-    public void    setSlaReportFromName(String v) { this.slaReportFromName = v; }
     public boolean isSlaReportEnabled()            { return slaReportEnabled; }
     public void    setSlaReportEnabled(boolean v)  { this.slaReportEnabled = v; }
 }

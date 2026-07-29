@@ -314,97 +314,27 @@ public class SlaController {
         resp.put("enabled",        configService.isSlaReportEnabled());
         resp.put("smtpConfigured", dailyReportService.isMailConfigured());
         resp.put("smtpHost",       dailyReportService.smtpHost());
-        resp.put("smtpSource",     dailyReportService.smtpSource());
         resp.put("fromAddress",    dailyReportService.effectiveFrom());
         resp.put("reportDate",     dailyReportService.defaultResolvedDate().toString());
         return ResponseEntity.ok(resp);
     }
 
     /**
-     * Mail-server settings for the Admin form. The password is never returned —
-     * only whether one is stored.
-     *
-     * GET /api/sla/daily-report/smtp
-     */
-    @GetMapping("/sla/daily-report/smtp")
-    public ResponseEntity<?> getSmtpSettings() {
-        Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("host",        configService.getSmtpHost());
-        resp.put("port",        configService.getSmtpPort() == null ? 587 : configService.getSmtpPort());
-        resp.put("username",    configService.getSmtpUsername());
-        resp.put("passwordSet", !configService.getSmtpPassword().isBlank());
-        resp.put("auth",        configService.isSmtpAuth());
-        resp.put("startTls",    configService.isSmtpStartTls());
-        resp.put("from",        configService.getSlaReportFrom());
-        resp.put("fromName",    configService.getSlaReportFromName());
-        resp.put("configured",  dailyReportService.isMailConfigured());
-        resp.put("source",      dailyReportService.smtpSource());
-        resp.put("activeHost",  dailyReportService.smtpHost());
-        resp.put("activeFrom",  dailyReportService.effectiveFrom());
-        return ResponseEntity.ok(resp);
-    }
-
-    /**
-     * Saves the mail server. Takes effect on the next send — no restart needed.
-     * An omitted/blank password keeps the stored one.
-     *
-     * POST /api/sla/daily-report/smtp
-     * Body: { host, port, username, password, auth, startTls, from, fromName }
-     */
-    @PostMapping("/sla/daily-report/smtp")
-    public ResponseEntity<?> saveSmtpSettings(@RequestBody Map<String, Object> body) {
-        String host = str(body.get("host"));
-        if (!host.isBlank() && str(body.get("from")).isBlank() && str(body.get("username")).isBlank())
-            return ResponseEntity.badRequest().body(Map.of(
-                "error", "Set a username or a From address — the mail needs a sender."));
-
-        Integer port = null;
-        Object rawPort = body.get("port");
-        if (rawPort != null && !rawPort.toString().isBlank()) {
-            try {
-                port = Integer.parseInt(rawPort.toString().trim());
-            } catch (NumberFormatException e) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Port must be a number."));
-            }
-            if (port < 1 || port > 65535)
-                return ResponseEntity.badRequest().body(Map.of("error", "Port must be 1–65535."));
-        }
-
-        configService.saveSmtpSettings(host, port,
-            str(body.get("username")), str(body.get("password")),
-            !(body.get("auth")     instanceof Boolean a) || a,
-            !(body.get("startTls") instanceof Boolean s) || s,
-            str(body.get("from")), str(body.get("fromName")));
-
-        Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("saved",      true);
-        resp.put("configured", dailyReportService.isMailConfigured());
-        resp.put("source",     dailyReportService.smtpSource());
-        resp.put("activeHost", dailyReportService.smtpHost());
-        resp.put("activeFrom", dailyReportService.effectiveFrom());
-        return ResponseEntity.ok(resp);
-    }
-
-    /**
-     * Sends a one-line test email with the current settings — no Jira work involved,
+     * Sends a one-line test email to the configured recipients — no Jira work involved,
      * so a failure here points squarely at the mail server.
      *
-     * POST /api/sla/daily-report/smtp/test
+     * POST /api/sla/daily-report/test
      * Body: { "to": "me@x.com" }   (optional — defaults to the first saved recipient)
      */
-    @PostMapping("/sla/daily-report/smtp/test")
-    public ResponseEntity<?> testSmtp(@RequestBody(required = false) Map<String, Object> body) {
-        String to = body == null ? "" : str(body.get("to"));
+    @PostMapping("/sla/daily-report/test")
+    public ResponseEntity<?> testMail(@RequestBody(required = false) Map<String, Object> body) {
+        String to = (body == null || body.get("to") == null) ? "" : body.get("to").toString().trim();
         SlaDailyReportService.SendResult r = dailyReportService.sendTest(to);
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("sent",       r.sent());
         resp.put("message",    r.message());
         resp.put("recipients", r.recipients());
         return r.sent() ? ResponseEntity.ok(resp) : ResponseEntity.status(502).body(resp);
-    }
-
-    private static String str(Object o) {
-        return o == null ? "" : o.toString().trim();
     }
 
     /**

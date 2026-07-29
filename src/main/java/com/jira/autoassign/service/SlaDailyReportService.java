@@ -14,7 +14,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
@@ -269,69 +268,27 @@ public class SlaDailyReportService {
     // Send
     // -----------------------------------------------------------------------
 
-    /** True when SMTP is wired up well enough to attempt a send. */
+    /**
+     * True when SMTP is wired up well enough to attempt a send. The mail server is
+     * configured only through the environment (SMTP_HOST / SMTP_USER / SMTP_PASS) —
+     * deliberately not exposed in the UI, so credentials stay out of the app DB.
+     */
     public boolean isMailConfigured() {
-        if (configService.hasDbSmtp()) return true;                     // UI-configured
-        return smtpHost != null && !smtpHost.isBlank()                  // env-configured
+        return smtpHost != null && !smtpHost.isBlank()
             && mailSenderProvider.getIfAvailable() != null;
     }
 
-    /** Host actually in use — the UI setting when present, otherwise the env var. */
-    public String smtpHost() {
-        if (configService.hasDbSmtp()) return configService.getSmtpHost();
-        return smtpHost == null ? "" : smtpHost;
-    }
+    public String smtpHost() { return smtpHost == null ? "" : smtpHost; }
 
-    /** "admin" when the mail server comes from the UI, "env" when from SMTP_HOST, "" when neither. */
-    public String smtpSource() {
-        if (configService.hasDbSmtp())                          return "admin";
-        if (smtpHost != null && !smtpHost.isBlank())             return "env";
-        return "";
-    }
-
-    /**
-     * Effective From address. Admin "From" wins, then the Admin SMTP username,
-     * then sla.report.from, then the SMTP username from the env.
-     */
+    /** Effective From address — sla.report.from, else the SMTP username. */
     public String effectiveFrom() {
-        if (configService.hasDbSmtp()) {
-            if (!configService.getSlaReportFrom().isBlank()) return configService.getSlaReportFrom();
-            if (!configService.getSmtpUsername().isBlank())  return configService.getSmtpUsername();
-        }
         if (fromAddress != null && !fromAddress.isBlank()) return fromAddress.trim();
         return smtpUser == null ? "" : smtpUser.trim();
     }
 
     /** Display name shown next to the From address. */
     private String effectiveFromName() {
-        String dbName = configService.getSlaReportFromName();
-        if (!dbName.isBlank()) return dbName;
         return (fromName == null || fromName.isBlank()) ? "SLA Tracker" : fromName;
-    }
-
-    /**
-     * The sender to send through. A UI-configured mail server is built on the spot so
-     * changes take effect immediately; otherwise the Spring-autoconfigured (env) bean is used.
-     */
-    private JavaMailSender resolveSender() {
-        if (configService.hasDbSmtp()) {
-            JavaMailSenderImpl s = new JavaMailSenderImpl();
-            s.setHost(configService.getSmtpHost());
-            s.setPort(configService.getSmtpPort() == null ? 587 : configService.getSmtpPort());
-            if (!configService.getSmtpUsername().isBlank()) s.setUsername(configService.getSmtpUsername());
-            if (!configService.getSmtpPassword().isBlank()) s.setPassword(configService.getSmtpPassword());
-            s.setDefaultEncoding("UTF-8");
-
-            Properties p = s.getJavaMailProperties();
-            p.put("mail.transport.protocol",        "smtp");
-            p.put("mail.smtp.auth",                 String.valueOf(configService.isSmtpAuth()));
-            p.put("mail.smtp.starttls.enable",      String.valueOf(configService.isSmtpStartTls()));
-            p.put("mail.smtp.connectiontimeout",    "10000");
-            p.put("mail.smtp.timeout",              "15000");
-            p.put("mail.smtp.writetimeout",         "15000");
-            return s;
-        }
-        return mailSenderProvider.getObject();
     }
 
     /**
@@ -356,7 +313,7 @@ public class SlaDailyReportService {
                                   List.of(target), null, null);
 
         try {
-            JavaMailSender sender = resolveSender();
+            JavaMailSender sender = mailSenderProvider.getObject();
             MimeMessage msg = sender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
             helper.setFrom(from, effectiveFromName());
@@ -420,7 +377,7 @@ public class SlaDailyReportService {
         boolean hasAttach  = xlsx != null && xlsx.length > 0;
 
         try {
-            JavaMailSender sender = resolveSender();
+            JavaMailSender sender = mailSenderProvider.getObject();
             MimeMessage msg = sender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(msg, hasAttach, "UTF-8");
             helper.setFrom(from, effectiveFromName());
