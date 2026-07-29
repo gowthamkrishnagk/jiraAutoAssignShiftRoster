@@ -23,5 +23,5 @@ public interface RosterEventRepository extends JpaRepository<RosterEvent, Long> 
     @Modifying
     @Transactional
     @Query("DELETE FROM RosterEvent e WHERE e.createdAt < :cutoff")
-    long deleteByCreatedAtBefore(@Param("cutoff") LocalDateTime cutoff);
+    int deleteByCreatedAtBefore(@Param("cutoff") LocalDateTime cutoff);
 }

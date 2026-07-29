@@ -21,8 +21,10 @@ public interface AssignmentLogRepository extends JpaRepository<AssignmentLog, Lo
     // "Assignment History" view. Filtered to ASSIGN so the cycle reads cleanly.
     List<AssignmentLog> findTop24ByTeamIdAndActionOrderByAssignedAtDescIdDesc(String teamId, String action);
 
+    // Must return void or int/Integer — Spring Data rejects a long return on a
+    // @Modifying query at invocation time, which silently killed the daily purge.
     @Modifying
     @Transactional
     @Query("DELETE FROM AssignmentLog l WHERE l.assignedAt < :cutoff")
-    long deleteByAssignedAtBefore(@Param("cutoff") LocalDateTime cutoff);
+    int deleteByAssignedAtBefore(@Param("cutoff") LocalDateTime cutoff);
 }

@@ -87,5 +87,5 @@ public interface ShiftRosterRepository extends JpaRepository<ShiftRoster, Long> 
     @Modifying
     @Transactional
     @Query("DELETE FROM ShiftRoster s WHERE s.shiftDate < :cutoff")
-    long deleteByShiftDateBefore(@Param("cutoff") LocalDate cutoff);
+    int deleteByShiftDateBefore(@Param("cutoff") LocalDate cutoff);
 }

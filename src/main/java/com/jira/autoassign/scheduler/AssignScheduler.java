@@ -82,8 +82,10 @@ public class AssignScheduler {
     /** Returns the instant this scheduler last fired, or {@code null} if it hasn't fired since startup. */
     public Instant getLastRunAt() { return lastRunAt; }
 
-    /** Purges activity log and shift roster entries older than 7 days — runs daily at midnight IST. */
-    @Scheduled(cron = "0 0 0 * * *", zone = "Asia/Kolkata")
+    /** Purges activity log and shift roster entries older than 7 days — runs daily at midnight IST.
+     *  Cron is overridable (like the other schedulers) so a purge run can be triggered on demand
+     *  to verify it, instead of waiting for midnight. */
+    @Scheduled(cron = "${jira.purge.cron:0 0 0 * * *}", zone = "Asia/Kolkata")
     public void purgeOldData() {
         log.info("Running daily purge of data older than 7 days.");
         try {

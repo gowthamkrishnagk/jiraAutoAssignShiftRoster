@@ -22,5 +22,5 @@ public interface CoverAssignmentRepository extends JpaRepository<CoverAssignment
     @Modifying
     @Transactional
     @Query("DELETE FROM CoverAssignment c WHERE c.createdAt < :cutoff")
-    long deleteByCreatedAtBefore(@Param("cutoff") LocalDateTime cutoff);
+    int deleteByCreatedAtBefore(@Param("cutoff") LocalDateTime cutoff);
 }

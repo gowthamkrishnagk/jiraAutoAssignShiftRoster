@@ -1221,12 +1221,25 @@ public class ShiftAssignService {
         LocalDateTime logCutoff    = LocalDateTime.now().minusDays(7);
         LocalDate     rosterCutoff = LocalDate.now().minusDays(7);
 
-        long logsDeleted   = logRepository.deleteByAssignedAtBefore(logCutoff);
-        long rosterDeleted = repository.deleteByShiftDateBefore(rosterCutoff);
-        long coversDeleted = coverRepository.deleteByCreatedAtBefore(logCutoff);
-        long eventsDeleted = eventRepository.deleteByCreatedAtBefore(logCutoff);
+        // Each table is purged independently. Previously one throwing call aborted the
+        // whole method, so a single broken query stopped every later table from being
+        // purged at all — and the only trace was one line in the scheduler's log.
+        int logsDeleted   = purgeStep("activity log",  () -> logRepository.deleteByAssignedAtBefore(logCutoff));
+        int rosterDeleted = purgeStep("shift roster",  () -> repository.deleteByShiftDateBefore(rosterCutoff));
+        int coversDeleted = purgeStep("cover routing", () -> coverRepository.deleteByCreatedAtBefore(logCutoff));
+        int eventsDeleted = purgeStep("roster events", () -> eventRepository.deleteByCreatedAtBefore(logCutoff));
 
         log.info("Purged data older than 7 days — activity log: {} rows, shift roster: {} rows, cover routing: {} rows, roster events: {} rows.",
                  logsDeleted, rosterDeleted, coversDeleted, eventsDeleted);
+    }
+
+    /** Runs one purge step; logs and returns -1 on failure so the remaining steps still run. */
+    private int purgeStep(String label, java.util.function.IntSupplier step) {
+        try {
+            return step.getAsInt();
+        } catch (Exception e) {
+            log.error("Purge step '{}' failed: {}", label, e.getMessage(), e);
+            return -1;
+        }
     }
 }

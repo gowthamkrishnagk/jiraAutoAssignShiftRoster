@@ -30,6 +30,11 @@ A Spring Boot web application that automatically manages Jira ticket assignments
 - **Download Report** — pick a from/to range on an inline calendar (only dates with stored reasons are selectable) and export an `.xlsx` with an Overall sheet, an Open Breached snapshot, and one sheet per day
 - **Assignee Filter** — client-side filter by person across all cards
 - **Professional UI** — Tailwind CSS + custom CSS, CSS dot indicators (no emoji), SVG icons
+- **Daily Report Email** — at **07:30 IST** a pivot of breached tickets whose Breach Reason is
+  still empty (Assignee × Resolved / Open counts) is emailed to a configured list, with the
+  day's full SLA Tracker sheet attached as `.xlsx`. Team scope, recipients and the on/off
+  switch live in **Admin**; the mail server is env-only. Resolved counts cover the **previous
+  full day** (at 07:30 the current day is too young to hold anything); open counts are live.
 
 ### Configuration UI
 - **Jira Settings** — configure Jira email and API token from the browser (no server restart needed)
@@ -235,6 +240,19 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE jiraassign TO jiraass
 | `GET` | `/api/sla/report/dates` | Distinct dates with a stored breach reason (last 45 days) |
 | `GET` | `/api/sla/report?team={id}&from=YYYY-MM-DD&to=YYYY-MM-DD` | Date-range breach report: open snapshot + per-day resolved breaches |
 
+### Daily SLA Report Email
+
+`date` is optional everywhere below and defaults to the **previous** day.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/sla/daily-report/settings` | Recipients, team scope, enabled flag, SMTP status |
+| `POST` | `/api/sla/daily-report/settings` | Save `{recipients, enabled, teams:[id]}` — **full-form save**, omitting `teams` resets the scope to all teams |
+| `GET` | `/api/sla/daily-report/preview?date=` | Build the pivot as JSON + rendered HTML, sending nothing |
+| `GET` | `/api/sla/daily-report/sheet?date=` | Download the exact `.xlsx` that gets attached |
+| `POST` | `/api/sla/daily-report/send` | Send now `{date?, to?}` — ignores the enabled flag |
+| `POST` | `/api/sla/daily-report/test` | Send a one-line test mail `{to?}` — no Jira calls, isolates mail faults |
+
 ### Settings & Breach Reasons
 
 | Method | Endpoint | Description |
@@ -294,6 +312,16 @@ For open tickets, the changelog API is used to find who held the ticket at the e
 | `DB_USER` | No | `jiraassign` | DB username |
 | `DB_PASSWORD` | No | `changeme` | DB password |
 | `PORT` | No | `8080` | HTTP port |
+| `SMTP_HOST` | No | — | Mail server for the daily SLA report. Unset = report logs and skips |
+| `SMTP_PORT` | No | `587` | SMTP port |
+| `SMTP_USER` | No | — | SMTP username / mailbox |
+| `SMTP_PASS` | No | — | SMTP password. **Env only — never stored in the DB or exposed in the UI** |
+| `SMTP_STARTTLS` | No | `true` | Negotiate STARTTLS |
+| `SMTP_AUTH` | No | `true` | Authenticate before sending |
+| `SLA_REPORT_FROM` | No | `SMTP_USER` | From address on the report mail |
+| `SLA_REPORT_FROM_NAME` | No | `SLA Tracker` | From display name |
+| `SLA_REPORT_CRON` | No | `0 30 7 * * *` | Daily report cron (in `SLA_REPORT_ZONE`) |
+| `SLA_REPORT_ZONE` | No | `Asia/Kolkata` | Timezone for the report cron and its date window |
 
 *\* Can also be configured at runtime via **Jira Settings** in the browser — DB value overrides env on next request.*
 
@@ -330,23 +358,66 @@ Open `http://localhost:8080`
 
 ## Server Deployment (Ubuntu — H2 mode)
 
+Server: `10.169.101.69`, app at `~/jiraAutoAssignShiftRoster`, port **8080**.
+
+> **The repo ships only `mvnw.cmd` (Windows) — there is no `./mvnw` on Linux.**
+> Neither `java` nor `mvn` is on the non-interactive `PATH`, so export both first.
+> The built artifact is **`autoassign-1.0.0.jar`**.
+
 ```bash
-# On server: pull latest and rebuild
+ssh <user>@10.169.101.69
+cd ~/jiraAutoAssignShiftRoster
+
+export JAVA_HOME=$HOME/jdk-21
+export PATH=$JAVA_HOME/bin:$HOME/apache-maven-3.9.16/bin:$PATH
+
 git pull origin main
-./mvnw clean package -DskipTests
+mvn -B clean package -DskipTests
+```
 
-# Stop old instance
-pkill -f 'jiraAutoAssign'
+### Restarting
 
-# Start in background (H2 file-mode — data persists in ./data/)
-setsid java -jar target/jiraAutoAssignShiftRoster-*.jar \
-  --spring.profiles.active=h2 > app.log 2>&1 &
+A watchdog (`~/sf-automation/watchdog.sh`, driven from cron roughly every minute)
+restarts the app whenever it is not running, so **you only need to stop it**:
 
-# Tail logs
+```bash
+# Kill by PID — NOT `pkill -f autoassign`, see the warning below
+for p in $(pgrep -x java); do kill $p; done
+
+# Watchdog brings it back within ~1-2 min; confirm:
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/teams
 tail -f app.log
 ```
 
-App runs on port **8080** at `http://10.169.101.69:8080`
+> **Build first, then stop.** The watchdog will happily start the app *during* a
+> build and pick up the half-written jar, leaving the old code running against a
+> replaced file. Finish `mvn package`, then kill.
+
+> **Never use `pkill -f "autoassign.*jar"` over SSH.** `-f` matches full command
+> lines, including the remote command string that contains the pattern — it kills
+> your own SSH session and truncates the output, so the restart looks like it hung.
+> `pgrep -x java` matches the process *name* only and is safe.
+
+Two failed startups per restart are normal: the watchdog fires more than once and
+the loser logs `Port 8080 was already in use`, then exits.
+
+### Daily SLA report email
+
+SMTP is configured **only** through the environment — never in the UI or DB. The
+vars live in `~/sf-automation/watchdog.sh` (`chmod 700`, it holds the password)
+above the `start_jira()` function, so the app inherits them:
+
+```bash
+export SMTP_HOST=smtp.office365.com
+export SMTP_PORT=587
+export SMTP_USER=<mailbox>
+export SMTP_PASS='<password>'      # single quotes — may contain $ ! ` or spaces
+export SLA_REPORT_FROM=<sender>    # optional; defaults to SMTP_USER
+```
+
+Recipients, team scope and the on/off switch are set in **Admin → Daily SLA Report
+Email**. Verify with `curl -s localhost:8080/api/sla/daily-report/settings` —
+`smtpConfigured` must be `true`.
 
 ### Port Reference
 
