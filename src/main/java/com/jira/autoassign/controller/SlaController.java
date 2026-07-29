@@ -308,10 +308,24 @@ public class SlaController {
      */
     @GetMapping("/sla/daily-report/settings")
     public ResponseEntity<?> getDailyReportSettings() {
+        // Every team, each flagged with whether the report covers it. An empty stored
+        // selection means "all", so reflect that back as all-selected.
+        List<String> selected = configService.getSlaReportTeamList();
+        List<Map<String, Object>> teams = new ArrayList<>();
+        for (Team t : teamRepository.findAll()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id",       t.getId());
+            m.put("name",     t.getName());
+            m.put("selected", selected.isEmpty() || selected.contains(t.getId()));
+            teams.add(m);
+        }
+
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("recipients",     configService.getSlaReportRecipients());
         resp.put("recipientList",  configService.getSlaReportRecipientList());
         resp.put("enabled",        configService.isSlaReportEnabled());
+        resp.put("teams",          teams);
+        resp.put("teamsAll",       selected.isEmpty());
         resp.put("smtpConfigured", dailyReportService.isMailConfigured());
         resp.put("smtpHost",       dailyReportService.smtpHost());
         resp.put("fromAddress",    dailyReportService.effectiveFrom());
@@ -338,20 +352,46 @@ public class SlaController {
     }
 
     /**
-     * Saves recipients + on/off for the scheduled send.
+     * Saves recipients, team scope and on/off for the scheduled send.
      * POST /api/sla/daily-report/settings
-     * Body: { "recipients": "a@x.com, b@x.com", "enabled": true }
+     * Body: { "recipients": "a@x.com, b@x.com", "enabled": true, "teams": ["orderfallout"] }
+     *
+     * {@code teams} may be a list or a comma-separated string. Omit it (or send every
+     * team / an empty list) to cover all teams.
      */
     @PostMapping("/sla/daily-report/settings")
     public ResponseEntity<?> saveDailyReportSettings(@RequestBody Map<String, Object> body) {
         String recipients = body.get("recipients") == null ? "" : body.get("recipients").toString();
         boolean enabled   = !(body.get("enabled") instanceof Boolean b) || b;
 
-        configService.saveSlaReportSettings(recipients, enabled);
-        return ResponseEntity.ok(Map.of(
-            "saved",         true,
-            "recipientList", configService.getSlaReportRecipientList(),
-            "enabled",       configService.isSlaReportEnabled()));
+        // Only keep ids that still exist, so a stale id can't silently blank the report.
+        Set<String> known = new LinkedHashSet<>();
+        teamRepository.findAll().forEach(t -> known.add(t.getId()));
+
+        List<String> wanted = new ArrayList<>();
+        Object raw = body.get("teams");
+        if (raw instanceof List<?> list) {
+            for (Object o : list) if (o != null) wanted.add(o.toString().trim());
+        } else if (raw != null) {
+            for (String s : raw.toString().split("[,;\\s]+"))
+                if (!s.isBlank()) wanted.add(s.trim());
+        }
+        List<String> valid = wanted.stream().filter(known::contains).distinct().toList();
+
+        // Everything selected is the same as "all" — store blank so newly added teams
+        // are picked up automatically rather than being silently excluded.
+        String teamsCsv = (valid.isEmpty() || valid.size() == known.size())
+            ? "" : String.join(",", valid);
+
+        configService.saveSlaReportSettings(recipients, enabled, teamsCsv);
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("saved",         true);
+        resp.put("recipientList", configService.getSlaReportRecipientList());
+        resp.put("enabled",       configService.isSlaReportEnabled());
+        resp.put("teamNames",     dailyReportService.reportTeams().stream().map(Team::getName).toList());
+        resp.put("teamsAll",      configService.getSlaReportTeamList().isEmpty());
+        return ResponseEntity.ok(resp);
     }
 
     /**

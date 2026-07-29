@@ -24,6 +24,7 @@ public class JiraConfigService {
     private volatile String  b2bWebhookUrl;
     private volatile String  b2bTeamsDomain;
     private volatile String  slaReportRecipients;
+    private volatile String  slaReportTeams;
     private volatile boolean slaReportEnabled = true;
 
     public JiraConfigService(JiraConfigRepository repo, JiraProperties props) {
@@ -52,6 +53,8 @@ public class JiraConfigService {
                      ? saved.getB2bTeamsDomain() : "";
         slaReportRecipients = (saved != null && saved.getSlaReportRecipients() != null)
                      ? saved.getSlaReportRecipients() : "";
+        slaReportTeams = (saved != null && saved.getSlaReportTeams() != null)
+                     ? saved.getSlaReportTeams() : "";
         slaReportEnabled = (saved == null) || saved.isSlaReportEnabled();
     }
 
@@ -81,6 +84,20 @@ public class JiraConfigService {
     }
 
     public boolean isSlaReportEnabled() { return slaReportEnabled; }
+
+    /** Raw team-id list for the report, as stored. */
+    public String getSlaReportTeams() { return slaReportTeams != null ? slaReportTeams : ""; }
+
+    /** Team ids the report covers. Empty list means "every team". */
+    public java.util.List<String> getSlaReportTeamList() {
+        String raw = getSlaReportTeams();
+        if (raw.isBlank()) return java.util.List.of();
+        return java.util.Arrays.stream(raw.split("[,;\\s]+"))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .distinct()
+            .toList();
+    }
 
     public boolean isConfigured() {
         return email != null && !email.isBlank()
@@ -119,13 +136,17 @@ public class JiraConfigService {
         this.b2bWebhookUrl = url.trim();
     }
 
-    public void saveSlaReportSettings(String recipients, boolean enabled) {
+    /** @param teams comma-separated team ids; blank means every team */
+    public void saveSlaReportSettings(String recipients, boolean enabled, String teams) {
         String r = recipients == null ? "" : recipients.trim();
+        String t = teams == null ? "" : teams.trim();
         JiraConfig cfg = repo.findById(1L).orElse(new JiraConfig());
         cfg.setSlaReportRecipients(r);
+        cfg.setSlaReportTeams(t);
         cfg.setSlaReportEnabled(enabled);
         repo.save(cfg);
         this.slaReportRecipients = r;
+        this.slaReportTeams      = t;
         this.slaReportEnabled    = enabled;
     }
 

@@ -129,7 +129,26 @@ public class SlaDailyReportService {
     }
 
     /**
-     * Builds the pivot for every configured team.
+     * Teams the report covers, in the order they are stored. An empty selection in Admin
+     * means every team — so the report never silently goes blank if a team id is renamed,
+     * it just widens.
+     */
+    public List<Team> reportTeams() {
+        List<Team> all = teamRepository.findAll();
+        List<String> wanted = configService.getSlaReportTeamList();
+        if (wanted.isEmpty()) return all;
+
+        List<Team> picked = all.stream().filter(t -> wanted.contains(t.getId())).toList();
+        if (picked.isEmpty()) {
+            log.warn("[SLA-Report] Configured teams {} match none of the {} existing teams — "
+                   + "reporting on all of them instead.", wanted, all.size());
+            return all;
+        }
+        return picked;
+    }
+
+    /**
+     * Builds the pivot for each team the report is scoped to.
      *
      * @param resolvedDate day to scope resolved/closed breaches to; null → {@link #defaultResolvedDate()}
      */
@@ -152,7 +171,7 @@ public class SlaDailyReportService {
         List<TeamPivot> teamPivots = new ArrayList<>();
         int grandTotal = 0, grandBreached = 0;
 
-        for (Team t : teamRepository.findAll()) {
+        for (Team t : reportTeams()) {
             try {
                 List<JsonNode> openBreached     =
                     jiraClient.getOpenSlaTickets(t.getJql(), fieldId);

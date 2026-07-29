@@ -36,6 +36,10 @@ public class JiraConfig {
     @Column(name = "sla_report_recipients", columnDefinition = "TEXT")
     private String slaReportRecipients;
 
+    /** Team ids the report covers, comma-separated. Blank/null = every team. */
+    @Column(name = "sla_report_teams", columnDefinition = "TEXT")
+    private String slaReportTeams;
+
     // The mail SERVER is intentionally not stored here — it comes from the
     // spring.mail.* environment variables only, so SMTP credentials never sit in
     // the app DB or pass through the UI. Only the recipients are configurable.
@@ -59,6 +63,8 @@ public class JiraConfig {
     public void   setB2bTeamsDomain(String v) { this.b2bTeamsDomain = v; }
     public String getSlaReportRecipients()         { return slaReportRecipients; }
     public void   setSlaReportRecipients(String v) { this.slaReportRecipients = v; }
+    public String getSlaReportTeams()              { return slaReportTeams; }
+    public void   setSlaReportTeams(String v)      { this.slaReportTeams = v; }
     public boolean isSlaReportEnabled()            { return slaReportEnabled; }
     public void    setSlaReportEnabled(boolean v)  { this.slaReportEnabled = v; }
 }

@@ -1747,7 +1747,7 @@
         Every day at <strong>07:30 IST</strong> the recipients below get a pivot of
         breached tickets whose <strong>Breach Reason is still empty</strong> — assignee
         names with their counts — plus the day's full SLA Tracker sheet as an
-        <strong>.xlsx</strong> attachment. Covers all teams in one mail.
+        <strong>.xlsx</strong> attachment.
       </p>
 
       <div id="sla-mail-smtp-status"
@@ -1766,6 +1766,13 @@
                 onblur="this.style.borderColor='#dfe1e6'"></textarea>
       <div style="font-size:.75rem;color:#97a0af;margin-top:4px;">
         Separate with commas, semicolons, spaces or new lines.
+      </div>
+
+      <label style="display:block;font-size:.8rem;color:#5e6c84;margin:14px 0 6px;font-weight:600;">
+        Teams to include
+      </label>
+      <div id="sla-mail-teams" style="display:flex;flex-direction:column;gap:7px;">
+        <div style="font-size:.8rem;color:#97a0af;">Loading teams…</div>
       </div>
 
       <label style="display:flex;align-items:center;gap:8px;margin-top:12px;
@@ -3647,6 +3654,17 @@ async function loadSlaMailSettings() {
     document.getElementById('sla-mail-enabled').checked  = data.enabled !== false;
     slaMailReportDate = data.reportDate || '';
 
+    const teamBox = document.getElementById('sla-mail-teams');
+    const teams   = data.teams || [];
+    teamBox.innerHTML = teams.length
+      ? teams.map(t => `
+          <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;color:#172b4d;cursor:pointer;">
+            <input type="checkbox" class="sla-mail-team" value="${esc(t.id)}"
+                   ${t.selected ? 'checked' : ''} style="width:15px;height:15px;cursor:pointer;">
+            ${esc(t.name)}
+          </label>`).join('')
+      : '<div style="font-size:.8rem;color:#97a0af;">No teams configured.</div>';
+
     if (data.smtpConfigured) {
       status.style.cssText = 'font-size:.78rem;padding:8px 11px;border-radius:4px;margin-bottom:14px;'
         + 'background:#e3fcef;color:#006644;';
@@ -3671,18 +3689,27 @@ async function loadSlaMailSettings() {
 async function saveSlaMailSettings() {
   const recipients = document.getElementById('sla-mail-recipients').value;
   const enabled    = document.getElementById('sla-mail-enabled').checked;
+  const teams      = Array.from(document.querySelectorAll('.sla-mail-team:checked'))
+                          .map(c => c.value);
+
+  if (!teams.length) {
+    slaMailMsg('Pick at least one team — otherwise there is nothing to report on.', false);
+    return;
+  }
+
   try {
     const res  = await fetch('/api/sla/daily-report/settings', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ recipients, enabled })
+      body:    JSON.stringify({ recipients, enabled, teams })
     });
     const data = await res.json();
     if (!res.ok) { slaMailMsg(data.error || 'Save failed', false); return; }
 
-    const n = (data.recipientList || []).length;
+    const n     = (data.recipientList || []).length;
+    const scope = (data.teamNames || []).join(', ') || 'no teams';
     slaMailMsg(n
-      ? `Saved — ${n} recipient(s). Automatic send is ${data.enabled ? 'ON' : 'OFF'}.`
+      ? `Saved — ${n} recipient(s), covering ${scope}. Automatic send is ${data.enabled ? 'ON' : 'OFF'}.`
       : 'Saved, but no valid email addresses were found — nothing will be sent.', n > 0);
   } catch (e) {
     slaMailMsg('Network error: ' + e.message, false);
