@@ -6,6 +6,7 @@ import com.jira.autoassign.repository.B2bMemberRepository;
 import com.jira.autoassign.service.B2bNotifyService;
 import com.jira.autoassign.service.JiraConfigService;
 import com.jira.autoassign.service.WebhookService;
+import com.jira.autoassign.service.TeamWebhookService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -29,16 +30,18 @@ public class B2bController {
     private final B2bMemberRepository memberRepository;
     private final JiraConfigService   configService;
     private final WebhookService      webhookService;
+    private final TeamWebhookService teamWebhooks;
     private final B2bNotifyService    notifyService;
 
     public B2bController(B2bMemberRepository memberRepository,
                          JiraConfigService configService,
                          WebhookService webhookService,
-                         B2bNotifyService notifyService) {
+                         B2bNotifyService notifyService, TeamWebhookService teamWebhooks) {
         this.memberRepository = memberRepository;
         this.configService    = configService;
         this.webhookService   = webhookService;
         this.notifyService    = notifyService;
+        this.teamWebhooks     = teamWebhooks;
     }
 
     // ----------------------------------------------------------------------- history
@@ -131,51 +134,35 @@ public class B2bController {
     // ----------------------------------------------------------------------- webhook
 
     @GetMapping("/webhook-settings")
-    public ResponseEntity<Map<String, Object>> getWebhookSettings() {
-        String url = configService.getB2bWebhookUrl();
+    public ResponseEntity<Map<String, Object>> getWebhookSettings(
+            @RequestParam(value = "team", defaultValue = "b2b") String teamId) {
+        String url = teamWebhooks.requireTeam(teamId).getWebhookUrl();
         Map<String, Object> resp = new LinkedHashMap<>();
         // Never expose the full webhook (it embeds a signature anyone could reuse);
         // only ever send a masked preview to the browser.
-        resp.put("webhookUrlMasked", maskUrl(url));
+        resp.put("webhookUrlMasked", TeamWebhookService.maskUrl(url));
         resp.put("teamsDomain", configService.getB2bTeamsDomain());
         resp.put("configured",  url != null && !url.isBlank());
         return ResponseEntity.ok(resp);
     }
 
     @PostMapping("/webhook-settings")
-    public ResponseEntity<?> saveWebhookSettings(@RequestBody Map<String, String> body) {
-        String url = body.getOrDefault("webhookUrl", "").trim();
-        configService.saveB2bWebhookUrl(url);
+    public ResponseEntity<?> saveWebhookSettings(
+            @RequestParam(value = "team", defaultValue = "b2b") String teamId,
+            @RequestBody Map<String, String> body) {
+        String url = teamWebhooks.saveUrl(teamId, body.get("webhookUrl"));
         if (body.containsKey("teamsDomain")) {
             configService.saveB2bTeamsDomain(body.getOrDefault("teamsDomain", "").trim());
         }
-        return ResponseEntity.ok(Map.of("saved", true, "webhookUrlMasked", maskUrl(url),
+        return ResponseEntity.ok(Map.of("saved", true, "webhookUrlMasked", TeamWebhookService.maskUrl(url),
             "teamsDomain", configService.getB2bTeamsDomain(), "configured", !url.isBlank()));
     }
 
-    /**
-     * Masked preview of a secret webhook URL: keep the scheme + host so the user can
-     * recognise it, hide the entire path + query (which carries the signature token).
-     */
-    private static String maskUrl(String url) {
-        if (url == null || url.isBlank()) return "";
-        int scheme = url.indexOf("://");
-        int from   = scheme >= 0 ? scheme + 3 : 0;
-        int slash  = url.indexOf('/', from);
-        int keep   = slash > 0 ? slash : Math.min(24, url.length());
-        // Build the bullet run from a char code so the source file stays pure ASCII
-        // (avoids encoding surprises when the server compiles with a non-UTF-8 default).
-        char[] dots = new char[12];
-        java.util.Arrays.fill(dots, (char) 0x2022);   // 0x2022 = bullet glyph
-        return url.substring(0, keep) + "/" + new String(dots);
-    }
-
     @PostMapping("/webhook-settings/test")
-    public ResponseEntity<?> testWebhook(@RequestBody Map<String, String> body) {
-        String url = body.getOrDefault("webhookUrl", "").trim();
-        if (url.isBlank()) url = configService.getB2bWebhookUrl();
-        if (url == null || url.isBlank())
-            return ResponseEntity.badRequest().body(Map.of("error", "No B2B webhook URL configured"));
+    public ResponseEntity<?> testWebhook(
+            @RequestParam(value = "team", defaultValue = "b2b") String teamId,
+            @RequestBody Map<String, String> body) {
+        String url = teamWebhooks.testUrl(teamId, body.get("webhookUrl"));
 
         // Who to @mention in the test: the email typed in the B2B tab, else the first
         // mapped member's Teams email, else none (card posts with a plain name).

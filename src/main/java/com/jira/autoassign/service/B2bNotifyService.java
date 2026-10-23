@@ -143,7 +143,7 @@ public class B2bNotifyService {
                 ? "<at>" + mention.name() + "</at> — " + message
                 : mention.name() + " — " + message;
             log.info("[{}] {} reassigned {} → {} — notifying", team.getName(), issueKey, from, currentName);
-            webhookService.fireB2bCard("🔔 B2B Ticket Reassigned", body, message, mention.email(), mention.name(), t);
+            webhookService.fireB2bCard(team.getId(), "🔔 B2B Ticket Reassigned", body, message, mention.email(), mention.name(), t);
             logNotify(issueKey, "Reassigned", currentName, from + " → " + currentName, mention.has());
             // New assignee context — let support / SLA warnings fire again.
             st.setSupportNotified("NONE");
@@ -170,7 +170,7 @@ public class B2bNotifyService {
                 String message = "this B2B ticket needs " + label + " support, please check this on priority.";
                 String body = "Hi " + nameTag + " — " + message;
                 log.info("[{}] {} needs {} support — notifying {}", team.getName(), issueKey, label, currentName);
-                webhookService.fireB2bCard("🛠 B2B Ticket Needs " + label + " Support",
+                webhookService.fireB2bCard(team.getId(), "🛠 B2B Ticket Needs " + label + " Support",
                     body, message, mention.email(), mention.name(), t);
                 logNotify(issueKey, label + " Support", currentName, "Needs " + label + " support", mention.has());
             }
@@ -187,7 +187,7 @@ public class B2bNotifyService {
             String body = nameTag + " — " + message;
             log.info("[{}] {} SLA breach warning ({} left) — notifying {}",
                 team.getName(), issueKey, slaFriendly, currentName);
-            webhookService.fireB2bCard("⏰ B2B SLA Breach Warning", body, message, mention.email(), mention.name(), t);
+            webhookService.fireB2bCard(team.getId(), "⏰ B2B SLA Breach Warning", body, message, mention.email(), mention.name(), t);
             logNotify(issueKey, "SLA Warning", currentName, slaFriendly, mention.has());
             st.setSlaWarned(true);
         } else if (st.isSlaWarned() && sla.available() && !sla.breached()
@@ -203,7 +203,7 @@ public class B2bNotifyService {
             String message = "this B2B ticket's SLA has BREACHED — please action it immediately.";
             String body = nameTag + " — " + message;
             log.info("[{}] {} SLA breached — notifying {}", team.getName(), issueKey, currentName);
-            webhookService.fireB2bCard("🔴 B2B SLA Breached", body, message, mention.email(), mention.name(), t);
+            webhookService.fireB2bCard(team.getId(), "🔴 B2B SLA Breached", body, message, mention.email(), mention.name(), t);
             logNotify(issueKey, "SLA Breached", currentName, slaFriendly, mention.has());
             st.setSlaBreachNotified(true);
         }

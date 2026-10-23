@@ -43,14 +43,16 @@ public class WebhookService {
     private static final int               BATCH_DELAY_MS    = 2_000; // 2 s gap between batches (Teams rate limit)
 
     private final JiraConfigService jiraConfigService;
+    private final TeamWebhookService teamWebhooks;
     private final ObjectMapper      mapper = new ObjectMapper();
 
     private final HttpClient httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(10))
         .build();
 
-    public WebhookService(JiraConfigService jiraConfigService) {
+    public WebhookService(JiraConfigService jiraConfigService, TeamWebhookService teamWebhooks) {
         this.jiraConfigService = jiraConfigService;
+        this.teamWebhooks = teamWebhooks;
     }
 
     // -----------------------------------------------------------------------
@@ -61,7 +63,7 @@ public class WebhookService {
 
     public void fireReassignments(String teamId, String teamName,
                                    List<Map<String, String>> tickets) {
-        String webhookUrl = jiraConfigService.getWebhookUrl();
+        String webhookUrl = teamWebhooks.getUrl(teamId);
         if (webhookUrl == null || webhookUrl.isBlank()) return;
         if (tickets == null || tickets.isEmpty()) return;
 
@@ -123,7 +125,7 @@ public class WebhookService {
     // Test — 4 sample tickets with realistic data
     // -----------------------------------------------------------------------
 
-    public int testWebhook(String url) {
+    public int testWebhook(String url, String teamId, String teamName) {
         if (url == null || url.isBlank()) return -1;
 
         String jiraBase = jiraConfigService.getUrl();
@@ -152,10 +154,10 @@ public class WebhookService {
         );
 
         try {
-            String cardJson = mapper.writeValueAsString(buildAdaptiveCard("test", "Order Fallout", testTickets));
+            String cardJson = mapper.writeValueAsString(buildAdaptiveCard(teamId, teamName, testTickets));
 
             Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("teamName",    "Order Fallout");
+            payload.put("teamName",    teamName);
             payload.put("timestamp",   LocalDateTime.now().format(FMT));
             payload.put("ticketCount", testTickets.size());
             payload.put("tickets",     testTickets);
@@ -169,7 +171,7 @@ public class WebhookService {
                 .timeout(Duration.ofSeconds(15))
                 .build();
             HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-            log.info("[webhook-test] POST {} → HTTP {}", url, resp.statusCode());
+            log.info("[{}] Webhook test → HTTP {}", teamId, resp.statusCode());
             return resp.statusCode();
         } catch (Exception e) {
             log.warn("[webhook-test] Failed: {}", e.getMessage());
@@ -178,12 +180,12 @@ public class WebhookService {
     }
 
     // -----------------------------------------------------------------------
-    // B2B single-ticket @mention card → separate B2B webhook URL
+    // B2B single-ticket @mention card → originating team's webhook URL
     // -----------------------------------------------------------------------
 
     /**
      * Builds a single-ticket Adaptive Card with an optional Teams @mention and POSTs
-     * it to the configured B2B webhook URL. Used for all three B2B notifications
+     * it to the originating team's webhook URL. Used for B2B notifications
      * (reassignment, Matrixx/Aria support needed, SLA breach warning).
      *
      * @param title       card banner title
@@ -194,20 +196,20 @@ public class WebhookService {
      * @param teamsName   Teams display name for the @mention
      * @param ticket      map with key, url, summary, context, sla
      */
-    public void fireB2bCard(String title, String mentionText, String message,
+    public void fireB2bCard(String teamId, String title, String mentionText, String message,
                             String teamsEmail, String teamsName,
                             Map<String, String> ticket) {
-        String webhookUrl = jiraConfigService.getB2bWebhookUrl();
+        String webhookUrl = teamWebhooks.getUrl(teamId);
         if (webhookUrl == null || webhookUrl.isBlank()) {
-            log.warn("[B2B] No B2B webhook URL configured — skipping notification for {}",
-                ticket.get("key"));
+            log.warn("[{}] No webhook URL configured — skipping notification for {}",
+                teamId, ticket.get("key"));
             return;
         }
         try {
             Map<String, Object> card = buildB2bCard(title, mentionText, teamsEmail, teamsName, ticket);
             Map<String, Object> payload = teamsMessagePayload(card, title, message, teamsEmail, teamsName, ticket);
             String body = mapper.writeValueAsString(payload);
-            sendAsyncDelayed(webhookUrl, body, "b2b", ticket.getOrDefault("key", "") + " — " + title, 0);
+            sendAsyncDelayed(webhookUrl, body, teamId, ticket.getOrDefault("key", "") + " — " + title, 0);
         } catch (Exception e) {
             log.error("[B2B] Failed to build/send card for {}: {}", ticket.get("key"), e.getMessage());
         }
@@ -290,7 +292,7 @@ public class WebhookService {
                 .timeout(Duration.ofSeconds(15))
                 .build();
             HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-            log.info("[b2b-webhook-test] POST {} → HTTP {}", url, resp.statusCode());
+            log.info("[b2b-webhook-test] HTTP {}", resp.statusCode());
             return resp.statusCode();
         } catch (Exception e) {
             log.warn("[b2b-webhook-test] Failed: {}", e.getMessage());

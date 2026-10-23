@@ -10,6 +10,7 @@ import com.jira.autoassign.service.ExcelService;
 import com.jira.autoassign.service.JiraConfigService;
 import com.jira.autoassign.service.ShiftAssignService;
 import com.jira.autoassign.service.WebhookService;
+import com.jira.autoassign.service.TeamWebhookService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -33,12 +34,13 @@ public class UploadController {
     private final TeamRepository teamRepository;
     private final JiraConfigService jiraConfigService;
     private final WebhookService webhookService;
+    private final TeamWebhookService teamWebhooks;
     private final AssignScheduler assignScheduler;
 
     public UploadController(ExcelService excelService, ShiftAssignService shiftAssignService,
                             AssignmentLogRepository logRepository, TeamRepository teamRepository,
                             JiraConfigService jiraConfigService, WebhookService webhookService,
-                            AssignScheduler assignScheduler) {
+                            AssignScheduler assignScheduler, TeamWebhookService teamWebhooks) {
         this.excelService       = excelService;
         this.shiftAssignService = shiftAssignService;
         this.logRepository      = logRepository;
@@ -46,6 +48,7 @@ public class UploadController {
         this.jiraConfigService  = jiraConfigService;
         this.webhookService     = webhookService;
         this.assignScheduler    = assignScheduler;
+        this.teamWebhooks        = teamWebhooks;
     }
 
     // -----------------------------------------------------------------------
@@ -76,9 +79,12 @@ public class UploadController {
         if (jql == null || jql.isBlank())
             return ResponseEntity.badRequest().body(Map.of("error", "JQL is required"));
 
-        Team team = new Team(null, name.trim(), jql.trim());
+        String webhookUrl = teamWebhooks.validateUrl(body.get("webhookUrl"));
+        Team team = new Team(UUID.randomUUID().toString(), name.trim(), jql.trim());
+        team.setWebhookUrl(webhookUrl);
         teamRepository.save(team);
-        return ResponseEntity.ok(Map.of("id", team.getId(), "name", team.getName()));
+        return ResponseEntity.ok(Map.of("id", team.getId(), "name", team.getName(),
+            "webhookConfigured", !webhookUrl.isBlank()));
     }
 
     @PutMapping("/teams/{id}")
@@ -623,37 +629,38 @@ public class UploadController {
     }
 
     // -----------------------------------------------------------------------
-    // Power Automate webhook settings
+    // Power Automate webhook settings, scoped to one team
     // -----------------------------------------------------------------------
 
     @GetMapping("/webhook-settings")
-    public ResponseEntity<Map<String, Object>> getWebhookSettings() {
-        String url = jiraConfigService.getWebhookUrl();
+    public ResponseEntity<Map<String, Object>> getWebhookSettings(@RequestParam("team") String teamId) {
+        Team team = teamWebhooks.requireTeam(teamId);
+        String url = team.getWebhookUrl();
         Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("webhookUrl", url);
+        resp.put("teamId", teamId);
+        resp.put("teamName", team.getName());
+        resp.put("webhookUrlMasked", TeamWebhookService.maskUrl(url));
         resp.put("configured", url != null && !url.isBlank());
         return ResponseEntity.ok(resp);
     }
 
     @PostMapping("/webhook-settings")
-    public ResponseEntity<?> saveWebhookSettings(@RequestBody Map<String, String> body) {
-        String url = body.getOrDefault("webhookUrl", "").trim();
-        jiraConfigService.saveWebhookUrl(url);
-        return ResponseEntity.ok(Map.of("saved", true, "webhookUrl", url,
+    public ResponseEntity<?> saveWebhookSettings(@RequestParam("team") String teamId,
+                                                 @RequestBody Map<String, String> body) {
+        String url = teamWebhooks.saveUrl(teamId, body.get("webhookUrl"));
+        return ResponseEntity.ok(Map.of("saved", true, "teamId", teamId,
+                                        "webhookUrlMasked", TeamWebhookService.maskUrl(url),
                                         "configured", !url.isBlank()));
     }
 
     @PostMapping("/webhook-settings/test")
-    public ResponseEntity<?> testWebhook(@RequestBody Map<String, String> body) {
-        String url = body.getOrDefault("webhookUrl", "").trim();
-        if (url.isBlank()) {
-            // Fall back to saved URL if caller sent empty
-            url = jiraConfigService.getWebhookUrl();
-        }
-        if (url == null || url.isBlank())
-            return ResponseEntity.badRequest().body(Map.of("error", "No webhook URL configured"));
-
-        int status = webhookService.testWebhook(url);
+    public ResponseEntity<?> testWebhook(@RequestParam("team") String teamId,
+                                         @RequestBody Map<String, String> body) {
+        Team team = teamWebhooks.requireTeam(teamId);
+        String url = teamWebhooks.testUrl(teamId, body.get("webhookUrl"));
+        int status = team.isAutoAssign()
+            ? webhookService.testWebhook(url, teamId, team.getName())
+            : webhookService.testB2bWebhook(url, "", "");
         if (status >= 200 && status < 300) {
             return ResponseEntity.ok(Map.of("success", true,  "httpStatus", status));
         } else if (status == -1) {

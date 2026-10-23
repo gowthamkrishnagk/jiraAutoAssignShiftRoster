@@ -37,6 +37,7 @@ A Spring Boot web application that automatically manages Jira ticket assignments
   full day** (at 07:30 the current day is too young to hold anything); open counts are live.
 
 ### Configuration UI
+- **Team Webhooks** — enter an optional webhook URL in **Add Team**, or select an existing team's tab and click **Add webhook** / **Edit webhook** beside its name. Each team has an independent destination; saving a blank URL disables only that team's alerts. **Test Card** uses the selected team's URL and card format. Existing global handover settings and the B2B setting are copied to the corresponding existing teams once on upgrade; new teams start with alerts disabled unless a URL is supplied.
 - **Jira Settings** — configure Jira email and API token from the browser (no server restart needed)
 - **SLA Field ID** — configure the `customfield_XXXXX` for Time to Resolution once from Admin tab
 - **Breach Reason Admin** — add/remove breach reason options shown in the SLA dropdown

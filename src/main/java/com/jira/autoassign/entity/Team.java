@@ -18,6 +18,10 @@ public class Team {
     @Column(columnDefinition = "TEXT")
     private String jql;
 
+    /** Null on legacy rows until migrated; blank disables alerts for this team. */
+    @Column(name = "webhook_url", columnDefinition = "TEXT")
+    private String webhookUrl = "";
+
     @Column(name = "dry_run", nullable = false)
     private boolean dryRun = false;
 
@@ -50,6 +54,8 @@ public class Team {
     public void   setName(String v) { this.name = v; }
     public String getJql()          { return jql; }
     public void   setJql(String v)  { this.jql = v; }
+    public String getWebhookUrl() { return webhookUrl; }
+    public void setWebhookUrl(String v) { this.webhookUrl = v; }
     public boolean isDryRun()           { return dryRun; }
     public void    setDryRun(boolean v) { this.dryRun = v; }
     public boolean isAutoAssign()           { return autoAssign; }
