@@ -152,4 +152,28 @@ class TeamWebhookControllerTest {
             .andExpect(status().isBadRequest());
         verify(teams, never()).save(any());
     }
+
+    @Test
+    void rulesCanBeChangedWithoutReplacingTheSavedWebhook() throws Exception {
+        first.setWebhookUrl("https://first.example/secret");
+        mvc.perform(post("/api/webhook-settings").param("team", "first")
+            .contentType("application/json").content("{\"assignmentAlerts\":true,\"reassignmentAlerts\":false,\"slaAlerts\":true}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.assignmentAlerts").value(true))
+            .andExpect(jsonPath("$.reassignmentAlerts").value(false)).andExpect(jsonPath("$.slaAlerts").value(true));
+        assertEquals("https://first.example/secret", first.getWebhookUrl());
+        mvc.perform(get("/api/webhook-settings").param("team", "first"))
+            .andExpect(jsonPath("$.assignmentAlerts").value(true)).andExpect(jsonPath("$.reassignmentAlerts").value(false));
+    }
+
+    @Test
+    void separateSacCountQueryIsSavedWithoutChangingTheAssignmentQuery() throws Exception {
+        Team sac = new Team("sac", "SAC", "project = SAC AND status in (Open) AND assignee in (EMPTY)");
+        when(teams.findById("sac")).thenReturn(Optional.of(sac));
+        mvc.perform(put("/api/teams/sac").contentType("application/json")
+            .content("{\"workloadJql\":\"project = SAC AND status in (Open) AND assignee = old\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.workloadJql").value("project = SAC"))
+            .andExpect(jsonPath("$.jql").value("project = SAC AND status in (Open) AND assignee in (EMPTY)"));
+        verify(teams).save(sac);
+        assertEquals("project = SAC", sac.getWorkloadJql());
+    }
 }

@@ -41,11 +41,25 @@ public class TeamWebhookService {
     }
 
     public String saveUrl(String teamId, String value) {
+        return saveSettings(teamId, value == null ? "" : value, null, null, null).getWebhookUrl();
+    }
+
+    public Team saveSettings(String teamId, String value, Boolean assignment, Boolean reassignment, Boolean sla) {
         Team team = requireTeam(teamId);
-        String url = validateUrl(value);
-        team.setWebhookUrl(url);
+        if (value != null) team.setWebhookUrl(validateUrl(value));
+        if (assignment != null) team.setAssignmentAlerts(assignment);
+        if (reassignment != null) team.setReassignmentAlerts(reassignment);
+        if (sla != null) team.setSlaAlerts(sla);
         teams.save(team);
-        return url;
+        return team;
+    }
+
+    public boolean assignmentEnabled(String teamId) {
+        return teams.findById(teamId).map(Team::isAssignmentAlerts).orElse(false);
+    }
+
+    public boolean reassignmentEnabled(String teamId) {
+        return teams.findById(teamId).map(Team::isReassignmentAlerts).orElse(false);
     }
 
     public String testUrl(String teamId, String value) {

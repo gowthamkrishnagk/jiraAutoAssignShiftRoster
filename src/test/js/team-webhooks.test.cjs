@@ -12,7 +12,7 @@ function harness(fetch) {
   const element = id => {
     if (!elements.has(id)) elements.set(id, {
       style: {}, value: '', textContent: '', removeAttribute() {}, focus() {},
-      disabled: false, classList: { add() {}, remove() {} },
+      disabled: false, checked: false, classList: { add() {}, remove() {} },
       addEventListener() {}, checkValidity: () => true,
     });
     return elements.get(id);
@@ -179,4 +179,40 @@ test('closing or reopening the team form clears the previous webhook', () => {
   h.element('new-team-webhook').value = 'https://previous.example/secret';
   h.run('openAddTeam()');
   assert.equal(h.element('new-team-webhook').value, '');
+});
+
+test('saving alert rules preserves the webhook by omitting its URL', async () => {
+  const calls = [];
+  const h = harness(async (url, options) => {
+    calls.push({ url, options });
+    return response({ configured: true, assignmentAlerts: true, reassignmentAlerts: false, slaAlerts: true });
+  });
+  h.run("whTeamId = 'first'");
+  h.element('wh-alert-assignment').checked = true;
+  h.element('wh-alert-reassignment').checked = false;
+  h.element('wh-alert-sla').checked = true;
+  await h.run('saveWebhookRules()');
+  assert.equal(calls[0].url, '/api/webhook-settings?team=first');
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    assignmentAlerts: true, reassignmentAlerts: false, slaAlerts: true,
+  });
+});
+
+test('the SAC count query is edited separately from the assignment query', async () => {
+  const calls = [];
+  const h = harness(async (url, options) => {
+    calls.push({ url, options });
+    return response({ workloadJql: 'project = SAC', jql: 'assignment query' });
+  });
+  h.context.activeTeam = 'sac';
+  h.context.teams = [{ id: 'sac', jql: 'assignment query', workloadJql: 'project = SAC' }];
+  h.context.cancelJqlEdit = () => {};
+  h.run(html.slice(html.indexOf('// ---- Inline JQL card ----'), html.indexOf('function toggleJqlEdit()')));
+  h.run('loadJql()');
+  assert.equal(h.element('sac-workload-card').style.display, 'block');
+  assert.equal(h.element('sac-workload-jql').value, 'project = SAC');
+  await h.run('saveSacWorkloadJql()');
+  assert.equal(calls[0].url, '/api/teams/sac');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { workloadJql: 'project = SAC' });
+  assert.equal(h.context.teams[0].jql, 'assignment query');
 });

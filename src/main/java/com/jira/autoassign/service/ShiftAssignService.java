@@ -144,6 +144,29 @@ public class ShiftAssignService {
     // Single-team assignment run
     // -----------------------------------------------------------------------
 
+    private AssignmentPriority loadSacPriority(Team team, List<String> accountIds, int rotation) {
+        if (!"sac".equals(team.getId())) return null;
+        try {
+            String countJql = team.getWorkloadJql() == null || team.getWorkloadJql().isBlank()
+                ? team.getJql() : team.getWorkloadJql();
+            Map<String, Integer> counts = jiraClient.getWorkloadCounts(accountIds, countJql);
+            log.info("[{}] Current ticket workloads: {} — prioritizing the lowest count", team.getName(), counts);
+            return new AssignmentPriority(accountIds, rotation, counts);
+        } catch (Exception e) {
+            throw new IllegalStateException("Cannot compare SAC Jira workloads; this run will be retried", e);
+        }
+    }
+
+    private Map<String, String> assignmentAlertTicket(JsonNode ticket, String recipient) {
+        Map<String, String> details = new LinkedHashMap<>();
+        details.put("key", ticket.path("key").asText());
+        details.put("summary", ticket.path("fields").path("summary").asText(""));
+        details.put("slaRemaining", jiraClient.extractSlaRemaining(ticket));
+        details.put("currentAssignee", "Unassigned");
+        details.put("reassignedTo", recipient);
+        return details;
+    }
+
     public void runShiftAssignment(Team team) {
         String teamName = team.getName();
         String teamId   = team.getId();
@@ -237,6 +260,8 @@ public class ShiftAssignService {
         List<String> workIds    = pairs.stream().map(p -> p[1]).collect(Collectors.toList());
         List<String> workCovers = pairs.stream().map(p -> p[2]).collect(Collectors.toList()); // may hold null
         int workRr = rrIndex;
+        AssignmentPriority workloads = loadSacPriority(team, workIds, workRr);
+        List<Map<String, String>> allAssigned = new ArrayList<>();
 
         // --- Step 2: assign unassigned tickets (team JQL) ---
         List<JsonNode> unassigned = jiraClient.getTicketsByJql(team.getJql()).stream()
@@ -252,17 +277,20 @@ public class ShiftAssignService {
 
             if (team.isDryRun()) {
                 if (!workIds.isEmpty()) {
+                    int next = AssignmentPriority.nextIndex(workIds, workRr, workloads);
                     log.info("[{}][DRY-RUN] Would assign [{}] -> {}",
-                        teamName, issueKey, workEmails.get(workRr % workIds.size()));
+                        teamName, issueKey, workEmails.get(next));
                     assigned++;
-                    workRr++;
+                    if (workloads != null) workloads.assignedTo(workIds.get(next));
+                    workRr = next + 1;
                 }
             } else {
-                AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workCovers, workRr);
+                AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workCovers, workRr, workloads);
                 if (res != null) {
                     assigned++;
                     workRr = res.nextWorkRr();
                     logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, res.email()));
+                    allAssigned.add(assignmentAlertTicket(ticket, res.email()));
                     String status = ticket.get("fields").path("status").path("name").asText("");
                     if ("Waiting for support".equalsIgnoreCase(status)) {
                         jiraClient.transitionTicket(issueKey, "In Progress");
@@ -311,6 +339,8 @@ public class ShiftAssignService {
                 if (jiraClient.assignTicket(issueKey, lastAccId)) {
                     logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, lastEmail));
                     coverRepository.deleteByIssueKey(issueKey);
+                    allAssigned.add(assignmentAlertTicket(ticket, lastEmail));
+                    if (workloads != null) workloads.assignedTo(lastAccId);
                 }
             }
             jiraClient.pauseBetweenAssignments();
@@ -329,21 +359,26 @@ public class ShiftAssignService {
 
             if (team.isDryRun()) {
                 if (!workIds.isEmpty()) {
+                    int next = AssignmentPriority.nextIndex(workIds, workRr, workloads);
                     log.info("[{}][DRY-RUN] Would assign other-escalated [{}] -> {}",
-                        teamName, issueKey, workEmails.get(workRr % workIds.size()));
-                    workRr++;
+                        teamName, issueKey, workEmails.get(next));
+                    if (workloads != null) workloads.assignedTo(workIds.get(next));
+                    workRr = next + 1;
                 }
             } else {
-                AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workCovers, workRr);
+                AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workCovers, workRr, workloads);
                 if (res != null) {
                     workRr = res.nextWorkRr();
                     logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, res.email()));
+                    allAssigned.add(assignmentAlertTicket(ticket, res.email()));
                 } else {
                     workRr++;
                 }
                 jiraClient.pauseBetweenAssignments();
             }
         }
+
+        if (!allAssigned.isEmpty()) webhookService.fireAssignments(teamId, teamName, allAssigned);
 
         // --- Step 3: reassign off-shift people's tickets to active shift ---
         // Paused people are excluded: they are still on shift, just temporarily paused —
@@ -395,12 +430,14 @@ public class ShiftAssignService {
 
                     if (team.isDryRun()) {
                         if (!workIds.isEmpty()) {
-                            String newEmail = workEmails.get(workRr % workIds.size());
+                            int next = AssignmentPriority.nextIndex(workIds, workRr, workloads);
+                            String newEmail = workEmails.get(next);
                             log.info("[{}][DRY-RUN] Would reassign [{}] {} -> {}", teamName, issueKey, offEmail, newEmail);
-                            workRr++;
+                            if (workloads != null) workloads.assignedTo(workIds.get(next));
+                            workRr = next + 1;
                         }
                     } else {
-                        AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workCovers, workRr);
+                        AssignResult res = tryAssignRoundRobin(teamId, teamName, issueKey, workIds, workEmails, workCovers, workRr, workloads);
                         if (res != null) {
                             workRr = res.nextWorkRr();
                             logRepository.save(AssignmentLog.ofAssign(teamId, issueKey, summary, res.email()));
@@ -456,9 +493,9 @@ public class ShiftAssignService {
      */
     private AssignResult tryAssignRoundRobin(String teamId, String teamName, String issueKey,
                                               List<String> workIds, List<String> workEmails,
-                                              List<String> workCovers, int workRr) {
+                                              List<String> workCovers, int workRr, AssignmentPriority workloads) {
         while (!workIds.isEmpty()) {
-            int    pos   = workRr % workIds.size();
+            int    pos   = AssignmentPriority.nextIndex(workIds, workRr, workloads);
             String accId = workIds.get(pos);
             String email = workEmails.get(pos);
             String cover = workCovers.get(pos);   // null unless this slot is under cover
@@ -475,7 +512,8 @@ public class ShiftAssignService {
                 } else {
                     coverRepository.deleteByIssueKey(issueKey);
                 }
-                return new AssignResult(email, accId, workRr + 1);
+                if (workloads != null) workloads.assignedTo(accId);
+                return new AssignResult(email, accId, pos + 1);
             }
 
             // Account unreachable — remove so it doesn't waste future slots this run,

@@ -125,9 +125,11 @@ public class JiraClient {
     // -----------------------------------------------------------------------
 
     public String getAccountId(String email) {
+        if (email == null || email.isBlank()) throw new IllegalArgumentException("Roster email is required");
+        String requestedEmail = email.trim();
         String url = UriComponentsBuilder
             .fromHttpUrl(baseUrl() + "/rest/api/3/user/search")
-            .queryParam("query", email)
+            .queryParam("query", requestedEmail)
             .toUriString();
 
         ResponseEntity<JsonNode> response = restTemplate.exchange(
@@ -137,7 +139,20 @@ public class JiraClient {
         if (users == null || !users.isArray() || users.isEmpty()) {
             throw new RuntimeException("No Jira user found for email: " + email);
         }
-        return users.get(0).get("accountId").asText();
+        List<JsonNode> candidates = new ArrayList<>();
+        List<JsonNode> exact = new ArrayList<>();
+        for (JsonNode user : users) {
+            if (!user.path("active").asBoolean(true) || user.path("accountId").asText("").isBlank()
+                || "app".equals(user.path("accountType").asText())) continue;
+            candidates.add(user);
+            if (requestedEmail.equalsIgnoreCase(user.path("emailAddress").asText(""))) exact.add(user);
+        }
+        if (exact.size() == 1) return exact.get(0).path("accountId").asText();
+        // Jira can hide emailAddress for privacy. Accept only one active result then.
+        if (exact.isEmpty() && candidates.size() == 1
+            && candidates.get(0).path("emailAddress").asText("").isBlank())
+            return candidates.get(0).path("accountId").asText();
+        throw new IllegalStateException("Could not uniquely resolve Jira account for " + requestedEmail);
     }
 
     // -----------------------------------------------------------------------
@@ -159,7 +174,10 @@ public class JiraClient {
     }
 
     private List<JsonNode> searchTickets(String jql) {
-        return searchTicketsWithFields(jql, "summary,assignee,status,issuetype,labels");
+        String fields = "summary,assignee,status,issuetype,labels";
+        String slaField = configService.getSlaFieldId();
+        if (slaField != null && !slaField.isBlank()) fields += "," + slaField;
+        return searchTicketsWithFields(jql, fields);
     }
 
     /**
@@ -433,6 +451,20 @@ public class JiraClient {
         return searchTickets(jql);
     }
 
+    /** Count scope deliberately has no status filter and is scoped to one Jira account. */
+    public Map<String, Integer> getWorkloadCounts(Collection<String> accountIds, String workloadJql) {
+        Map<String, Integer> counts = new HashMap<>();
+        accountIds.forEach(id -> counts.put(id, 0));
+        if (counts.isEmpty()) return counts;
+        String jql = WorkloadJql.forAssignees(workloadJql, counts.keySet());
+        log.debug("Workload count JQL: {}", jql);
+        for (JsonNode ticket : searchTicketsWithFields(jql, "assignee")) {
+            String id = ticket.path("fields").path("assignee").path("accountId").asText("");
+            if (counts.containsKey(id)) counts.merge(id, 1, Integer::sum);
+        }
+        return counts;
+    }
+
     /**
      * Same as {@link #getTicketsAssignedToByJql} but also fetches the SLA custom field
      * so callers can extract remaining time / breach status per ticket.
@@ -500,6 +532,12 @@ public class JiraClient {
         if (escKey != null && !escKey.isBlank()) fields.append(",").append(escKey);
         log.debug("[B2B] Fetching tickets by JQL: {} (fields={})", jql, fields);
         return searchTicketsWithFields(jql, fields.toString());
+    }
+
+    /** Monitors assigned and unassigned open tickets in an auto-assign team's scope. */
+    public List<JsonNode> getTeamAlertTickets(String baseJql) {
+        return getB2bTickets("(" + baseJqlStripped(baseJql).trim()
+            + ") AND statusCategory != Done ORDER BY created ASC");
     }
 
     /** Reads the Escalation Path dropdown value from a ticket node, or "" if unset. */

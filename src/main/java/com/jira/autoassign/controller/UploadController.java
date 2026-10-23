@@ -11,6 +11,7 @@ import com.jira.autoassign.service.JiraConfigService;
 import com.jira.autoassign.service.ShiftAssignService;
 import com.jira.autoassign.service.WebhookService;
 import com.jira.autoassign.service.TeamWebhookService;
+import com.jira.autoassign.client.WorkloadJql;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -65,6 +66,7 @@ public class UploadController {
                 m.put("jql",    t.getJql() != null ? t.getJql() : "");
                 m.put("dryRun", t.isDryRun());
                 m.put("autoAssign", t.isAutoAssign());
+                if ("sac".equals(t.getId())) m.put("workloadJql", effectiveWorkloadJql(t));
                 return m;
             }).collect(Collectors.toList())
         );
@@ -102,7 +104,21 @@ public class UploadController {
             team.setJql(jql.trim());
         }
         if (name != null && !name.isBlank()) team.setName(name.trim());
+        if (body.containsKey("workloadJql")) {
+            if (!"sac".equals(id)) return ResponseEntity.badRequest()
+                .body(Map.of("error", "Workload JQL is available for the SAC team"));
+            String workloadJql = body.get("workloadJql");
+            team.setWorkloadJql(WorkloadJql.countScope(workloadJql));
+        }
+        teamRepository.save(team);
+        if ("sac".equals(id)) return ResponseEntity.ok(Map.of("id", id, "name", team.getName(),
+            "jql", team.getJql(), "workloadJql", effectiveWorkloadJql(team)));
         return ResponseEntity.ok(Map.of("id", team.getId(), "name", team.getName(), "jql", team.getJql()));
+    }
+
+    private static String effectiveWorkloadJql(Team team) {
+        return WorkloadJql.countScope(team.getWorkloadJql() == null || team.getWorkloadJql().isBlank()
+            ? team.getJql() : team.getWorkloadJql());
     }
 
     @DeleteMapping("/teams/{id}")
@@ -228,7 +244,9 @@ public class UploadController {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("teamId",    teamId);
         resp.put("order",     order);
-        resp.put("nextIndex", order.isEmpty() ? -1 : Math.floorMod(shiftAssignService.getRrIndex(teamId), order.size()));
+        resp.put("assignmentPolicy", "sac".equals(teamId) ? "LOWEST_COUNT" : "ROUND_ROBIN");
+        resp.put("nextIndex", order.isEmpty() || "sac".equals(teamId) ? -1
+            : Math.floorMod(shiftAssignService.getRrIndex(teamId), order.size()));
 
         // Recent assignment sequence (chronological: oldest → newest) so the cycle reads left-to-right.
         List<AssignmentLog> recent =
@@ -641,16 +659,27 @@ public class UploadController {
         resp.put("teamName", team.getName());
         resp.put("webhookUrlMasked", TeamWebhookService.maskUrl(url));
         resp.put("configured", url != null && !url.isBlank());
+        resp.put("assignmentAlerts", team.isAssignmentAlerts());
+        resp.put("reassignmentAlerts", team.isReassignmentAlerts());
+        resp.put("slaAlerts", team.isSlaAlerts());
         return ResponseEntity.ok(resp);
     }
 
+    public record WebhookSettingsRequest(String webhookUrl, Boolean assignmentAlerts,
+                                         Boolean reassignmentAlerts, Boolean slaAlerts) { }
+
     @PostMapping("/webhook-settings")
     public ResponseEntity<?> saveWebhookSettings(@RequestParam("team") String teamId,
-                                                 @RequestBody Map<String, String> body) {
-        String url = teamWebhooks.saveUrl(teamId, body.get("webhookUrl"));
+                                                 @RequestBody WebhookSettingsRequest body) {
+        Team team = teamWebhooks.saveSettings(teamId, body.webhookUrl(), body.assignmentAlerts(),
+            body.reassignmentAlerts(), body.slaAlerts());
+        String url = team.getWebhookUrl();
         return ResponseEntity.ok(Map.of("saved", true, "teamId", teamId,
                                         "webhookUrlMasked", TeamWebhookService.maskUrl(url),
-                                        "configured", !url.isBlank()));
+                                        "configured", url != null && !url.isBlank(),
+                                        "assignmentAlerts", team.isAssignmentAlerts(),
+                                        "reassignmentAlerts", team.isReassignmentAlerts(),
+                                        "slaAlerts", team.isSlaAlerts()));
     }
 
     @PostMapping("/webhook-settings/test")

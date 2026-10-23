@@ -1414,8 +1414,9 @@
                placeholder="https://prod-xx.westus.logic.azure.com/workflows/…"
                style="font-size:.8rem;" />
         <div class="modal-hint">
-          Copy from: Teams channel → <strong>Connectors</strong> → <strong>Incoming Webhook</strong>
-          &nbsp;or&nbsp; Power Automate HTTP trigger URL.<br>
+          In the target Teams channel, open <strong>Workflows</strong> and choose
+          <strong>Post to a channel when a webhook request is received</strong>.
+          Save that workflow's URL here.<br>
           Leave blank and save to disable notifications for this team.
         </div>
       </div>
@@ -1443,6 +1444,14 @@
                 style="background:#6264a7;">Test Card</button>
         <button class="btn-cancel" onclick="closeWebhookModal()">Cancel</button>
       </div>
+    </div>
+    <div id="wh-rules" style="display:none;margin-top:16px;padding:12px;background:#f4f5f7;border-radius:6px;">
+      <div style="font-weight:600;font-size:.85rem;margin-bottom:8px;">Send alerts for this team</div>
+      <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-assignment"> New ticket assignments</label>
+      <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-reassignment"> Ticket reassignments / shift handovers</label>
+      <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-sla"> SLA warning (15 minutes) and SLA breached</label>
+      <div class="modal-hint">Cards include ticket links, summary, assignee details and SLA time. B2B support notifications keep their existing behavior.</div>
+      <button class="btn-sm" onclick="saveWebhookRules()" style="margin-top:8px;">Save alert rules</button>
     </div>
     <div id="wh-msg" style="font-size:.8rem;margin-top:10px;display:none;padding:8px 12px;border-radius:5px;" role="status"></div>
 
@@ -1813,6 +1822,16 @@
 <!-- ============================================================ -->
 <div id="team-view-content">
 <main>
+
+  <div class="card" id="sac-workload-card" style="display:none;">
+    <div class="card-title">SAC Workload Count (JQL)</div>
+    <p style="font-size:.82rem;color:#5e6c84;margin:0 0 10px;">The active shift member with the fewest assigned Jira tickets gets priority. Counts include every status. The active shift account IDs are added automatically.</p>
+    <textarea id="sac-workload-jql" rows="3" style="width:100%;box-sizing:border-box;padding:10px;font-family:monospace;font-size:.82rem;border:1px solid #dfe1e6;border-radius:5px;"></textarea>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+      <button class="btn-sm" onclick="saveSacWorkloadJql()">Save count query</button>
+      <span id="sac-workload-msg" style="font-size:.8rem;" role="status"></span>
+    </div>
+  </div>
 
   <!-- Inline JQL card -->
   <div class="card">
@@ -2319,6 +2338,38 @@ function webhookEndpoint(teamId, suffix = '') {
   return '/api/webhook-settings' + suffix + '?team=' + encodeURIComponent(teamId);
 }
 
+function whAlertRules() {
+  return {
+    assignmentAlerts: document.getElementById('wh-alert-assignment').checked,
+    reassignmentAlerts: document.getElementById('wh-alert-reassignment').checked,
+    slaAlerts: document.getElementById('wh-alert-sla').checked,
+  };
+}
+
+function whApplyRules(data) {
+  document.getElementById('wh-alert-assignment').checked = data.assignmentAlerts ?? isMonitorTeam(whTeamId);
+  document.getElementById('wh-alert-reassignment').checked = data.reassignmentAlerts !== false;
+  document.getElementById('wh-alert-sla').checked = data.slaAlerts ?? isMonitorTeam(whTeamId);
+}
+
+async function saveWebhookRules() {
+  const teamId = whTeamId, version = whModalVersion;
+  if (!teamId) return;
+  try {
+    const res = await fetch(webhookEndpoint(teamId), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(whAlertRules()),
+    });
+    const data = await res.json();
+    if (version !== whModalVersion || whTeamId !== teamId) return;
+    if (!res.ok) { whShowMsg(data.error || 'Could not save alert rules.', false); return; }
+    whApplyRules(data);
+    whShowMsg(data.configured ? 'Alert rules saved for this team.' : 'Rules saved. Add a webhook URL to receive alerts.', true);
+  } catch (e) {
+    if (version === whModalVersion && whTeamId === teamId) whShowMsg('Network error: ' + e.message, false);
+  }
+}
+
 function whSetStatus(configured, url) {
   const actionLabel = document.getElementById('webhook-action-label');
   if (actionLabel) actionLabel.textContent = configured ? 'Edit webhook' : 'Add webhook';
@@ -2355,6 +2406,7 @@ async function openWebhookModal() {
   document.getElementById('wh-url').value = '';
   document.getElementById('wh-view').style.display = 'none';
   document.getElementById('wh-edit').style.display = 'none';
+  document.getElementById('wh-rules').style.display = 'none';
   document.getElementById('webhook-modal').style.display = 'flex';
   try {
     const res = await fetch(webhookEndpoint(teamId));
@@ -2362,6 +2414,8 @@ async function openWebhookModal() {
     if (version !== whModalVersion || whTeamId !== teamId) return;
     if (!res.ok) throw new Error(data.error || 'Could not load webhook settings.');
     whSetStatus(data.configured, data.webhookUrlMasked);
+    whApplyRules(data);
+    document.getElementById('wh-rules').style.display = 'block';
     if (data.configured) {
       document.getElementById('wh-view').style.display = 'block';
       document.getElementById('wh-edit').style.display = 'none';
@@ -2502,7 +2556,7 @@ async function saveWebhookUrl() {
     const res  = await fetch(webhookEndpoint(teamId), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ webhookUrl: url })
+      body: JSON.stringify({ webhookUrl: url, ...whAlertRules() })
     });
     const data = await res.json();
     if (version !== whModalVersion || whTeamId !== teamId) return;
@@ -3107,7 +3161,7 @@ function renderRotationStrip(data) {
   strip.innerHTML = `
     <span class="rot-strip-label">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 117 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.98 8.98 0 0013 21a9 9 0 000-18z"/></svg>
-      Next Assignment
+      ${data.assignmentPolicy === 'LOWEST_COUNT' ? 'Lowest Jira workload' : 'Next Assignment'}
     </span>
     <span class="rot-strip-flow">${chips}</span>`;
   strip.style.display = 'flex';
@@ -3136,8 +3190,10 @@ function renderRotationModal(data) {
     subEl.textContent = 'No one is on shift right now, so there is no active rotation.';
     ringEl.innerHTML  = '<div class="rot-history-empty">No active shift — nobody is receiving tickets.</div>';
   } else {
-    subEl.innerHTML = `Tickets for <strong>${esc(teamNm)}</strong> are handed out in this repeating order. `
-      + `The <strong style="color:#00875a">NEXT</strong> tag marks who gets the next ticket.`;
+    subEl.innerHTML = data.assignmentPolicy === 'LOWEST_COUNT'
+      ? `Tickets for <strong>${esc(teamNm)}</strong> go to the active member with the fewest assigned Jira tickets. This rotation breaks equal-count ties.`
+      : `Tickets for <strong>${esc(teamNm)}</strong> are handed out in this repeating order. `
+        + `The <strong style="color:#00875a">NEXT</strong> tag marks who gets the next ticket.`;
     ringEl.innerHTML = order.map((p, i) => {
       const isNext = i === data.nextIndex;
       const sub = p.covered
@@ -3407,7 +3463,35 @@ function loadJql() {
   const team = teams.find(t => t.id === activeTeam);
   if (!team) return;
   document.getElementById('jql-inline-text').textContent = team.jql || '(no JQL set)';
+  document.getElementById('sac-workload-card').style.display = team.id === 'sac' ? 'block' : 'none';
+  document.getElementById('sac-workload-jql').value = team.workloadJql || '';
+  document.getElementById('sac-workload-msg').textContent = '';
   cancelJqlEdit();
+}
+
+async function saveSacWorkloadJql() {
+  const teamId = activeTeam;
+  if (teamId !== 'sac') return;
+  const workloadJql = document.getElementById('sac-workload-jql').value.trim();
+  const msg = document.getElementById('sac-workload-msg');
+  msg.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/teams/sac', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workloadJql }),
+    });
+    const data = await res.json();
+    if (activeTeam !== teamId) return;
+    if (!res.ok) throw new Error(data.error || 'Could not save count query');
+    const team = teams.find(t => t.id === teamId);
+    if (team) team.workloadJql = data.workloadJql;
+    document.getElementById('sac-workload-jql').value = data.workloadJql;
+    msg.style.color = '#006644';
+    msg.textContent = 'Count query saved.';
+  } catch (e) {
+    if (activeTeam !== teamId) return;
+    msg.style.color = '#bf2600'; msg.textContent = e.message;
+  }
 }
 
 function toggleJqlEdit() {

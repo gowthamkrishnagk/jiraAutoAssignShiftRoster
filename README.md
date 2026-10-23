@@ -11,6 +11,7 @@ A Spring Boot web application that automatically manages Jira ticket assignments
 - **Parallel Scheduler** — all teams run simultaneously every minute, thread-safe
 - **Excel Upload with Preview** — upload a shift roster, review parsed data before saving
 - **Round-Robin Auto Assign** — unassigned Jira tickets assigned to active shift members every minute
+- **SAC Workload Priority** — the existing `sac` team uses one paginated Jira search over the active shift account IDs, a count map, and a priority queue to assign to the lowest ticket count. Counts include every status in the separate **SAC Workload Count (JQL)** scope; status and assignee filters are removed and active member account IDs are added automatically. Successful assignments update counts immediately, and ties rotate fairly. Other teams keep round-robin. If Jira cannot supply counts, SAC waits for the next run.
 - **Off-Shift Sweep** — when a shift ends, tickets held by the outgoing person are redistributed
 - **Escalated Ticket Restore** — escalated unassigned tickets restored to their last historical assignee
 - **Per-Team Dry-Run** — test mode per team; logs actions without touching Jira
@@ -38,6 +39,8 @@ A Spring Boot web application that automatically manages Jira ticket assignments
 
 ### Configuration UI
 - **Team Webhooks** — enter an optional webhook URL in **Add Team**, or select an existing team's tab and click **Add webhook** / **Edit webhook** beside its name. Each team has an independent destination; saving a blank URL disables only that team's alerts. **Test Card** uses the selected team's URL and card format. Existing global handover settings and the B2B setting are copied to the corresponding existing teams once on upgrade; new teams start with alerts disabled unless a URL is supplied.
+- **Alert Rules** — independently choose new assignment, reassignment / handover, and SLA alerts for each team in its webhook settings. SLA alerts warn within 15 minutes and when breached, with deduplication per team and ticket. Existing teams retain their previous alert defaults. B2B Matrixx/Aria support notifications retain their existing behavior.
+- **Teams Workflow Cards** — create **Post to a channel when a webhook request is received** in the target Teams channel, select the channel, then save the generated URL on the corresponding app team. The app sends the Adaptive Card in `attachments[0].content`, including ticket link, summary, assignees, SLA, team and time for assignment / handover alerts; the legacy `adaptiveCard` string remains available for existing custom flows. See [Microsoft's webhook payload schema](https://learn.microsoft.com/en-us/connectors/teams/#webhook-request-received-trigger) for the workflow format.
 - **Jira Settings** — configure Jira email and API token from the browser (no server restart needed)
 - **SLA Field ID** — configure the `customfield_XXXXX` for Time to Resolution once from Admin tab
 - **Breach Reason Admin** — add/remove breach reason options shown in the SLA dropdown

@@ -71,9 +71,18 @@ class TeamWebhookPersistenceTest {
         assertEquals("", settings.getUrl(secondId));
 
         settings.saveUrl(secondId, "https://second.example/hook");
+        settings.saveSettings(secondId, null, true, false, true);
+        Team sac = new Team("sac", "SAC", "project = SAC");
+        sac.setWorkloadJql("project = SAC AND labels = work");
+        teams.save(sac);
         teams.flush();
         entityManager.clear();
         assertEquals("https://first.example/hook", settings.getUrl(firstId));
         assertEquals("https://second.example/hook", settings.getUrl(secondId));
+        Team reloaded = teams.findById(secondId).orElseThrow();
+        assertTrue(reloaded.isAssignmentAlerts());
+        assertFalse(reloaded.isReassignmentAlerts());
+        assertTrue(reloaded.isSlaAlerts());
+        assertEquals("project = SAC AND labels = work", teams.findById("sac").orElseThrow().getWorkloadJql());
     }
 }

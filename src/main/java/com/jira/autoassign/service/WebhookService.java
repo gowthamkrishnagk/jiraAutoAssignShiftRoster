@@ -63,6 +63,17 @@ public class WebhookService {
 
     public void fireReassignments(String teamId, String teamName,
                                    List<Map<String, String>> tickets) {
+        if (!teamWebhooks.reassignmentEnabled(teamId)) return;
+        fireAssignmentCards(teamId, teamName, tickets, false);
+    }
+
+    public void fireAssignments(String teamId, String teamName, List<Map<String, String>> tickets) {
+        if (!teamWebhooks.assignmentEnabled(teamId)) return;
+        fireAssignmentCards(teamId, teamName, tickets, true);
+    }
+
+    private void fireAssignmentCards(String teamId, String teamName,
+                                      List<Map<String, String>> tickets, boolean assignment) {
         String webhookUrl = teamWebhooks.getUrl(teamId);
         if (webhookUrl == null || webhookUrl.isBlank()) return;
         if (tickets == null || tickets.isEmpty()) return;
@@ -87,17 +98,17 @@ public class WebhookService {
             final List<Map<String, String>> batch = batches.get(b);
 
             try {
-                String cardJson = mapper.writeValueAsString(
-                    buildAdaptiveCard(teamId, teamName, batch, batchNum, totalBatches));
-
-                Map<String, Object> payload = new LinkedHashMap<>();
+                Map<String, Object> card = buildAdaptiveCard(teamId, teamName, batch, batchNum, totalBatches, assignment);
+                Map<String, Object> payload = teamsCardPayload(card);
                 payload.put("teamName",     teamName != null ? teamName : teamId);
                 payload.put("timestamp",    LocalDateTime.now().format(FMT));
                 payload.put("ticketCount",  batch.size());
                 payload.put("batchNumber",  batchNum);
                 payload.put("totalBatches", totalBatches);
                 payload.put("tickets",      batch);
-                payload.put("adaptiveCard", cardJson);
+                payload.put("event",        assignment ? "assignment" : "reassignment");
+                payload.put("card",         card);
+                payload.put("adaptiveCard", mapper.writeValueAsString(card));
 
                 String body  = mapper.writeValueAsString(payload);
                 String label = totalBatches == 1
@@ -154,14 +165,14 @@ public class WebhookService {
         );
 
         try {
-            String cardJson = mapper.writeValueAsString(buildAdaptiveCard(teamId, teamName, testTickets));
-
-            Map<String, Object> payload = new LinkedHashMap<>();
+            Map<String, Object> card = buildAdaptiveCard(teamId, teamName, testTickets);
+            Map<String, Object> payload = teamsCardPayload(card);
             payload.put("teamName",    teamName);
             payload.put("timestamp",   LocalDateTime.now().format(FMT));
             payload.put("ticketCount", testTickets.size());
             payload.put("tickets",     testTickets);
-            payload.put("adaptiveCard", cardJson);   // ← plain JSON string, not object
+            payload.put("card", card);
+            payload.put("adaptiveCard", mapper.writeValueAsString(card));
 
             String body = mapper.writeValueAsString(payload);
             HttpRequest req = HttpRequest.newBuilder()
@@ -223,18 +234,24 @@ public class WebhookService {
      * Extra top-level fields are ignored by that template but kept for flows that build
      * their own mention (mapping override / group auto-match).
      */
-    private Map<String, Object> teamsMessagePayload(Map<String, Object> card,
-                                                    String title, String message,
-                                                    String teamsEmail, String teamsName,
-                                                    Map<String, String> ticket)
-            throws com.fasterxml.jackson.core.JsonProcessingException {
+    private Map<String, Object> teamsCardPayload(Map<String, Object> card) {
         Map<String, Object> attachment = new LinkedHashMap<>();
         attachment.put("contentType", "application/vnd.microsoft.card.adaptive");
+        attachment.put("contentUrl",  null);
         attachment.put("content",     card);
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type",              "message");
         payload.put("attachments",       List.of(attachment));
+        return payload;
+    }
+
+    private Map<String, Object> teamsMessagePayload(Map<String, Object> card,
+                                                    String title, String message,
+                                                    String teamsEmail, String teamsName,
+                                                    Map<String, String> ticket)
+            throws com.fasterxml.jackson.core.JsonProcessingException {
+        Map<String, Object> payload = teamsCardPayload(card);
         // --- extras (ignored by the simple template; useful for custom flows) ---
         payload.put("timestamp",         LocalDateTime.now().format(FMT));
         payload.put("title",             title   != null ? title   : "");
@@ -388,19 +405,20 @@ public class WebhookService {
     /** Convenience overload — single batch (test calls). */
     private Map<String, Object> buildAdaptiveCard(String teamId, String teamName,
                                                    List<Map<String, String>> tickets) {
-        return buildAdaptiveCard(teamId, teamName, tickets, 1, 1);
+        return buildAdaptiveCard(teamId, teamName, tickets, 1, 1, false);
     }
 
     private Map<String, Object> buildAdaptiveCard(String teamId, String teamName,
                                                    List<Map<String, String>> tickets,
-                                                   int batchNum, int totalBatches) {
+                                                   int batchNum, int totalBatches, boolean assignment) {
         String displayName = (teamName != null && !teamName.isBlank()) ? teamName : teamId;
         String timestamp   = LocalDateTime.now().format(FMT);
 
         // Title line — show batch info only when there are multiple batches
+        String eventTitle = assignment ? "Ticket Assignment" : "Shift Handover";
         String titleText = totalBatches == 1
-            ? "🔄  Shift Handover — " + tickets.size() + " Ticket(s) Reassigned"
-            : "🔄  Shift Handover — Part " + batchNum + " of " + totalBatches
+            ? "🔄  " + eventTitle + " — " + tickets.size() + (assignment ? " Ticket(s) Assigned" : " Ticket(s) Reassigned")
+            : "🔄  " + eventTitle + " — Part " + batchNum + " of " + totalBatches
               + "  (" + tickets.size() + " tickets)";
 
         List<Map<String, Object>> body = new ArrayList<>();

@@ -18,9 +18,21 @@ public class Team {
     @Column(columnDefinition = "TEXT")
     private String jql;
 
+    @Column(name = "workload_jql", columnDefinition = "TEXT")
+    private String workloadJql;
+
     /** Null on legacy rows until migrated; blank disables alerts for this team. */
     @Column(name = "webhook_url", columnDefinition = "TEXT")
     private String webhookUrl = "";
+
+    @Column(name = "alert_assignment")
+    private Boolean assignmentAlerts;
+
+    @Column(name = "alert_reassignment")
+    private Boolean reassignmentAlerts;
+
+    @Column(name = "alert_sla")
+    private Boolean slaAlerts;
 
     @Column(name = "dry_run", nullable = false)
     private boolean dryRun = false;
@@ -54,8 +66,16 @@ public class Team {
     public void   setName(String v) { this.name = v; }
     public String getJql()          { return jql; }
     public void   setJql(String v)  { this.jql = v; }
+    public String getWorkloadJql() { return workloadJql; }
+    public void setWorkloadJql(String v) { workloadJql = v; }
     public String getWebhookUrl() { return webhookUrl; }
     public void setWebhookUrl(String v) { this.webhookUrl = v; }
+    public boolean isAssignmentAlerts() { return assignmentAlerts != null ? assignmentAlerts : !autoAssign; }
+    public void setAssignmentAlerts(boolean v) { assignmentAlerts = v; }
+    public boolean isReassignmentAlerts() { return reassignmentAlerts == null || reassignmentAlerts; }
+    public void setReassignmentAlerts(boolean v) { reassignmentAlerts = v; }
+    public boolean isSlaAlerts() { return slaAlerts != null ? slaAlerts : !autoAssign; }
+    public void setSlaAlerts(boolean v) { slaAlerts = v; }
     public boolean isDryRun()           { return dryRun; }
     public void    setDryRun(boolean v) { this.dryRun = v; }
     public boolean isAutoAssign()           { return autoAssign; }

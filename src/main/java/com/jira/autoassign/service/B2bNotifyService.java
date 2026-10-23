@@ -69,7 +69,8 @@ public class B2bNotifyService {
 
     public void runAll() {
         List<Team> monitorTeams = teamRepository.findAll().stream()
-            .filter(t -> !t.isAutoAssign())
+            .filter(t -> !t.isAutoAssign() || t.isSlaAlerts())
+            .filter(t -> t.getWebhookUrl() != null && !t.getWebhookUrl().isBlank())
             .toList();
         if (monitorTeams.isEmpty()) return;
 
@@ -83,7 +84,8 @@ public class B2bNotifyService {
     }
 
     private void runTeam(Team team) {
-        List<JsonNode> tickets = jiraClient.getB2bTickets(team.getJql());
+        List<JsonNode> tickets = team.isAutoAssign()
+            ? jiraClient.getTeamAlertTickets(team.getJql()) : jiraClient.getB2bTickets(team.getJql());
         log.info("[{}] B2B monitor — {} ticket(s) in scope", team.getName(), tickets.size());
 
         for (JsonNode ticket : tickets) {
@@ -119,15 +121,17 @@ public class B2bNotifyService {
         // match "suji@prodapt.com" or "suji.mahindran@prodapt.com" off one Jira name.
         String nameSearch = firstNameFragment(currentEmail, currentName);
 
-        String escalation = jiraClient.extractEscalationPath(ticket);
+        String escalation = team.isAutoAssign() ? "" : jiraClient.extractEscalationPath(ticket);
         JiraClient.SlaOngoing sla = jiraClient.extractSlaOngoing(ticket);
         String slaFriendly = jiraClient.extractSlaRemaining(ticket);
 
-        Optional<B2bAssignState> existing = stateRepository.findById(issueKey);
+        // Preserve the original B2B rows; other teams keep independent dedupe state.
+        String stateKey = "b2b".equals(team.getId()) ? issueKey : team.getId() + ":" + issueKey;
+        Optional<B2bAssignState> existing = stateRepository.findById(stateKey);
         boolean existed = existing.isPresent();
-        B2bAssignState st = existing.orElseGet(() -> new B2bAssignState(issueKey));
+        B2bAssignState st = existing.orElseGet(() -> new B2bAssignState(stateKey));
 
-        Optional<B2bMember> memberOpt = hasAssignee
+        Optional<B2bMember> memberOpt = hasAssignee && !team.isAutoAssign()
             ? resolveMember(currentEmail, currentName) : Optional.empty();
         Mention mention = mention(memberOpt, currentEmail, currentName);
 
@@ -135,6 +139,9 @@ public class B2bNotifyService {
         boolean assigneeChanged = existed && hasAssignee
             && !currentAccId.equals(st.getAccountId());
         if (assigneeChanged) {
+            boolean newAssignment = st.getAccountId() == null || st.getAccountId().isBlank();
+            boolean notify = !team.isAutoAssign()
+                && (newAssignment ? team.isAssignmentAlerts() : team.isReassignmentAlerts());
             String from = st.getAssigneeName() != null && !st.getAssigneeName().isBlank()
                 ? st.getAssigneeName() : "Unassigned";
             Map<String, String> t = ticketMap(issueKey, summary, "Reassigned: " + from + " → " + currentName, slaFriendly, currentEmail, nameKey, nameSearch);
@@ -143,8 +150,11 @@ public class B2bNotifyService {
                 ? "<at>" + mention.name() + "</at> — " + message
                 : mention.name() + " — " + message;
             log.info("[{}] {} reassigned {} → {} — notifying", team.getName(), issueKey, from, currentName);
-            webhookService.fireB2bCard(team.getId(), "🔔 B2B Ticket Reassigned", body, message, mention.email(), mention.name(), t);
-            logNotify(issueKey, "Reassigned", currentName, from + " → " + currentName, mention.has());
+            if (notify) {
+                webhookService.fireB2bCard(team.getId(), newAssignment ? "🔔 B2B Ticket Assigned" : "🔔 B2B Ticket Reassigned",
+                    body, message, mention.email(), mention.name(), t);
+                logNotify(issueKey, newAssignment ? "Assigned" : "Reassigned", currentName, from + " → " + currentName, mention.has());
+            }
             // New assignee context — let support / SLA warnings fire again.
             st.setSupportNotified("NONE");
             st.setSlaWarned(false);
@@ -155,7 +165,7 @@ public class B2bNotifyService {
 
         // --- 2. Needs Matrixx / Aria support ---
         String supportType = "NONE";
-        if (hasAssignee) {
+        if (hasAssignee && !team.isAutoAssign()) {
             boolean matrixxMember = memberOpt.map(B2bMember::isMatrixxSupport).orElse(false);
             boolean ariaMember    = memberOpt.map(B2bMember::isAriaSupport).orElse(false);
             String escLower = escalation == null ? "" : escalation.toLowerCase();
@@ -178,16 +188,16 @@ public class B2bNotifyService {
         }
 
         // --- 3. SLA breach warning (within 15 min, not yet breached) ---
-        boolean inWarnWindow = hasAssignee && sla.available() && !sla.breached()
+        boolean inWarnWindow = team.isSlaAlerts() && hasAssignee && sla.available() && !sla.breached()
             && sla.remainingMillis() > 0 && sla.remainingMillis() <= SLA_WARN_WINDOW_MS;
         if (inWarnWindow && !st.isSlaWarned()) {
             Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey, nameSearch);
             String nameTag = mention.has() ? "<at>" + mention.name() + "</at>" : mention.name();
-            String message = "heads up — this B2B ticket's SLA will breach within ~15 minutes.";
+            String message = "heads up — this " + team.getName() + " ticket's SLA will breach within ~15 minutes.";
             String body = nameTag + " — " + message;
             log.info("[{}] {} SLA breach warning ({} left) — notifying {}",
                 team.getName(), issueKey, slaFriendly, currentName);
-            webhookService.fireB2bCard(team.getId(), "⏰ B2B SLA Breach Warning", body, message, mention.email(), mention.name(), t);
+            webhookService.fireB2bCard(team.getId(), "⏰ " + team.getName() + " SLA Breach Warning", body, message, mention.email(), mention.name(), t);
             logNotify(issueKey, "SLA Warning", currentName, slaFriendly, mention.has());
             st.setSlaWarned(true);
         } else if (st.isSlaWarned() && sla.available() && !sla.breached()
@@ -197,13 +207,13 @@ public class B2bNotifyService {
         }
 
         // --- 4. SLA breached (already over) ---
-        if (hasAssignee && sla.available() && sla.breached() && !st.isSlaBreachNotified()) {
+        if (team.isSlaAlerts() && hasAssignee && sla.available() && sla.breached() && !st.isSlaBreachNotified()) {
             Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey, nameSearch);
             String nameTag = mention.has() ? "<at>" + mention.name() + "</at>" : mention.name();
-            String message = "this B2B ticket's SLA has BREACHED — please action it immediately.";
+            String message = "this " + team.getName() + " ticket's SLA has BREACHED — please action it immediately.";
             String body = nameTag + " — " + message;
             log.info("[{}] {} SLA breached — notifying {}", team.getName(), issueKey, currentName);
-            webhookService.fireB2bCard(team.getId(), "🔴 B2B SLA Breached", body, message, mention.email(), mention.name(), t);
+            webhookService.fireB2bCard(team.getId(), "🔴 " + team.getName() + " SLA Breached", body, message, mention.email(), mention.name(), t);
             logNotify(issueKey, "SLA Breached", currentName, slaFriendly, mention.has());
             st.setSlaBreachNotified(true);
         }
