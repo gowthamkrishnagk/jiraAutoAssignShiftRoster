@@ -29,7 +29,7 @@ import java.util.Optional;
  *     assignee is in the Matrixx/Aria support group OR the Escalation Path contains
  *     "matrixx"/"aria".
  *  3. SLA breach warning → mention the current assignee when the SLA will breach within
- *     15 minutes (and hasn't breached yet).
+ *     30 minutes (and hasn't breached yet).
  *
  * The assignee→Teams mapping ({@link B2bMember}) supplies the @mention id. Unmapped
  * assignees still get a card, just with their plain Jira name and no @mention entity.
@@ -39,7 +39,7 @@ public class B2bNotifyService {
 
     private static final Logger log = LoggerFactory.getLogger(B2bNotifyService.class);
 
-    private static final long SLA_WARN_WINDOW_MS = 15 * 60 * 1000L; // 15 minutes
+    private static final long SLA_WARN_WINDOW_MS = 30 * 60 * 1000L; // 30 minutes
 
     private final JiraClient                 jiraClient;
     private final TeamRepository             teamRepository;
@@ -69,7 +69,8 @@ public class B2bNotifyService {
 
     public void runAll() {
         List<Team> monitorTeams = teamRepository.findAll().stream()
-            .filter(t -> !t.isAutoAssign() || t.isSlaWarningAlerts() || t.isSlaBreachAlerts())
+            .filter(t -> !t.isAutoAssign() || t.isSlaWarning30mAlerts()
+                || t.isSlaWarning15mAlerts() || t.isSlaBreachAlerts())
             .filter(t -> t.getWebhookUrl() != null && !t.getWebhookUrl().isBlank())
             .toList();
         if (monitorTeams.isEmpty()) return;
@@ -130,6 +131,13 @@ public class B2bNotifyService {
         Optional<B2bAssignState> existing = stateRepository.findById(stateKey);
         boolean existed = existing.isPresent();
         B2bAssignState st = existing.orElseGet(() -> new B2bAssignState(stateKey));
+        if (st.getSla30MinWarned() == null) {
+            st.setSla30MinWarned(st.isSlaWarned());
+            if (st.isSlaWarned() && sla.available() && !sla.breached()
+                    && sla.remainingMillis() > 0 && sla.remainingMillis() <= 15 * 60 * 1000L) {
+                st.setSlaWarned(false);
+            }
+        }
 
         Optional<B2bMember> memberOpt = hasAssignee && !team.isAutoAssign()
             ? resolveMember(currentEmail, currentName) : Optional.empty();
@@ -158,6 +166,7 @@ public class B2bNotifyService {
             // New assignee context — let support / SLA warnings fire again.
             st.setSupportNotified("NONE");
             st.setSlaWarned(false);
+            st.setSla30MinWarned(false);
             st.setSlaBreachNotified(false);
         }
         st.setAccountId(currentAccId);
@@ -187,22 +196,39 @@ public class B2bNotifyService {
             st.setSupportNotified(supportType); // also covers silent reset to NONE
         }
 
-        // --- 3. SLA breach warning (within 15 min, not yet breached) ---
-        boolean inWarnWindow = team.isSlaWarningAlerts() && hasAssignee && sla.available() && !sla.breached()
+        // --- 3. SLA breach warning (within 30 min, not yet breached) ---
+        boolean inWarnWindow = team.isSlaWarning30mAlerts() && hasAssignee && sla.available() && !sla.breached()
             && sla.remainingMillis() > 0 && sla.remainingMillis() <= SLA_WARN_WINDOW_MS;
-        if (inWarnWindow && !st.isSlaWarned()) {
+        if (inWarnWindow && !Boolean.TRUE.equals(st.getSla30MinWarned())) {
+            Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey, nameSearch);
+            String nameTag = mention.has() ? "<at>" + mention.name() + "</at>" : mention.name();
+            String message = "heads up — this " + team.getName() + " ticket's SLA will breach within ~30 minutes.";
+            String body = nameTag + " — " + message;
+            log.info("[{}] {} SLA breach warning ({} left) — notifying {}",
+                team.getName(), issueKey, slaFriendly, currentName);
+            webhookService.fireB2bCard(team.getId(), "⏰ " + team.getName() + " SLA Warning (30 Minutes)", body, message, mention.email(), mention.name(), t);
+            logNotify(issueKey, "SLA Warning 30m", currentName, slaFriendly, mention.has());
+            st.setSla30MinWarned(true);
+        } else if (Boolean.TRUE.equals(st.getSla30MinWarned()) && sla.available() && !sla.breached()
+                   && sla.remainingMillis() > SLA_WARN_WINDOW_MS) {
+            // SLA pushed back out of the window (paused/extended) — allow a future warning.
+            st.setSla30MinWarned(false);
+        }
+
+        boolean in15MinWindow = team.isSlaWarning15mAlerts() && hasAssignee && sla.available() && !sla.breached()
+            && sla.remainingMillis() > 0 && sla.remainingMillis() <= 15 * 60 * 1000L;
+        if (in15MinWindow && !st.isSlaWarned()) {
             Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey, nameSearch);
             String nameTag = mention.has() ? "<at>" + mention.name() + "</at>" : mention.name();
             String message = "heads up — this " + team.getName() + " ticket's SLA will breach within ~15 minutes.";
             String body = nameTag + " — " + message;
-            log.info("[{}] {} SLA breach warning ({} left) — notifying {}",
+            log.info("[{}] {} 15-minute SLA warning ({} left) — notifying {}",
                 team.getName(), issueKey, slaFriendly, currentName);
-            webhookService.fireB2bCard(team.getId(), "⏰ " + team.getName() + " SLA Breach Warning", body, message, mention.email(), mention.name(), t);
-            logNotify(issueKey, "SLA Warning", currentName, slaFriendly, mention.has());
+            webhookService.fireB2bCard(team.getId(), "SLA Warning (15 Minutes) - " + team.getName(), body, message, mention.email(), mention.name(), t);
+            logNotify(issueKey, "SLA Warning 15m", currentName, slaFriendly, mention.has());
             st.setSlaWarned(true);
         } else if (st.isSlaWarned() && sla.available() && !sla.breached()
-                   && sla.remainingMillis() > SLA_WARN_WINDOW_MS) {
-            // SLA pushed back out of the window (paused/extended) — allow a future warning.
+                   && sla.remainingMillis() > 15 * 60 * 1000L) {
             st.setSlaWarned(false);
         }
 

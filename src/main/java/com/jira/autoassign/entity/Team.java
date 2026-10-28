@@ -37,6 +37,12 @@ public class Team {
     @Column(name = "alert_sla_warning")
     private Boolean slaWarningAlerts;
 
+    @Column(name = "alert_sla_warning_30m")
+    private Boolean slaWarning30mAlerts;
+
+    @Column(name = "alert_sla_warning_15m")
+    private Boolean slaWarning15mAlerts;
+
     @Column(name = "alert_sla_breach")
     private Boolean slaBreachAlerts;
 
@@ -84,6 +90,10 @@ public class Team {
     public void setSlaAlerts(boolean v) { slaAlerts = v; }
     public boolean isSlaWarningAlerts() { return slaWarningAlerts != null ? slaWarningAlerts : isSlaAlerts(); }
     public void setSlaWarningAlerts(boolean v) { slaWarningAlerts = v; }
+    public boolean isSlaWarning30mAlerts() { return slaWarning30mAlerts != null ? slaWarning30mAlerts : isSlaWarningAlerts(); }
+    public void setSlaWarning30mAlerts(boolean v) { slaWarning30mAlerts = v; }
+    public boolean isSlaWarning15mAlerts() { return slaWarning15mAlerts != null ? slaWarning15mAlerts : isSlaWarningAlerts(); }
+    public void setSlaWarning15mAlerts(boolean v) { slaWarning15mAlerts = v; }
     public boolean isSlaBreachAlerts() { return slaBreachAlerts != null ? slaBreachAlerts : isSlaAlerts(); }
     public void setSlaBreachAlerts(boolean v) { slaBreachAlerts = v; }
     public boolean isDryRun()           { return dryRun; }

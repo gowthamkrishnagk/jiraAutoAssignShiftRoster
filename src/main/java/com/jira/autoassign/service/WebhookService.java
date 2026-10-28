@@ -335,7 +335,7 @@ public class WebhookService {
         banner.put("style", "emphasis");
         banner.put("bleed", true);
         banner.put("items", List.of(
-            tb(title, "Bolder", "Accent", "Large", true),
+            tb(title, "Bolder", "Accent", "Medium", true),
             tb("🕐 " + LocalDateTime.now().format(FMT), null, "Accent", "Small", false)
         ));
         body.add(banner);
@@ -346,22 +346,29 @@ public class WebhookService {
         if (!summary.isBlank()) {
             Map<String, Object> summaryText = tb(summary, null, null, "Small", true);
             summaryText.put("isSubtle", true);
+            summaryText.put("spacing", "None");
             items.add(summaryText);
         }
-        if (!context.isBlank()) items.add(tb(context, "Bolder", null, "Small", true));
+        if (!context.isBlank()) {
+            Map<String, Object> contextText = tb(context, "Bolder", null, "Small", true);
+            contextText.put("spacing", "None");
+            items.add(contextText);
+        }
         if (!sla.isBlank()) {
             String slaColor = sla.contains("Breach") ? "Attention" : "Good";
             String slaIcon  = sla.contains("Breach") ? "🔴" : "🟢";
-            items.add(tb("SLA:  " + slaIcon + "  " + sla, "Bolder", slaColor, "Small", false));
+            Map<String, Object> slaText = tb("SLA:  " + slaIcon + "  " + sla, "Bolder", slaColor, "Small", false);
+            slaText.put("spacing", "None");
+            items.add(slaText);
         }
         Map<String, Object> mentionBlock = tb(mentionText, "Bolder", null, "Default", true);
-        mentionBlock.put("spacing", "Medium");
+        mentionBlock.put("spacing", "Small");
         items.add(mentionBlock);
 
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("type",      "Container");
         detail.put("separator", true);
-        detail.put("spacing",   "Medium");
+        detail.put("spacing",   "Small");
         detail.put("items",     items);
         body.add(detail);
 
@@ -429,7 +436,7 @@ public class WebhookService {
         banner.put("style", "emphasis");
         banner.put("bleed", true);
         banner.put("items", List.of(
-            tb(titleText, "Bolder", "Accent", "Large", true),
+            tb(titleText, "Bolder", "Accent", "Medium", true),
             colSet(
                 col("stretch", List.of(tb("**Team:** " + displayName, null, null, "Small", false))),
                 col("auto",    List.of(tb("🕐 " + timestamp, null, "Accent", "Small", false)))
@@ -467,8 +474,6 @@ public class WebhookService {
             slaLine.put("spacing", "Small");
 
             // ── Line 3: 📋 Summary label ──────────────────────────────────
-            Map<String, Object> summaryLabel = tb("📋  Summary", "Bolder", null, "Small", false);
-            summaryLabel.put("spacing", "Small");
 
             // ── Line 4: summary text (wraps freely) ───────────────────────
             Map<String, Object> summaryText = tb(summary, null, null, "Small", true);
@@ -478,7 +483,7 @@ public class WebhookService {
             // ── Lines 5-6: FactSet — From / To ───────────────────────────
             Map<String, Object> factSet = new LinkedHashMap<>();
             factSet.put("type",    "FactSet");
-            factSet.put("spacing", "Small");
+            factSet.put("spacing", "None");
             factSet.put("facts", List.of(
                 Map.of("title", "🔁  From", "value", from),
                 Map.of("title", "✅  To",   "value", to)
@@ -487,8 +492,8 @@ public class WebhookService {
             Map<String, Object> ticketContainer = new LinkedHashMap<>();
             ticketContainer.put("type",      "Container");
             ticketContainer.put("separator", true);
-            ticketContainer.put("spacing",   "Medium");
-            ticketContainer.put("items",     List.of(line1, slaLine, summaryLabel, summaryText, factSet));
+            ticketContainer.put("spacing",   "Small");
+            ticketContainer.put("items",     List.of(line1, slaLine, summaryText, factSet));
             body.add(ticketContainer);
         }
 

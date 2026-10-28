@@ -34,6 +34,10 @@ public class B2bAssignState {
     @Column(name = "sla_warned", nullable = false)
     private boolean slaWarned = false;
 
+    /** Whether the 30-minute pre-breach warning has been sent for the current assignee. */
+    @Column(name = "sla_warned_30m")
+    private Boolean sla30MinWarned;
+
     /** Whether the "SLA breached" alert has been sent for the current assignee. */
     @Column(name = "sla_breach_notified", nullable = false, columnDefinition = "boolean default false")
     private boolean slaBreachNotified = false;
@@ -57,6 +61,8 @@ public class B2bAssignState {
     public void          setSupportNotified(String v){ this.supportNotified = v; }
     public boolean       isSlaWarned()              { return slaWarned; }
     public void          setSlaWarned(boolean v)    { this.slaWarned = v; }
+    public Boolean       getSla30MinWarned()        { return sla30MinWarned; }
+    public void          setSla30MinWarned(Boolean v) { this.sla30MinWarned = v; }
     public boolean       isSlaBreachNotified()           { return slaBreachNotified; }
     public void          setSlaBreachNotified(boolean v) { this.slaBreachNotified = v; }
     public LocalDateTime getUpdatedAt()             { return updatedAt; }

@@ -45,7 +45,8 @@ public class TeamWebhookService {
     }
 
     public Team saveSettings(String teamId, String value, Boolean assignment, Boolean reassignment, Boolean sla,
-                             Boolean slaWarning, Boolean slaBreach) {
+                             Boolean slaWarning, Boolean slaBreach,
+                             Boolean slaWarning30m, Boolean slaWarning15m) {
         Team team = requireTeam(teamId);
         if (value != null) team.setWebhookUrl(validateUrl(value));
         if (assignment != null) team.setAssignmentAlerts(assignment);
@@ -53,13 +54,21 @@ public class TeamWebhookService {
         if (sla != null) team.setSlaAlerts(sla);
         if (slaWarning != null) team.setSlaWarningAlerts(slaWarning);
         if (slaBreach != null) team.setSlaBreachAlerts(slaBreach);
+        if (slaWarning30m != null) team.setSlaWarning30mAlerts(slaWarning30m);
+        if (slaWarning15m != null) team.setSlaWarning15mAlerts(slaWarning15m);
         teams.save(team);
         return team;
     }
 
+    /** Compatibility overload for clients that submit one SLA warning setting and one breach setting. */
+    public Team saveSettings(String teamId, String value, Boolean assignment, Boolean reassignment, Boolean sla,
+                             Boolean slaWarning, Boolean slaBreach) {
+        return saveSettings(teamId, value, assignment, reassignment, sla, slaWarning, slaBreach, null, null);
+    }
+
     /** Compatibility overload for older clients that submit one combined SLA alert setting. */
     public Team saveSettings(String teamId, String value, Boolean assignment, Boolean reassignment, Boolean sla) {
-        return saveSettings(teamId, value, assignment, reassignment, sla, null, null);
+        return saveSettings(teamId, value, assignment, reassignment, sla, null, null, null, null);
     }
 
     public boolean assignmentEnabled(String teamId) {

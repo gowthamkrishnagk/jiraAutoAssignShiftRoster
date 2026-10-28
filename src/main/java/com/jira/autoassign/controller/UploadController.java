@@ -690,28 +690,37 @@ public class UploadController {
         resp.put("reassignmentAlerts", team.isReassignmentAlerts());
         resp.put("slaAlerts", team.isSlaAlerts());
         resp.put("slaWarningAlerts", team.isSlaWarningAlerts());
+        resp.put("slaWarning30mAlerts", team.isSlaWarning30mAlerts());
+        resp.put("slaWarning15mAlerts", team.isSlaWarning15mAlerts());
         resp.put("slaBreachAlerts", team.isSlaBreachAlerts());
         return ResponseEntity.ok(resp);
     }
 
     public record WebhookSettingsRequest(String webhookUrl, Boolean assignmentAlerts,
                                          Boolean reassignmentAlerts, Boolean slaAlerts,
-                                         Boolean slaWarningAlerts, Boolean slaBreachAlerts) { }
+                                         Boolean slaWarningAlerts, Boolean slaBreachAlerts,
+                                         Boolean slaWarning30mAlerts, Boolean slaWarning15mAlerts) { }
 
     @PostMapping("/webhook-settings")
     public ResponseEntity<?> saveWebhookSettings(@RequestParam("team") String teamId,
                                                  @RequestBody WebhookSettingsRequest body) {
         Team team = teamWebhooks.saveSettings(teamId, body.webhookUrl(), body.assignmentAlerts(),
-            body.reassignmentAlerts(), body.slaAlerts(), body.slaWarningAlerts(), body.slaBreachAlerts());
+            body.reassignmentAlerts(), body.slaAlerts(), body.slaWarningAlerts(), body.slaBreachAlerts(),
+            body.slaWarning30mAlerts(), body.slaWarning15mAlerts());
         String url = team.getWebhookUrl();
-        return ResponseEntity.ok(Map.of("saved", true, "teamId", teamId,
-                                        "webhookUrlMasked", TeamWebhookService.maskUrl(url),
-                                        "configured", url != null && !url.isBlank(),
-                                        "assignmentAlerts", team.isAssignmentAlerts(),
-                                        "reassignmentAlerts", team.isReassignmentAlerts(),
-                                        "slaAlerts", team.isSlaAlerts(),
-                                        "slaWarningAlerts", team.isSlaWarningAlerts(),
-                                        "slaBreachAlerts", team.isSlaBreachAlerts()));
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("saved", true);
+        response.put("teamId", teamId);
+        response.put("webhookUrlMasked", TeamWebhookService.maskUrl(url));
+        response.put("configured", url != null && !url.isBlank());
+        response.put("assignmentAlerts", team.isAssignmentAlerts());
+        response.put("reassignmentAlerts", team.isReassignmentAlerts());
+        response.put("slaAlerts", team.isSlaAlerts());
+        response.put("slaWarningAlerts", team.isSlaWarningAlerts());
+        response.put("slaWarning30mAlerts", team.isSlaWarning30mAlerts());
+        response.put("slaWarning15mAlerts", team.isSlaWarning15mAlerts());
+        response.put("slaBreachAlerts", team.isSlaBreachAlerts());
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/webhook-settings/test")

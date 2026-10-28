@@ -1454,7 +1454,8 @@
       <div style="font-weight:600;font-size:.85rem;margin-bottom:8px;">Send alerts for this team</div>
       <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-assignment"> New ticket assignments</label>
       <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-reassignment"> Ticket reassignments / shift handovers</label>
-      <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-sla-warning"> SLA warning (15 minutes)</label>
+      <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-sla-warning-30"> SLA warning (30 minutes)</label>
+      <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-sla-warning-15"> SLA warning (15 minutes)</label>
       <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-sla-breach"> SLA breached</label>
       <div class="modal-hint">Cards include ticket links, summary, assignee details and SLA time. B2B support notifications keep their existing behavior.</div>
       <button class="btn-sm" onclick="saveWebhookRules()" style="margin-top:8px;">Save alert rules</button>
@@ -2362,7 +2363,8 @@ function whAlertRules() {
   return {
     assignmentAlerts: document.getElementById('wh-alert-assignment').checked,
     reassignmentAlerts: document.getElementById('wh-alert-reassignment').checked,
-    slaWarningAlerts: document.getElementById('wh-alert-sla-warning').checked,
+    slaWarning30mAlerts: document.getElementById('wh-alert-sla-warning-30').checked,
+    slaWarning15mAlerts: document.getElementById('wh-alert-sla-warning-15').checked,
     slaBreachAlerts: document.getElementById('wh-alert-sla-breach').checked,
   };
 }
@@ -2370,7 +2372,9 @@ function whAlertRules() {
 function whApplyRules(data) {
   document.getElementById('wh-alert-assignment').checked = data.assignmentAlerts ?? isMonitorTeam(whTeamId);
   document.getElementById('wh-alert-reassignment').checked = data.reassignmentAlerts !== false;
-  document.getElementById('wh-alert-sla-warning').checked = data.slaWarningAlerts ?? data.slaAlerts ?? isMonitorTeam(whTeamId);
+  const legacyWarning = data.slaWarningAlerts ?? data.slaAlerts ?? isMonitorTeam(whTeamId);
+  document.getElementById('wh-alert-sla-warning-30').checked = data.slaWarning30mAlerts ?? legacyWarning;
+  document.getElementById('wh-alert-sla-warning-15').checked = data.slaWarning15mAlerts ?? legacyWarning;
   document.getElementById('wh-alert-sla-breach').checked = data.slaBreachAlerts ?? data.slaAlerts ?? isMonitorTeam(whTeamId);
 }
 
