@@ -80,13 +80,14 @@ public class SlaController {
     }
 
     /**
-     * Posts a breach-reason comment on a Jira ticket.
+     * Records a breach reason against a Jira ticket.
      *
      * POST /api/sla/comment
      * Body: { "issueKey": "SAC-1234", "reason": "Aria Escalation" }
      *
-     * Comment added to the ticket:
-     *   "SLA Breached. Reason: Aria Escalation"
+     * Recorded internally only (drives the SLA Tracker "already commented" badge,
+     * the Excel report and the daily report email) — no comment is posted on the
+     * Jira ticket itself.
      */
     @PostMapping("/sla/comment")
     public ResponseEntity<?> postBreachComment(@RequestBody Map<String, String> body) {
@@ -98,21 +99,13 @@ public class SlaController {
         if (reason.isEmpty())
             return ResponseEntity.badRequest().body(Map.of("error", "reason is required"));
 
-        String comment = "SLA Breached. Reason: " + reason;
-        boolean ok = jiraClient.postComment(issueKey, comment);
-
-        if (ok) {
-            // Persist to DB so the UI shows "already commented" after refresh.
-            // If the same ticket is re-commented, update the reason.
-            BreachComment bc = commentRepo.findByIssueKey(issueKey)
-                                          .orElse(new BreachComment(issueKey, reason));
-            bc.setReason(reason);
-            bc.setCommentedAt(java.time.LocalDateTime.now());
-            commentRepo.save(bc);
-            return ResponseEntity.ok(Map.of("message", "Comment added to " + issueKey));
-        }
-        return ResponseEntity.internalServerError()
-                             .body(Map.of("error", "Failed to post comment on " + issueKey));
+        // If the same ticket is re-reasoned, update the existing row.
+        BreachComment bc = commentRepo.findByIssueKey(issueKey)
+                                      .orElse(new BreachComment(issueKey, reason));
+        bc.setReason(reason);
+        bc.setCommentedAt(java.time.LocalDateTime.now());
+        commentRepo.save(bc);
+        return ResponseEntity.ok(Map.of("message", "Breach reason recorded for " + issueKey));
     }
 
     /**
@@ -323,6 +316,8 @@ public class SlaController {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("recipients",     configService.getSlaReportRecipients());
         resp.put("recipientList",  configService.getSlaReportRecipientList());
+        resp.put("cc",             configService.getSlaReportCc());
+        resp.put("ccList",         configService.getSlaReportCcList());
         resp.put("enabled",        configService.isSlaReportEnabled());
         resp.put("teams",          teams);
         resp.put("teamsAll",       selected.isEmpty());
@@ -352,16 +347,17 @@ public class SlaController {
     }
 
     /**
-     * Saves recipients, team scope and on/off for the scheduled send.
+     * Saves recipients, CC, team scope and on/off for the scheduled send.
      * POST /api/sla/daily-report/settings
-     * Body: { "recipients": "a@x.com, b@x.com", "enabled": true, "teams": ["orderfallout"] }
+     * Body: { "recipients": "a@x.com, b@x.com", "cc": "watcher@x.com", "enabled": true, "teams": ["orderfallout"] }
      *
      * {@code teams} may be a list or a comma-separated string. Omit it (or send every
-     * team / an empty list) to cover all teams.
+     * team / an empty list) to cover all teams. {@code cc} is optional — omit for no CC.
      */
     @PostMapping("/sla/daily-report/settings")
     public ResponseEntity<?> saveDailyReportSettings(@RequestBody Map<String, Object> body) {
         String recipients = body.get("recipients") == null ? "" : body.get("recipients").toString();
+        String cc         = body.get("cc")         == null ? "" : body.get("cc").toString();
         boolean enabled   = !(body.get("enabled") instanceof Boolean b) || b;
 
         // Only keep ids that still exist, so a stale id can't silently blank the report.
@@ -383,11 +379,12 @@ public class SlaController {
         String teamsCsv = (valid.isEmpty() || valid.size() == known.size())
             ? "" : String.join(",", valid);
 
-        configService.saveSlaReportSettings(recipients, enabled, teamsCsv);
+        configService.saveSlaReportSettings(recipients, cc, enabled, teamsCsv);
 
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("saved",         true);
         resp.put("recipientList", configService.getSlaReportRecipientList());
+        resp.put("ccList",        configService.getSlaReportCcList());
         resp.put("enabled",       configService.isSlaReportEnabled());
         resp.put("teamNames",     dailyReportService.reportTeams().stream().map(Team::getName).toList());
         resp.put("teamsAll",      configService.getSlaReportTeamList().isEmpty());

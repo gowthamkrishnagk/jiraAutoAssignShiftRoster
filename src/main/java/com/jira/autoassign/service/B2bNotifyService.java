@@ -69,7 +69,7 @@ public class B2bNotifyService {
 
     public void runAll() {
         List<Team> monitorTeams = teamRepository.findAll().stream()
-            .filter(t -> !t.isAutoAssign() || t.isSlaAlerts())
+            .filter(t -> !t.isAutoAssign() || t.isSlaWarningAlerts() || t.isSlaBreachAlerts())
             .filter(t -> t.getWebhookUrl() != null && !t.getWebhookUrl().isBlank())
             .toList();
         if (monitorTeams.isEmpty()) return;
@@ -188,7 +188,7 @@ public class B2bNotifyService {
         }
 
         // --- 3. SLA breach warning (within 15 min, not yet breached) ---
-        boolean inWarnWindow = team.isSlaAlerts() && hasAssignee && sla.available() && !sla.breached()
+        boolean inWarnWindow = team.isSlaWarningAlerts() && hasAssignee && sla.available() && !sla.breached()
             && sla.remainingMillis() > 0 && sla.remainingMillis() <= SLA_WARN_WINDOW_MS;
         if (inWarnWindow && !st.isSlaWarned()) {
             Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey, nameSearch);
@@ -207,7 +207,7 @@ public class B2bNotifyService {
         }
 
         // --- 4. SLA breached (already over) ---
-        if (team.isSlaAlerts() && hasAssignee && sla.available() && sla.breached() && !st.isSlaBreachNotified()) {
+        if (team.isSlaBreachAlerts() && hasAssignee && sla.available() && sla.breached() && !st.isSlaBreachNotified()) {
             Map<String, String> t = ticketMap(issueKey, summary, "Assignee: " + currentName, slaFriendly, currentEmail, nameKey, nameSearch);
             String nameTag = mention.has() ? "<at>" + mention.name() + "</at>" : mention.name();
             String message = "this " + team.getName() + " ticket's SLA has BREACHED — please action it immediately.";

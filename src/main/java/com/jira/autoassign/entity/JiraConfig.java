@@ -36,6 +36,10 @@ public class JiraConfig {
     @Column(name = "sla_report_recipients", columnDefinition = "TEXT")
     private String slaReportRecipients;
 
+    /** CC recipients of the daily SLA breach-reason report — comma/semicolon/newline separated. */
+    @Column(name = "sla_report_cc", columnDefinition = "TEXT")
+    private String slaReportCc;
+
     /** Team ids the report covers, comma-separated. Blank/null = every team. */
     @Column(name = "sla_report_teams", columnDefinition = "TEXT")
     private String slaReportTeams;
@@ -63,6 +67,8 @@ public class JiraConfig {
     public void   setB2bTeamsDomain(String v) { this.b2bTeamsDomain = v; }
     public String getSlaReportRecipients()         { return slaReportRecipients; }
     public void   setSlaReportRecipients(String v) { this.slaReportRecipients = v; }
+    public String getSlaReportCc()                 { return slaReportCc; }
+    public void   setSlaReportCc(String v)         { this.slaReportCc = v; }
     public String getSlaReportTeams()              { return slaReportTeams; }
     public void   setSlaReportTeams(String v)      { this.slaReportTeams = v; }
     public boolean isSlaReportEnabled()            { return slaReportEnabled; }

@@ -24,6 +24,7 @@ public class JiraConfigService {
     private volatile String  b2bWebhookUrl;
     private volatile String  b2bTeamsDomain;
     private volatile String  slaReportRecipients;
+    private volatile String  slaReportCc;
     private volatile String  slaReportTeams;
     private volatile boolean slaReportEnabled = true;
 
@@ -53,6 +54,8 @@ public class JiraConfigService {
                      ? saved.getB2bTeamsDomain() : "";
         slaReportRecipients = (saved != null && saved.getSlaReportRecipients() != null)
                      ? saved.getSlaReportRecipients() : "";
+        slaReportCc = (saved != null && saved.getSlaReportCc() != null)
+                     ? saved.getSlaReportCc() : "";
         slaReportTeams = (saved != null && saved.getSlaReportTeams() != null)
                      ? saved.getSlaReportTeams() : "";
         slaReportEnabled = (saved == null) || saved.isSlaReportEnabled();
@@ -75,6 +78,23 @@ public class JiraConfigService {
      */
     public java.util.List<String> getSlaReportRecipientList() {
         String raw = getSlaReportRecipients();
+        if (raw.isBlank()) return java.util.List.of();
+        return java.util.Arrays.stream(raw.split("[,;\\s]+"))
+            .map(String::trim)
+            .filter(s -> s.contains("@"))
+            .distinct()
+            .toList();
+    }
+
+    /** Raw CC string as typed in the Admin tab. */
+    public String getSlaReportCc() { return slaReportCc != null ? slaReportCc : ""; }
+
+    /**
+     * CC recipients split on comma / semicolon / whitespace, trimmed, de-duplicated,
+     * and filtered to entries that look like an address.
+     */
+    public java.util.List<String> getSlaReportCcList() {
+        String raw = getSlaReportCc();
         if (raw.isBlank()) return java.util.List.of();
         return java.util.Arrays.stream(raw.split("[,;\\s]+"))
             .map(String::trim)
@@ -137,15 +157,18 @@ public class JiraConfigService {
     }
 
     /** @param teams comma-separated team ids; blank means every team */
-    public void saveSlaReportSettings(String recipients, boolean enabled, String teams) {
+    public void saveSlaReportSettings(String recipients, String cc, boolean enabled, String teams) {
         String r = recipients == null ? "" : recipients.trim();
+        String c = cc == null ? "" : cc.trim();
         String t = teams == null ? "" : teams.trim();
         JiraConfig cfg = repo.findById(1L).orElse(new JiraConfig());
         cfg.setSlaReportRecipients(r);
+        cfg.setSlaReportCc(c);
         cfg.setSlaReportTeams(t);
         cfg.setSlaReportEnabled(enabled);
         repo.save(cfg);
         this.slaReportRecipients = r;
+        this.slaReportCc         = c;
         this.slaReportTeams      = t;
         this.slaReportEnabled    = enabled;
     }

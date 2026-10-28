@@ -5,6 +5,9 @@ import com.jira.autoassign.repository.ShiftRosterRepository;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -12,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -121,12 +126,13 @@ public class ExcelService {
         }
         rosterRepo.saveAll(entries);
 
-        log.info("Saved {} entries across {} month(s)", entries.size(), monthKeys.size());
+        log.info("Saved {} entries across {} month(s) for team {}", entries.size(), monthKeys.size(), teamId);
 
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("success",        true);
         resp.put("entriesLoaded",  entries.size());
         resp.put("monthsReplaced", monthKeys.size());
+        resp.put("teamId",         teamId);
         resp.put("warnings",       result.warnings());
         resp.put("message",        entries.size() + " shift entries saved successfully."
             + (result.warnings().isEmpty() ? "" : " " + result.warnings().size() + " row(s) skipped."));
@@ -138,6 +144,7 @@ public class ExcelService {
     // -----------------------------------------------------------------------
     private ParseResult parseFile(MultipartFile file) throws IOException {
         String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase();
+        if (filename.endsWith(".csv")) return parseCsvFile(file);
         boolean isXlsx = filename.endsWith(".xlsx");
 
         List<RawRow>  rows     = new ArrayList<>();
@@ -221,6 +228,82 @@ public class ExcelService {
         return new ParseResult(rows, warnings);
     }
 
+    private ParseResult parseCsvFile(MultipartFile file) throws IOException {
+        List<RawRow> rows = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+
+        try (InputStreamReader reader = new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8);
+             CSVParser parser = CSVFormat.DEFAULT.builder().setIgnoreEmptyLines(true).build().parse(reader)) {
+            Iterator<CSVRecord> records = parser.iterator();
+            if (!records.hasNext()) throw new IllegalArgumentException("CSV has no header row");
+
+            CSVRecord header = records.next();
+            List<String> headers = new ArrayList<>();
+            for (int c = 0; c < header.size(); c++) {
+                String value = header.get(c).trim();
+                if (c == 0) value = value.replace("\uFEFF", "");
+                headers.add(value);
+            }
+            Map<String, Integer> cols = detectColumns(headers);
+            validateRequiredColumns(cols, headers);
+
+            int emailCol = cols.get("email");
+            int fromCol = cols.get("from");
+            int toCol = cols.get("to");
+            int startCol = cols.get("shiftStart");
+            int endCol = cols.get("shiftEnd");
+
+            while (records.hasNext()) {
+                CSVRecord record = records.next();
+                if (record.size() == 0 || record.stream().allMatch(String::isBlank)) continue;
+                int rowNumber = (int) record.getRecordNumber();
+                try {
+                    String email = csvValue(record, emailCol).toLowerCase(Locale.ROOT).trim();
+                    if (email.isBlank()) continue;
+                    if (!ShiftAssignService.isValidEmail(email)) {
+                        warnings.add("Row " + rowNumber + ": '" + email + "' is not a valid email — skipped");
+                        continue;
+                    }
+
+                    LocalDate from = parseDate(csvValue(record, fromCol));
+                    LocalDate to = parseDate(csvValue(record, toCol));
+                    LocalTime start = parseTime(csvValue(record, startCol));
+                    LocalTime end = parseTime(csvValue(record, endCol));
+                    if (to.isBefore(from)) {
+                        warnings.add("Row " + rowNumber + ": 'To Date' is before 'From Date' for " + email + " — skipped");
+                        continue;
+                    }
+                    int days = (int) (to.toEpochDay() - from.toEpochDay() + 1);
+                    rows.add(new RawRow(email, start, end, from, to, days));
+                } catch (Exception e) {
+                    warnings.add("Row " + rowNumber + " skipped: " + e.getMessage());
+                }
+            }
+        }
+        return new ParseResult(rows, warnings);
+    }
+
+    private String csvValue(CSVRecord record, int column) {
+        return column < record.size() ? record.get(column).trim() : "";
+    }
+
+    private void validateRequiredColumns(Map<String, Integer> cols, List<String> actualHeaders) {
+        List<String> required = List.of("email", "shiftStart", "shiftEnd", "from", "to");
+        Map<String, String> labels = Map.of(
+            "email", "Email", "shiftStart", "Shift Start", "shiftEnd", "Shift End",
+            "from", "From Date", "to", "To Date"
+        );
+        List<String> missing = required.stream().filter(k -> !cols.containsKey(k))
+            .map(labels::get).collect(Collectors.toList());
+        if (!missing.isEmpty()) {
+            throw new IllegalArgumentException(
+                "HEADER_MISMATCH|Missing: " + String.join(", ", missing) + "|" +
+                "Found in file: " + String.join(", ", actualHeaders) + "|" +
+                "Required: Email, Shift Start, Shift End, From Date, To Date"
+            );
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
@@ -231,6 +314,19 @@ public class ExcelService {
             if      (h.contains("email"))                             cols.put("email",      c);
             else if (h.contains("from") || h.equals("start date"))   cols.put("from",       c);
             else if (h.contains("to")   || h.equals("end date"))     cols.put("to",         c);
+            else if (h.contains("start") && !h.contains("date"))     cols.put("shiftStart", c);
+            else if ((h.contains("end") || h.contains("finish")) && !h.contains("date")) cols.put("shiftEnd", c);
+        }
+        return cols;
+    }
+
+    private Map<String, Integer> detectColumns(List<String> headers) {
+        Map<String, Integer> cols = new HashMap<>();
+        for (int c = 0; c < headers.size(); c++) {
+            String h = headers.get(c).toLowerCase(Locale.ROOT).trim();
+            if      (h.contains("email"))                              cols.put("email", c);
+            else if (h.contains("from") || h.equals("start date"))   cols.put("from", c);
+            else if (h.contains("to")   || h.equals("end date"))     cols.put("to", c);
             else if (h.contains("start") && !h.contains("date"))     cols.put("shiftStart", c);
             else if ((h.contains("end") || h.contains("finish")) && !h.contains("date")) cols.put("shiftEnd", c);
         }
@@ -270,7 +366,11 @@ public class ExcelService {
             return DateUtil.getJavaDate(cell.getNumericCellValue())
                 .toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
         }
-        String s = cellStr(cell).trim();
+        return parseDate(cellStr(cell));
+    }
+
+    private LocalDate parseDate(String value) {
+        String s = value.trim();
         for (DateTimeFormatter fmt : DATE_FORMATS) {
             try { return LocalDate.parse(s, fmt); } catch (Exception ignored) {}
         }
@@ -284,7 +384,11 @@ public class ExcelService {
             if (frac < 0) frac += 1;
             return LocalTime.ofSecondOfDay((int) Math.round(frac * 86400) % 86400);
         }
-        String s = cellStr(cell).trim();
+        return parseTime(cellStr(cell));
+    }
+
+    private LocalTime parseTime(String value) {
+        String s = value.trim();
         if (s.matches("\\d{1,2}:\\d{2}"))        return LocalTime.parse(s, DateTimeFormatter.ofPattern("H:mm"));
         if (s.matches("\\d{1,2}:\\d{2}:\\d{2}")) return LocalTime.parse(s, DateTimeFormatter.ofPattern("H:mm:ss"));
         try { return LocalTime.parse(s, DateTimeFormatter.ofPattern("h:mm a")); } catch (Exception ignored) {}

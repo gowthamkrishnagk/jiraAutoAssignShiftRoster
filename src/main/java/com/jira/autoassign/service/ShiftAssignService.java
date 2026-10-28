@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jira.autoassign.client.JiraClient;
+import com.jira.autoassign.client.WorkloadJql;
 import com.jira.autoassign.entity.AssignmentLog;
 import com.jira.autoassign.entity.CoverAssignment;
 import com.jira.autoassign.entity.RosterEvent;
@@ -79,7 +80,14 @@ public class ShiftAssignService {
     // for a cooldown keeps the rotation — and the index normalization — over only the
     // reachable people, so distribution stays even. Auto-retried once the cooldown lapses.
     private final Map<String, Map<String, Long>> unavailableByTeam = new ConcurrentHashMap<>();
-    private static final long UNAVAILABLE_COOLDOWN_MS = 60 * 60 * 1000L; // 1 hour
+    // Kept short deliberately: a single failed assignment is already retried once
+    // (see tryAssignRoundRobin) before an account is parked here at all, so by the
+    // time we get here the failure is more likely a real problem — but on a thin
+    // roster (e.g. 2 people on shift) a full hour still hands 100% of assignments
+    // to whoever's left. 10 min bounds that blast radius while still giving a
+    // genuinely broken account (deactivated / frozen / locked) time to be fixed.
+    private static final long UNAVAILABLE_COOLDOWN_MS = 10 * 60 * 1000L; // 10 minutes
+    private static final long RETRY_BEFORE_EVICT_DELAY_MS = 3000L;
 
     // One thread per team, daemon so they don't block JVM shutdown
     private final ExecutorService teamExecutor = Executors.newCachedThreadPool(r -> {
@@ -155,6 +163,50 @@ public class ShiftAssignService {
         } catch (Exception e) {
             throw new IllegalStateException("Cannot compare SAC Jira workloads; this run will be retried", e);
         }
+    }
+
+    public record SacWorkloadSnapshot(Map<String, Integer> countsByOwnerEmail, String estimatedNextOwnerEmail) {}
+
+    /** Current SAC workload counts and matching lowest-count candidate for the rotation display. */
+    public SacWorkloadSnapshot getSacWorkloadSnapshot(List<ShiftRoster> members, int rotation) {
+        if (members == null || members.isEmpty()) return new SacWorkloadSnapshot(Map.of(), null);
+        Team team = teamRepository.findById("sac")
+            .orElseThrow(() -> new IllegalStateException("SAC team is not configured"));
+
+        Map<String, String> ownerAccounts = new LinkedHashMap<>();
+        List<String> resolvedOwners = new ArrayList<>();
+        List<String> accountIds = new ArrayList<>();
+        for (ShiftRoster member : members) {
+            String owner = member.getEmail().trim().toLowerCase(Locale.ROOT);
+            String target = member.getCoverEmail() == null || member.getCoverEmail().isBlank()
+                ? member.getEmail() : member.getCoverEmail().trim();
+            try {
+                String accountId = jiraClient.getAccountId(target);
+                ownerAccounts.put(owner, accountId);
+                resolvedOwners.add(owner);
+                accountIds.add(accountId);
+            } catch (Exception e) {
+                log.warn("[SAC] Could not resolve workload account for {}: {}", target, e.getMessage());
+            }
+        }
+        if (ownerAccounts.isEmpty()) return new SacWorkloadSnapshot(Map.of(), null);
+
+        String countJql = team.getWorkloadJql() == null || team.getWorkloadJql().isBlank()
+            ? team.getJql() : team.getWorkloadJql();
+        Map<String, Integer> byAccount = jiraClient.getWorkloadCounts(ownerAccounts.values(),
+            WorkloadJql.countScope(countJql));
+        Map<String, Integer> byOwner = new LinkedHashMap<>();
+        ownerAccounts.forEach((owner, accountId) -> byOwner.put(owner, byAccount.getOrDefault(accountId, 0)));
+        AssignmentPriority priority = new AssignmentPriority(accountIds, rotation, byAccount);
+        int next = AssignmentPriority.nextIndex(accountIds, rotation, priority);
+        return new SacWorkloadSnapshot(byOwner, resolvedOwners.get(next));
+    }
+
+    public boolean isTemporarilyUnavailable(String teamId, String email) {
+        Map<String, Long> unavailable = unavailableByTeam.getOrDefault(teamId, Collections.emptyMap());
+        long now = System.currentTimeMillis();
+        unavailable.values().removeIf(until -> until <= now);
+        return unavailable.containsKey(email.trim().toLowerCase(Locale.ROOT));
     }
 
     private Map<String, String> assignmentAlertTicket(JsonNode ticket, String recipient) {
@@ -266,6 +318,7 @@ public class ShiftAssignService {
         // --- Step 2: assign unassigned tickets (team JQL) ---
         List<JsonNode> unassigned = jiraClient.getTicketsByJql(team.getJql()).stream()
             .filter(t -> t.get("fields").get("assignee").isNull())
+            .filter(t -> !isSacEscalated(teamId, t))
             .collect(Collectors.toList());
 
         log.info("[{}] Unassigned tickets to assign: {}", teamName, unassigned.size());
@@ -317,6 +370,7 @@ public class ShiftAssignService {
         // 2b-i: restore paths → restore to last assignee
         List<JsonNode> restoreEscalated = jiraClient.getEscalatedByPathsAndJql(team.getJql(), restorePaths).stream()
             .filter(t -> t.get("fields").get("assignee").isNull())
+            .filter(t -> !isSacEscalated(teamId, t))
             .collect(Collectors.toList());
 
         log.info("[{}] Escalated (restore paths) to restore: {}", teamName, restoreEscalated.size());
@@ -349,6 +403,7 @@ public class ShiftAssignService {
         // 2b-ii: other escalation paths → round-robin to active shift
         List<JsonNode> otherEscalated = jiraClient.getEscalatedNotByPathsAndJql(team.getJql(), restorePaths).stream()
             .filter(t -> t.get("fields").get("assignee").isNull())
+            .filter(t -> !isSacEscalated(teamId, t))
             .collect(Collectors.toList());
 
         log.info("[{}] Other-path escalated to assign round-robin: {}", teamName, otherEscalated.size());
@@ -425,6 +480,11 @@ public class ShiftAssignService {
                 List<Map<String, String>> personMoves = new ArrayList<>();
 
                 for (JsonNode ticket : theirTickets) {
+                    if (isSacEscalated(teamId, ticket)) {
+                        log.info("[{}] [{}] Skipping off-shift reassignment because Escalation Path is set ({})",
+                            teamName, ticket.path("key").asText(""), jiraClient.extractEscalationPath(ticket));
+                        continue;
+                    }
                     String issueKey = ticket.get("key").asText();
                     String summary  = ticket.get("fields").path("summary").asText("");
 
@@ -473,6 +533,12 @@ public class ShiftAssignService {
         rrIndexByTeam.put(teamId, normalizedRr);
     }
 
+    /** SAC owns no ticket with an escalation path; leave escalation routing untouched. */
+    private boolean isSacEscalated(String teamId, JsonNode ticket) {
+        return "sac".equalsIgnoreCase(teamId)
+            && !jiraClient.extractEscalationPath(ticket).isBlank();
+    }
+
     // -----------------------------------------------------------------------
     // Round-robin assignment with dynamic working list
     // -----------------------------------------------------------------------
@@ -480,8 +546,12 @@ public class ShiftAssignService {
     /**
      * Assigns issueKey using a simple round-robin on the provided working lists.
      *
-     * If the chosen account fails (locked / unavailable in Jira) it is removed
-     * from workIds/workEmails immediately, so:
+     * A failed assignment gets one immediate retry against the same account first —
+     * a single 4xx/5xx is often a transient Jira-side blip, not a broken account,
+     * and evicting on the first failure can hand 100% of assignments to whoever
+     * else is active when the roster is thin. Only if it fails twice in a row is
+     * the account treated as genuinely unavailable and removed from workIds/
+     * workEmails, so:
      *   • the same ticket retries with the very next account in line
      *   • all subsequent tickets in this run skip the locked account entirely
      *   • the round-robin cycles only over reachable accounts → perfect equal spread
@@ -502,7 +572,18 @@ public class ShiftAssignService {
             log.info("[{}] [{}] -> {}{}", teamName, issueKey, email,
                      cover != null ? " (assigned to cover " + cover + ")" : "");
 
-            if (jiraClient.assignTicket(issueKey, accId)) {
+            boolean assigned = jiraClient.assignTicket(issueKey, accId);
+            if (!assigned) {
+                // Don't evict on a single failure — give the same account one more
+                // shot after a short pause, since a lone 4xx/5xx is often a fluke
+                // rather than the account actually being broken.
+                log.warn("[{}] [{}] {} failed on first attempt — retrying once before parking",
+                         teamName, issueKey, email);
+                sleepBriefly(RETRY_BEFORE_EVICT_DELAY_MS);
+                assigned = jiraClient.assignTicket(issueKey, accId);
+            }
+
+            if (assigned) {
                 if (cover != null) {
                     // Under cover: credit the real shift owner by name on the ticket
                     // itself, and record the routing so a later cover clear/replace
@@ -516,9 +597,9 @@ public class ShiftAssignService {
                 return new AssignResult(email, accId, pos + 1);
             }
 
-            // Account unreachable — remove so it doesn't waste future slots this run,
-            // and park it in cooldown so subsequent runs skip it entirely (keeps the
-            // rotation even). Auto-retried once UNAVAILABLE_COOLDOWN_MS lapses.
+            // Failed twice in a row — remove so it doesn't waste future slots this run,
+            // and park it in a short cooldown so subsequent runs skip it briefly (keeps
+            // the rotation even). Auto-retried once UNAVAILABLE_COOLDOWN_MS lapses.
             log.warn("[{}] [{}] {} unavailable — removed from rotation, parked for {} min",
                      teamName, issueKey, email, UNAVAILABLE_COOLDOWN_MS / 60000);
             markUnavailable(teamId, email);
@@ -535,6 +616,15 @@ public class ShiftAssignService {
     // -----------------------------------------------------------------------
     // Pause / resume — per team
     // -----------------------------------------------------------------------
+
+    /** Brief pause before the single retry-before-evict attempt in tryAssignRoundRobin. */
+    private void sleepBriefly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
 
     /** Parks an email whose Jira assignment failed so it's skipped until the cooldown lapses. */
     private void markUnavailable(String teamId, String email) {

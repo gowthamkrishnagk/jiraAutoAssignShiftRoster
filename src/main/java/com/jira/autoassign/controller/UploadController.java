@@ -149,14 +149,14 @@ public class UploadController {
     @PostMapping("/upload")
     public ResponseEntity<Map<String, Object>> upload(
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "team", required = false, defaultValue = "orderfallout") String teamId) {
+            @RequestParam("team") String teamId) {
 
         if (file.isEmpty())
             return ResponseEntity.badRequest().body(Map.of("error", "No file provided"));
 
         String name = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase();
-        if (!name.endsWith(".xlsx") && !name.endsWith(".xls"))
-            return ResponseEntity.badRequest().body(Map.of("error", "Only .xlsx / .xls files accepted"));
+        if (!name.endsWith(".xlsx") && !name.endsWith(".xls") && !name.endsWith(".csv"))
+            return ResponseEntity.badRequest().body(Map.of("error", "Only .xlsx / .xls / .csv files accepted"));
 
         if (!teamRepository.existsById(teamId))
             return ResponseEntity.badRequest().body(Map.of("error", "Unknown team: " + teamId));
@@ -229,6 +229,23 @@ public class UploadController {
             uniq.add(s);
         }
         uniq.sort(Comparator.comparing(ShiftRoster::getEmail));
+        uniq.removeIf(s -> shiftAssignService.isTemporarilyUnavailable(teamId, s.getEmail()));
+
+        boolean sacPolicy = "sac".equals(teamId);
+        Map<String, Integer> workloadCounts = Map.of();
+        boolean workloadCountsAvailable = !sacPolicy;
+        String estimatedNextEmail = null;
+        if (sacPolicy) {
+            try {
+                ShiftAssignService.SacWorkloadSnapshot snapshot = shiftAssignService.getSacWorkloadSnapshot(
+                    uniq, shiftAssignService.getRrIndex(teamId));
+                workloadCounts = snapshot.countsByOwnerEmail();
+                estimatedNextEmail = snapshot.estimatedNextOwnerEmail();
+                workloadCountsAvailable = !workloadCounts.isEmpty();
+            } catch (Exception e) {
+                workloadCountsAvailable = false;
+            }
+        }
 
         List<Map<String, Object>> order = new ArrayList<>();
         for (ShiftRoster s : uniq) {
@@ -238,6 +255,8 @@ public class UploadController {
             p.put("email",   s.getEmail());
             p.put("uses",    cover != null ? cover : s.getEmail());
             p.put("covered", cover != null);
+            if (sacPolicy) p.put("workloadCount", workloadCounts.get(s.getEmail().trim().toLowerCase(Locale.ROOT)));
+            if (sacPolicy) p.put("estimatedNext", s.getEmail().equalsIgnoreCase(estimatedNextEmail));
             order.add(p);
         }
 
@@ -245,6 +264,11 @@ public class UploadController {
         resp.put("teamId",    teamId);
         resp.put("order",     order);
         resp.put("assignmentPolicy", "sac".equals(teamId) ? "LOWEST_COUNT" : "ROUND_ROBIN");
+        if (sacPolicy) resp.put("workloadCountsAvailable", workloadCountsAvailable);
+        if (sacPolicy && estimatedNextEmail != null) {
+            resp.put("estimatedNextAssignee", estimatedNextEmail);
+            resp.put("nextIndex", -1);
+        }
         resp.put("nextIndex", order.isEmpty() || "sac".equals(teamId) ? -1
             : Math.floorMod(shiftAssignService.getRrIndex(teamId), order.size()));
 
@@ -331,6 +355,7 @@ public class UploadController {
             shiftAssignService.getCurrentMonthSchedule(teamId).stream().map(s -> {
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("id",    s.getId());
+                m.put("teamId", s.getTeamId());
                 m.put("email", s.getEmail());
                 m.put("date",  s.getShiftDate().toString());
                 m.put("start", s.getShiftStart().toString());
@@ -346,7 +371,7 @@ public class UploadController {
 
     @GetMapping("/shift/today")
     public ResponseEntity<List<Map<String, Object>>> todayShifts(
-            @RequestParam(value = "team", required = false, defaultValue = "orderfallout") String teamId) {
+            @RequestParam("team") String teamId) {
 
         LocalDate today     = LocalDate.now();
         LocalDate yesterday = today.minusDays(1);
@@ -370,6 +395,7 @@ public class UploadController {
                 if (!seen.add(dedupeKey(s))) continue;
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("id",    s.getId());
+                m.put("teamId", s.getTeamId());
                 m.put("email", s.getEmail());
                 m.put("start", s.getShiftStart().toString());
                 m.put("end",   s.getShiftEnd().toString());
@@ -386,6 +412,7 @@ public class UploadController {
 
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id",    s.getId());
+            m.put("teamId", s.getTeamId());
             m.put("email", s.getEmail());
             m.put("start", s.getShiftStart().toString());
             m.put("end",   s.getShiftEnd().toString());
@@ -662,24 +689,29 @@ public class UploadController {
         resp.put("assignmentAlerts", team.isAssignmentAlerts());
         resp.put("reassignmentAlerts", team.isReassignmentAlerts());
         resp.put("slaAlerts", team.isSlaAlerts());
+        resp.put("slaWarningAlerts", team.isSlaWarningAlerts());
+        resp.put("slaBreachAlerts", team.isSlaBreachAlerts());
         return ResponseEntity.ok(resp);
     }
 
     public record WebhookSettingsRequest(String webhookUrl, Boolean assignmentAlerts,
-                                         Boolean reassignmentAlerts, Boolean slaAlerts) { }
+                                         Boolean reassignmentAlerts, Boolean slaAlerts,
+                                         Boolean slaWarningAlerts, Boolean slaBreachAlerts) { }
 
     @PostMapping("/webhook-settings")
     public ResponseEntity<?> saveWebhookSettings(@RequestParam("team") String teamId,
                                                  @RequestBody WebhookSettingsRequest body) {
         Team team = teamWebhooks.saveSettings(teamId, body.webhookUrl(), body.assignmentAlerts(),
-            body.reassignmentAlerts(), body.slaAlerts());
+            body.reassignmentAlerts(), body.slaAlerts(), body.slaWarningAlerts(), body.slaBreachAlerts());
         String url = team.getWebhookUrl();
         return ResponseEntity.ok(Map.of("saved", true, "teamId", teamId,
                                         "webhookUrlMasked", TeamWebhookService.maskUrl(url),
                                         "configured", url != null && !url.isBlank(),
                                         "assignmentAlerts", team.isAssignmentAlerts(),
                                         "reassignmentAlerts", team.isReassignmentAlerts(),
-                                        "slaAlerts", team.isSlaAlerts()));
+                                        "slaAlerts", team.isSlaAlerts(),
+                                        "slaWarningAlerts", team.isSlaWarningAlerts(),
+                                        "slaBreachAlerts", team.isSlaBreachAlerts()));
     }
 
     @PostMapping("/webhook-settings/test")

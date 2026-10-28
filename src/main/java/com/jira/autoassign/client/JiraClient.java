@@ -177,6 +177,8 @@ public class JiraClient {
         String fields = "summary,assignee,status,issuetype,labels";
         String slaField = configService.getSlaFieldId();
         if (slaField != null && !slaField.isBlank()) fields += "," + slaField;
+        String escalationField = discoverEscalationPathFieldKey();
+        if (escalationField != null && !escalationField.isBlank()) fields += "," + escalationField;
         return searchTicketsWithFields(jql, fields);
     }
 
@@ -477,6 +479,8 @@ public class JiraClient {
 
         String fields = "summary,assignee,status";
         if (slaFieldId != null && !slaFieldId.isBlank()) fields += "," + slaFieldId;
+        String escalationField = discoverEscalationPathFieldKey();
+        if (escalationField != null && !escalationField.isBlank()) fields += "," + escalationField;
 
         log.debug("Fetching tickets (with SLA) assigned to {}: {}", accountId, jql);
         return searchTicketsWithFields(jql, fields);

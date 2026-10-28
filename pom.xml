@@ -39,6 +39,13 @@
             <version>5.2.5</version>
         </dependency>
 
+        <!-- RFC 4180 CSV parsing for roster uploads -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>1.11.0</version>
+        </dependency>
+
         <!-- JSON -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

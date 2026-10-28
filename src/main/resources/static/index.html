@@ -257,6 +257,11 @@
       white-space: nowrap; transition: border-color .15s, box-shadow .15s;
     }
     .rot-chip .na-avatar { width: 24px; height: 24px; font-size: .64rem; }
+    .rot-workload-count {
+      display: inline-block; font-size: .66rem; font-weight: 700; color: #5e6c84;
+      background: #f4f5f7; border-radius: 999px; padding: 2px 7px; margin-left: 4px;
+      white-space: nowrap;
+    }
     .rot-chip.is-next {
       border-color: #00875a; color: #172b4d; background: #e3fcef;
       box-shadow: 0 0 0 3px rgba(0,135,90,.14);
@@ -1449,7 +1454,8 @@
       <div style="font-weight:600;font-size:.85rem;margin-bottom:8px;">Send alerts for this team</div>
       <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-assignment"> New ticket assignments</label>
       <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-reassignment"> Ticket reassignments / shift handovers</label>
-      <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-sla"> SLA warning (15 minutes) and SLA breached</label>
+      <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-sla-warning"> SLA warning (15 minutes)</label>
+      <label style="display:block;font-size:.82rem;margin:7px 0;"><input type="checkbox" id="wh-alert-sla-breach"> SLA breached</label>
       <div class="modal-hint">Cards include ticket links, summary, assignee details and SLA time. B2B support notifications keep their existing behavior.</div>
       <button class="btn-sm" onclick="saveWebhookRules()" style="margin-top:8px;">Save alert rules</button>
     </div>
@@ -1782,6 +1788,20 @@
         Separate with commas, semicolons, spaces or new lines.
       </div>
 
+      <label style="display:block;font-size:.8rem;color:#5e6c84;margin:14px 0 5px;font-weight:600;">
+        CC
+      </label>
+      <textarea id="sla-mail-cc" rows="2"
+                placeholder="watcher@prodapt.com"
+                style="width:100%;border:1.5px solid #dfe1e6;border-radius:4px;padding:8px 10px;
+                       font-size:.86rem;font-family:inherit;outline:none;resize:vertical;
+                       transition:border-color .15s;box-sizing:border-box;"
+                onfocus="this.style.borderColor='#0052cc'"
+                onblur="this.style.borderColor='#dfe1e6'"></textarea>
+      <div style="font-size:.75rem;color:#97a0af;margin-top:4px;">
+        Optional — same separators as Recipients.
+      </div>
+
       <label style="display:block;font-size:.8rem;color:#5e6c84;margin:14px 0 6px;font-weight:600;">
         Teams to include
       </label>
@@ -1878,7 +1898,7 @@
         <div class="step">
           <div class="step-num">1</div>
           <div class="step-body">
-            <div class="step-label">Create an Excel file (.xlsx or .xls) with these exact column headers in Row 1:</div>
+            <div class="step-label">Create an Excel file (.xlsx or .xls) or CSV file (.csv) with these exact column headers in Row 1:</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
               <span class="col-tag">Email</span>
               <span class="col-tag">Shift Start</span>
@@ -1979,10 +1999,10 @@
       <svg width="34" height="34" viewBox="0 0 24 24" fill="#0052cc">
         <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
       </svg>
-      <p>Click to browse or drag &amp; drop your Excel file here</p>
+      <p>Click to browse or drag &amp; drop your Excel or CSV file here</p>
       <div id="file-name"></div>
     </div>
-    <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none">
+    <input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display:none">
 
     <div class="row">
       <button class="btn" id="preview-btn" disabled onclick="doPreview()">Preview</button>
@@ -2342,14 +2362,16 @@ function whAlertRules() {
   return {
     assignmentAlerts: document.getElementById('wh-alert-assignment').checked,
     reassignmentAlerts: document.getElementById('wh-alert-reassignment').checked,
-    slaAlerts: document.getElementById('wh-alert-sla').checked,
+    slaWarningAlerts: document.getElementById('wh-alert-sla-warning').checked,
+    slaBreachAlerts: document.getElementById('wh-alert-sla-breach').checked,
   };
 }
 
 function whApplyRules(data) {
   document.getElementById('wh-alert-assignment').checked = data.assignmentAlerts ?? isMonitorTeam(whTeamId);
   document.getElementById('wh-alert-reassignment').checked = data.reassignmentAlerts !== false;
-  document.getElementById('wh-alert-sla').checked = data.slaAlerts ?? isMonitorTeam(whTeamId);
+  document.getElementById('wh-alert-sla-warning').checked = data.slaWarningAlerts ?? data.slaAlerts ?? isMonitorTeam(whTeamId);
+  document.getElementById('wh-alert-sla-breach').checked = data.slaBreachAlerts ?? data.slaAlerts ?? isMonitorTeam(whTeamId);
 }
 
 async function saveWebhookRules() {
@@ -2707,7 +2729,7 @@ dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
 dropZone.addEventListener('drop', e => {
   e.preventDefault(); dropZone.classList.remove('over');
   const f = e.dataTransfer.files[0];
-  if (f && (f.name.endsWith('.xlsx') || f.name.endsWith('.xls'))) setFile(f);
+  if (f && /\.(xlsx|xls|csv)$/i.test(f.name)) setFile(f);
 });
 
 function resetUpload() {
@@ -2778,13 +2800,15 @@ function renderHeaderError(data) {
 }
 
 function renderPreview(data) {
+  const team = teams.find(t => t.id === activeTeam);
+  const teamName = team?.name || activeTeam || 'selected team';
   // summary stats
   document.getElementById('preview-summary').innerHTML = `
     <div class="preview-summary-box">
-      <div class="stat"><div class="stat-val">${data.rowCount}</div><div class="stat-lbl">Excel rows read</div></div>
+      <div class="stat"><div class="stat-val">${data.rowCount}</div><div class="stat-lbl">Roster rows read</div></div>
       <div class="stat"><div class="stat-val">${data.totalEntries}</div><div class="stat-lbl">DB entries to create</div></div>
     </div>
-    <p style="font-size:.8rem;color:#5e6c84;">Review the data below. If everything looks correct, click <strong>Confirm &amp; Save</strong>.</p>`;
+    <p style="font-size:.8rem;color:#5e6c84;">Target team: <strong>${esc(teamName)}</strong>. Confirm &amp; Save replaces this team's entries only for the months in this file.</p>`;
 
   // table rows
   const tbody = document.getElementById('preview-tbody');
@@ -2890,6 +2914,7 @@ async function loadTodayShift() {
 
 function renderTodayShift(rows) {
   const el = document.getElementById('status-content');
+  rows = rows.filter(r => r.teamId === activeTeam);
   if (!rows.length) {
     el.innerHTML = '<p class="no-data" style="margin-top:4px;">No shifts scheduled for today.</p>';
     return;
@@ -3150,11 +3175,16 @@ function renderRotationStrip(data) {
 
   const next = data.nextIndex;
   const chips = order.map((p, i) => {
-    const isNext = i === next;
+    const isCountBased = data.assignmentPolicy === 'LOWEST_COUNT';
+    const isNext = isCountBased ? p.estimatedNext === true : i === next;
+    const count = data.assignmentPolicy === 'LOWEST_COUNT'
+      ? `<span class="rot-workload-count">${p.workloadCount == null ? 'count unavailable' : `${p.workloadCount} tickets`}</span>`
+      : '';
     return `<span class="rot-chip ${isNext ? 'is-next' : ''}" title="${esc(p.email)}">
       ${naAvatarHtml(p.name, p.email)}
       ${esc(p.name)}
-      ${isNext ? '<span class="rot-next-tag">NEXT</span>' : ''}
+      ${count}
+      ${isNext ? `<span class="rot-next-tag">${isCountBased ? 'EST. NEXT' : 'NEXT'}</span>` : ''}
     </span>`;
   }).join('<span class="rot-arrow">→</span>');
 
@@ -3191,22 +3221,26 @@ function renderRotationModal(data) {
     ringEl.innerHTML  = '<div class="rot-history-empty">No active shift — nobody is receiving tickets.</div>';
   } else {
     subEl.innerHTML = data.assignmentPolicy === 'LOWEST_COUNT'
-      ? `Tickets for <strong>${esc(teamNm)}</strong> go to the active member with the fewest assigned Jira tickets. This rotation breaks equal-count ties.`
+      ? `Tickets for <strong>${esc(teamNm)}</strong> go to the active member with the fewest assigned Jira tickets. Counts use the SAC workload query across all statuses; a successful assignment increments the working count before the next ticket is chosen. The estimated next assignee can change before the scheduler runs.`
       : `Tickets for <strong>${esc(teamNm)}</strong> are handed out in this repeating order. `
         + `The <strong style="color:#00875a">NEXT</strong> tag marks who gets the next ticket.`;
     ringEl.innerHTML = order.map((p, i) => {
-      const isNext = i === data.nextIndex;
+      const isCountBased = data.assignmentPolicy === 'LOWEST_COUNT';
+      const isNext = isCountBased ? p.estimatedNext === true : i === data.nextIndex;
       const sub = p.covered
         ? `<span class="rot-cover">⇄ tickets → ${esc(p.uses)}</span>`
         : esc(p.email);
+      const count = data.assignmentPolicy === 'LOWEST_COUNT'
+        ? `<span class="rot-workload-count">${p.workloadCount == null ? 'Jira count unavailable' : `${p.workloadCount} Jira tickets`}</span>`
+        : '';
       return `<div class="rot-node ${isNext ? 'is-next' : ''}">
           <span class="rot-node-idx">${i + 1}</span>
           ${naAvatarHtml(p.name, p.email)}
           <div class="rot-node-info">
             <div class="rot-node-name">${esc(p.name)}</div>
-            <div class="rot-node-sub">${sub}</div>
+            <div class="rot-node-sub">${sub}${count}</div>
           </div>
-          ${isNext ? '<span class="rot-node-next-tag">NEXT</span>' : ''}
+          ${isNext ? `<span class="rot-node-next-tag">${isCountBased ? 'EST. NEXT' : 'NEXT'}</span>` : ''}
         </div>`;
     }).join('<span class="rot-arrow">→</span>')
       + '<span class="rot-loop" title="cycle repeats">↺</span>';
@@ -3809,6 +3843,7 @@ async function loadSlaMailSettings() {
     const data = await res.json();
 
     document.getElementById('sla-mail-recipients').value = data.recipients || '';
+    document.getElementById('sla-mail-cc').value         = data.cc || '';
     document.getElementById('sla-mail-enabled').checked  = data.enabled !== false;
     slaMailReportDate = data.reportDate || '';
 
@@ -3847,6 +3882,7 @@ async function loadSlaMailSettings() {
 
 async function saveSlaMailSettings() {
   const recipients = document.getElementById('sla-mail-recipients').value;
+  const cc         = document.getElementById('sla-mail-cc').value;
   const enabled    = document.getElementById('sla-mail-enabled').checked;
   const teams      = Array.from(document.querySelectorAll('.sla-mail-team:checked'))
                           .map(c => c.value);
@@ -3860,15 +3896,16 @@ async function saveSlaMailSettings() {
     const res  = await fetch('/api/sla/daily-report/settings', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ recipients, enabled, teams })
+      body:    JSON.stringify({ recipients, cc, enabled, teams })
     });
     const data = await res.json();
     if (!res.ok) { slaMailMsg(data.error || 'Save failed', false); return; }
 
     const n     = (data.recipientList || []).length;
+    const ccN   = (data.ccList || []).length;
     const scope = (data.teamNames || []).join(', ') || 'no teams';
     slaMailMsg(n
-      ? `Saved — ${n} recipient(s), covering ${scope}. Automatic send is ${data.enabled ? 'ON' : 'OFF'}.`
+      ? `Saved — ${n} recipient(s)${ccN ? `, ${ccN} cc` : ''}, covering ${scope}. Automatic send is ${data.enabled ? 'ON' : 'OFF'}.`
       : 'Saved, but no valid email addresses were found — nothing will be sent.', n > 0);
   } catch (e) {
     slaMailMsg('Network error: ' + e.message, false);

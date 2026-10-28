@@ -34,6 +34,12 @@ public class Team {
     @Column(name = "alert_sla")
     private Boolean slaAlerts;
 
+    @Column(name = "alert_sla_warning")
+    private Boolean slaWarningAlerts;
+
+    @Column(name = "alert_sla_breach")
+    private Boolean slaBreachAlerts;
+
     @Column(name = "dry_run", nullable = false)
     private boolean dryRun = false;
 
@@ -76,6 +82,10 @@ public class Team {
     public void setReassignmentAlerts(boolean v) { reassignmentAlerts = v; }
     public boolean isSlaAlerts() { return slaAlerts != null ? slaAlerts : !autoAssign; }
     public void setSlaAlerts(boolean v) { slaAlerts = v; }
+    public boolean isSlaWarningAlerts() { return slaWarningAlerts != null ? slaWarningAlerts : isSlaAlerts(); }
+    public void setSlaWarningAlerts(boolean v) { slaWarningAlerts = v; }
+    public boolean isSlaBreachAlerts() { return slaBreachAlerts != null ? slaBreachAlerts : isSlaAlerts(); }
+    public void setSlaBreachAlerts(boolean v) { slaBreachAlerts = v; }
     public boolean isDryRun()           { return dryRun; }
     public void    setDryRun(boolean v) { this.dryRun = v; }
     public boolean isAutoAssign()           { return autoAssign; }

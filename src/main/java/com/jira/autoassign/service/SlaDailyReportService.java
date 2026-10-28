@@ -407,12 +407,16 @@ public class SlaDailyReportService {
         String fileName    = "SLA_Tracker_" + report.resolvedDate() + ".xlsx";
         boolean hasAttach  = xlsx != null && xlsx.length > 0;
 
+        List<String> cc = configService.getSlaReportCcList();
+
         try {
             JavaMailSender sender = mailSenderProvider.getObject();
             MimeMessage msg = sender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(msg, hasAttach, "UTF-8");
             helper.setFrom(from, effectiveFromName());
             helper.setTo(to.toArray(new String[0]));
+            if (!cc.isEmpty())
+                helper.setCc(cc.toArray(new String[0]));
             helper.setSubject(subject);
             helper.setText(renderHtml(report, hasAttach ? fileName : null), true);
             if (hasAttach)
@@ -420,11 +424,12 @@ public class SlaDailyReportService {
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             sender.send(msg);
 
-            log.info("[SLA-Report] Sent to {} — {} pending ticket(s) for {}{}",
-                to, report.grandTotal(), report.resolvedDate(),
+            log.info("[SLA-Report] Sent to {}{} — {} pending ticket(s) for {}{}",
+                to, cc.isEmpty() ? "" : " (cc " + cc + ")", report.grandTotal(), report.resolvedDate(),
                 hasAttach ? " (+ " + fileName + ")" : " (attachment unavailable)");
             return new SendResult(true,
-                "Report sent to " + to.size() + " recipient(s)."
+                "Report sent to " + to.size() + " recipient(s)"
+                + (cc.isEmpty() ? "" : " (cc " + cc.size() + ")") + "."
                 + (hasAttach ? "" : " Excel attachment could not be generated — see logs."),
                 to, report, hasAttach ? fileName : null);
 
